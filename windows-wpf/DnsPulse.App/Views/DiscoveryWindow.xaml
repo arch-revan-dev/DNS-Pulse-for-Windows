@@ -7,6 +7,7 @@
         MinHeight="540"
         MinWidth="680"
         WindowStartupLocation="CenterOwner"
+        Icon="pack://application:,,,/Assets/app.ico"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         Background="{DynamicResource AppBackgroundBrush}"

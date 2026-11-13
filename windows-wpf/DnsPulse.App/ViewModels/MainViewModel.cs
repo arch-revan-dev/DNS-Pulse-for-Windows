@@ -16,10 +16,12 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly LocalDnsTunnelServer _tunnel = new();
     private readonly WindowsNetworkAdapterService _adapter;
     private readonly OnlineFeedSyncService _feedSync = new();
+    private readonly AppUpdateService _updater = new();
     private readonly Action<Action> _dispatchToUi;
 
     private List<DnsServerEntry> _allServers = [];
     private List<DnsServerEntry> _filteredServers = [];
+    private AppReleaseInfo? _availableRelease;
     private CancellationTokenSource? _liveCts;
     private CancellationTokenSource? _benchmarkCts;
     private CancellationTokenSource? _searchDebounceCts;
@@ -147,6 +149,29 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private int _benchmarkWorkingCount;
 
+    [ObservableProperty]
+    private bool _hasAvailableUpdate;
+
+    [ObservableProperty]
+    private bool _isCheckingUpdates;
+
+    [ObservableProperty]
+    private bool _isUpdatingApp;
+
+    [ObservableProperty]
+    private double _updateProgressPercent;
+
+    [ObservableProperty]
+    private string _updateStatusText = $"Версия {AppUpdateService.GetCurrentVersion()} (нажмите для проверки)";
+
+    [ObservableProperty]
+    private string _availableVersionText = string.Empty;
+
+    public string CurrentVersionText => $"v{AppUpdateService.GetCurrentVersion()}";
+    public string UpdateBannerText => HasAvailableUpdate
+        ? $"Доступна новая версия DNS Pulse {AvailableVersionText} (текущая {CurrentVersionText}) — обновление прямо внутри программы"
+        : string.Empty;
+
     public bool IsElevated => WindowsNetworkAdapterService.IsElevated();
     public bool NeedsElevationForSystemDns => !IsElevated;
     public string BenchmarkProgressText => IsBenchmarkRunning && BenchmarkTotal > 0
@@ -243,6 +268,8 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(BenchmarkProgressPercent));
     }
     partial void OnBenchmarkWorkingCountChanged(int value) => OnPropertyChanged(nameof(BenchmarkProgressText));
+    partial void OnHasAvailableUpdateChanged(bool value) => OnPropertyChanged(nameof(UpdateBannerText));
+    partial void OnAvailableVersionTextChanged(string value) => OnPropertyChanged(nameof(UpdateBannerText));
     partial void OnSelectedCategoryChanged(string value) { RefreshCategoryChips(); ApplyFilterAndSort(); }
     partial void OnSelectedSortModeChanged(SortMode value) => ApplyFilterAndSort();
     partial void OnBypassOnlyChanged(bool value) => ApplyFilterAndSort();
@@ -826,7 +853,7 @@ public sealed partial class MainViewModel : ObservableObject
             // Non-fatal startup flag handling
         }
 
-        // Background hosts & community feeds refresh (same behavior as Android app startup)
+        // Background hosts & community feeds refresh + silent GitHub release check
         _ = Task.Run(async () =>
         {
             try
@@ -856,7 +883,127 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 // Keep offline built-in domains on network restriction
             }
+
+            try
+            {
+                using var updCts = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+                var check = await _updater.CheckForUpdateAsync(updCts.Token);
+                _dispatchToUi(() =>
+                {
+                    if (check.UpdateAvailable && check.LatestRelease is { } rel)
+                    {
+                        _availableRelease = rel;
+                        AvailableVersionText = rel.VersionText;
+                        HasAvailableUpdate = true;
+                        UpdateStatusText = $"Доступно обновление {rel.VersionText} (текущая v{check.CurrentVersion})";
+                    }
+                    else if (check.LatestRelease is not null)
+                    {
+                        UpdateStatusText = $"Установлена актуальная версия v{check.CurrentVersion}";
+                    }
+                });
+            }
+            catch
+            {
+                // Silent check never disturbs user on offline launch
+            }
         });
+    }
+
+    [RelayCommand]
+    private void DismissUpdateBanner() => HasAvailableUpdate = false;
+
+    [RelayCommand]
+    public async Task CheckForUpdatesAsync(CancellationToken ct)
+    {
+        if (IsCheckingUpdates || IsUpdatingApp) return;
+        IsCheckingUpdates = true;
+        UpdateStatusText = "Проверка новых релизов на GitHub...";
+        try
+        {
+            var res = await _updater.CheckForUpdateAsync(ct);
+            if (res.UpdateAvailable && res.LatestRelease is { } rel)
+            {
+                _availableRelease = rel;
+                AvailableVersionText = rel.VersionText;
+                HasAvailableUpdate = true;
+                UpdateStatusText = $"Найдена новая версия {rel.VersionText} (сейчас v{res.CurrentVersion})";
+                StatusMessage = UpdateStatusText;
+            }
+            else if (res.LatestRelease is not null)
+            {
+                _availableRelease = null;
+                HasAvailableUpdate = false;
+                UpdateStatusText = $"У вас актуальная версия v{res.CurrentVersion} (последний релиз {res.LatestRelease.VersionText})";
+                StatusMessage = UpdateStatusText;
+            }
+            else
+            {
+                UpdateStatusText = "Не удалось получить информацию о релизе с GitHub";
+                StatusMessage = UpdateStatusText;
+            }
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusText = $"Ошибка проверки обновлений: {ex.Message}";
+            StatusMessage = UpdateStatusText;
+        }
+        finally
+        {
+            IsCheckingUpdates = false;
+        }
+    }
+
+    [RelayCommand]
+    public async Task InstallAppUpdateAsync(CancellationToken ct)
+    {
+        if (IsUpdatingApp) return;
+
+        if (_availableRelease is null)
+        {
+            await CheckForUpdatesAsync(ct);
+            if (_availableRelease is null) return;
+        }
+
+        var release = _availableRelease;
+        IsUpdatingApp = true;
+        IsBusy = true;
+        UpdateProgressPercent = 2;
+
+        try
+        {
+            var progress = new Progress<(double Percent, string Status)>(p =>
+            {
+                UpdateProgressPercent = p.Percent;
+                UpdateStatusText = p.Status;
+                StatusMessage = p.Status;
+            });
+
+            var (preparedPath, isInstaller) = await _updater.DownloadAndVerifyUpdateAsync(release, progress, ct);
+
+            // Cleanly stop active tunnel & restore Windows adapter DNS before exiting for self-update
+            if (IsTunnelActive)
+            {
+                await StopTunnelAsync();
+            }
+
+            AppUpdateService.LaunchPreparedUpdateAndExit(preparedPath, isInstaller);
+        }
+        catch (OperationCanceledException)
+        {
+            UpdateStatusText = "Загрузка обновления отменена";
+            StatusMessage = UpdateStatusText;
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusText = $"Ошибка обновления: {ex.Message}";
+            StatusMessage = UpdateStatusText;
+        }
+        finally
+        {
+            IsUpdatingApp = false;
+            IsBusy = false;
+        }
     }
 
     [RelayCommand]

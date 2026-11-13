@@ -9,7 +9,8 @@
     <AssemblyName>DnsPulse</AssemblyName>
     <RootNamespace>DnsPulse.App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.3.0</Version>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <Version>1.4.0</Version>
     <Authors>DNS Pulse Open Source Contributors</Authors>
     <Description>Windows 10/11 Smart-DNS, DoH/DoT/SNI-Proxy Diagnostics &amp; Local Tunnel</Description>
   </PropertyGroup>
@@ -20,6 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\app.ico" />
     <Content Include="..\..\assets\dns_catalog_1000.tsv" Link="assets\dns_catalog_1000.tsv">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

@@ -1,7 +1,7 @@
 #define MyAppName "DNS Pulse"
-#define MyAppVersion "1.3.0"
+#define MyAppVersion "1.4.0"
 #define MyAppPublisher "DNS Pulse Open Source Contributors"
-#define MyAppURL "https://github.com/dns-pulse/dns-pulse"
+#define MyAppURL "https://github.com/arch-revan-dev/DNS-Pulse-for-Windows"
 #define MyAppExeName "DnsPulse.exe"
 
 [Setup]
@@ -17,6 +17,10 @@ DisableProgramGroupPage=yes
 LicenseFile=..\..\LICENSE
 OutputDir=..\..\artifacts
 OutputBaseFilename=DNS-Pulse-win-x64-setup
+SetupIconFile=..\..\windows-wpf\DnsPulse.App\Assets\app.ico
+UninstallDisplayIcon={app}\{#MyAppExeName}
+CloseApplications=yes
+RestartApplications=yes
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern

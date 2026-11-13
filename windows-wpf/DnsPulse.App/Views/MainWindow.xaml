@@ -8,6 +8,7 @@
         MinHeight="680"
         MinWidth="1040"
         WindowStartupLocation="CenterScreen"
+        Icon="pack://application:,,,/Assets/app.ico"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         Background="{DynamicResource AppBackgroundBrush}"
@@ -488,8 +489,72 @@
 
             <!-- RIGHT WORKSPACE -->
             <Grid Grid.Column="1" Margin="22,16,22,14">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Global In-App Auto-Update Banner (visible when GitHub release > current version) -->
+                <Border Grid.Row="0"
+                        Background="{DynamicResource AccentSoftBrush}"
+                        BorderBrush="{DynamicResource AccentBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="14,10"
+                        Margin="0,0,0,12"
+                        Visibility="{Binding HasAvailableUpdate, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <DockPanel LastChildFill="False">
+                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Path Data="M 8,2 L 8,10.5 M 4.5,7.5 L 8,11 L 11.5,7.5 M 2.5,13.5 L 13.5,13.5"
+                                      Stroke="{DynamicResource StatusOkBrush}"
+                                      StrokeThickness="1.6"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      StrokeLineJoin="Round"
+                                      Width="16"
+                                      Height="16"
+                                      Margin="0,0,10,0"
+                                      VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding UpdateBannerText}"
+                                           FontSize="12.5"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource StatusOkBrush}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Content="Скачать и обновить сейчас"
+                                        Style="{StaticResource AccentButtonStyle}"
+                                        MinHeight="30"
+                                        Padding="14,4"
+                                        Margin="0,0,8,0"
+                                        IsEnabled="{Binding IsUpdatingApp, Converter={StaticResource InverseBool}}"
+                                        Command="{Binding InstallAppUpdateCommand}" />
+                                <Button Style="{StaticResource ChipButtonStyle}"
+                                        MinHeight="30"
+                                        Padding="8,4"
+                                        ToolTip="Скрыть уведомление"
+                                        Visibility="{Binding IsUpdatingApp, Converter={StaticResource InverseBoolToVis}}"
+                                        Command="{Binding DismissUpdateBannerCommand}">
+                                    <Path Data="M 1,1 L 9,9 M 9,1 L 1,9"
+                                          Stroke="{DynamicResource MutedTextBrush}"
+                                          StrokeThickness="1.4"
+                                          Width="10"
+                                          Height="10" />
+                                </Button>
+                            </StackPanel>
+                        </DockPanel>
+
+                        <StackPanel Margin="0,8,0,0" Visibility="{Binding IsUpdatingApp, Converter={StaticResource BoolToVis}}">
+                            <ProgressBar Value="{Binding UpdateProgressPercent, Mode=OneWay}" Maximum="100" Height="5" Margin="0,0,0,4" />
+                            <TextBlock Text="{Binding UpdateStatusText}" Style="{StaticResource MonoMetaStyle}" FontSize="11.5" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
                 <!-- SHARED MASTER-DETAIL FOR TESTER & CATALOG -->
-                <Grid>
+                <Grid Grid.Row="1">
                     <Grid.Style>
                         <Style TargetType="Grid">
                             <Setter Property="Visibility" Value="Visible" />
@@ -693,16 +758,23 @@
                                             <TextBox Style="{StaticResource SearchTextBoxStyle}"
                                                      Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
                                                      Tag="Поиск: название, страна, IP, DoH URL (несколько слов)..." />
-                                            <Button Content="✕"
-                                                    HorizontalAlignment="Right"
+                                            <Button HorizontalAlignment="Right"
                                                     VerticalAlignment="Center"
                                                     Margin="0,0,8,0"
                                                     MinHeight="24"
-                                                    Padding="7,2"
+                                                    Padding="7,5"
                                                     Style="{StaticResource ChipButtonStyle}"
                                                     Visibility="{Binding SearchQuery, Converter={StaticResource BoolToVis}}"
                                                     Command="{Binding ClearSearchCommand}"
-                                                    ToolTip="Очистить поиск" />
+                                                    ToolTip="Очистить поиск">
+                                                <Path Data="M 1,1 L 8,8 M 8,1 L 1,8"
+                                                      Stroke="{DynamicResource MutedTextBrush}"
+                                                      StrokeThickness="1.4"
+                                                      StrokeStartLineCap="Round"
+                                                      StrokeEndLineCap="Round"
+                                                      Width="9"
+                                                      Height="9" />
+                                            </Button>
                                         </Grid>
 
                                         <WrapPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -981,16 +1053,23 @@
                                         <TextBox Style="{StaticResource SearchTextBoxStyle}"
                                                  Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
                                                  Tag="Быстрый фильтр по всей базе SQLite (несколько слов)..." />
-                                        <Button Content="✕"
-                                                HorizontalAlignment="Right"
+                                        <Button HorizontalAlignment="Right"
                                                 VerticalAlignment="Center"
                                                 Margin="0,0,8,0"
                                                 MinHeight="24"
-                                                Padding="7,2"
+                                                Padding="7,5"
                                                 Style="{StaticResource ChipButtonStyle}"
                                                 Visibility="{Binding SearchQuery, Converter={StaticResource BoolToVis}}"
                                                 Command="{Binding ClearSearchCommand}"
-                                                ToolTip="Очистить поиск" />
+                                                ToolTip="Очистить поиск">
+                                            <Path Data="M 1,1 L 8,8 M 8,1 L 1,8"
+                                                  Stroke="{DynamicResource MutedTextBrush}"
+                                                  StrokeThickness="1.4"
+                                                  StrokeStartLineCap="Round"
+                                                  StrokeEndLineCap="Round"
+                                                  Width="9"
+                                                  Height="9" />
+                                        </Button>
                                     </Grid>
                                     <Button Grid.Column="1"
                                             Content="Сброс"
@@ -1230,7 +1309,7 @@
                 </Grid>
 
                 <!-- VIEW 2: КОНФИГИ И БАЗА -->
-                <Grid Visibility="{Binding IsConfigsTab, Converter={StaticResource BoolToVis}}">
+                <Grid Grid.Row="1" Visibility="{Binding IsConfigsTab, Converter={StaticResource BoolToVis}}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
@@ -1349,6 +1428,55 @@
                                     </StackPanel>
                                 </Border>
 
+                                <Border Style="{StaticResource SurfaceCardStyle}" Padding="18" Margin="0,0,0,12">
+                                    <StackPanel>
+                                        <DockPanel LastChildFill="False" Margin="0,0,0,10">
+                                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                                                <Path Data="M 8,2 L 8,10.5 M 4.5,7.5 L 8,11 L 11.5,7.5 M 2.5,13.5 L 13.5,13.5"
+                                                      Stroke="{DynamicResource AccentBrush}"
+                                                      StrokeThickness="1.6"
+                                                      StrokeStartLineCap="Round"
+                                                      StrokeEndLineCap="Round"
+                                                      StrokeLineJoin="Round"
+                                                      Width="16"
+                                                      Height="16"
+                                                      Margin="0,0,8,0"
+                                                      VerticalAlignment="Center" />
+                                                <TextBlock Text="Обновление с GitHub" Style="{StaticResource SectionTitleStyle}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                            <Border DockPanel.Dock="Right" Style="{StaticResource BadgePillStyle}">
+                                                <TextBlock Text="{Binding CurrentVersionText}"
+                                                           FontFamily="JetBrains Mono, Cascadia Mono, Consolas"
+                                                           FontSize="11"
+                                                           FontWeight="SemiBold" />
+                                            </Border>
+                                        </DockPanel>
+
+                                        <TextBlock Text="{Binding UpdateStatusText}"
+                                                   Style="{StaticResource CaptionMutedStyle}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,0,0,10" />
+
+                                        <ProgressBar Value="{Binding UpdateProgressPercent, Mode=OneWay}"
+                                                     Maximum="100"
+                                                     Height="5"
+                                                     Margin="0,0,0,10"
+                                                     Visibility="{Binding IsUpdatingApp, Converter={StaticResource BoolToVis}}" />
+
+                                        <Button Content="Проверить обновления"
+                                                HorizontalAlignment="Stretch"
+                                                Margin="0,0,0,8"
+                                                IsEnabled="{Binding IsCheckingUpdates, Converter={StaticResource InverseBool}}"
+                                                Command="{Binding CheckForUpdatesCommand}" />
+                                        <Button Content="Скачать и обновить в 1 клик"
+                                                Style="{StaticResource AccentButtonStyle}"
+                                                HorizontalAlignment="Stretch"
+                                                Visibility="{Binding HasAvailableUpdate, Converter={StaticResource BoolToVis}}"
+                                                IsEnabled="{Binding IsUpdatingApp, Converter={StaticResource InverseBool}}"
+                                                Command="{Binding InstallAppUpdateCommand}" />
+                                    </StackPanel>
+                                </Border>
+
                                 <Border Style="{StaticResource SurfaceCardStyle}" Padding="18">
                                     <StackPanel>
                                         <TextBlock Text="Оформление и фильтры" Style="{StaticResource SectionTitleStyle}" Margin="0,0,0,12" />
@@ -1389,6 +1517,12 @@
                                Style="{StaticResource MonoMetaStyle}"
                                FontSize="11"
                                Opacity="0.7"
+                               Margin="0,0,16,0"
+                               VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding CurrentVersionText}"
+                               Style="{StaticResource MonoMetaStyle}"
+                               FontSize="11"
+                               Opacity="0.8"
                                Margin="0,0,16,0"
                                VerticalAlignment="Center" />
                     <TextBlock Text="{Binding TotalCatalogCount, StringFormat='SQLite: {0} узлов'}"

@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.IO;
 using System.Windows.Forms;
 
 namespace DnsPulse.App.Services;
@@ -7,6 +8,7 @@ public sealed class TrayNotificationService : IDisposable
 {
     private readonly NotifyIcon _notifyIcon;
     private readonly ToolStripMenuItem _statusItem;
+    private readonly Icon? _customIcon;
 
     public event Action? OnRotateRequested;
     public event Action? OnDisconnectRequested;
@@ -14,6 +16,7 @@ public sealed class TrayNotificationService : IDisposable
 
     public TrayNotificationService()
     {
+        _customIcon = LoadAppIcon();
         _statusItem = new ToolStripMenuItem("DNS Pulse: Отключён") { Enabled = false };
         var rotateItem = new ToolStripMenuItem("Ротация ↻", null, (_, _) => OnRotateRequested?.Invoke());
         var stopItem = new ToolStripMenuItem("Откл", null, (_, _) => OnDisconnectRequested?.Invoke());
@@ -29,12 +32,43 @@ public sealed class TrayNotificationService : IDisposable
 
         _notifyIcon = new NotifyIcon
         {
-            Icon = SystemIcons.Shield,
+            Icon = _customIcon ?? SystemIcons.Shield,
             Visible = true,
             Text = "DNS Pulse",
             ContextMenuStrip = menu
         };
         _notifyIcon.DoubleClick += (_, _) => OnShowWindowRequested?.Invoke();
+    }
+
+    private static Icon? LoadAppIcon()
+    {
+        try
+        {
+            var streamInfo = System.Windows.Application.GetResourceStream(
+                new Uri("pack://application:,,,/Assets/app.ico", UriKind.Absolute));
+            if (streamInfo?.Stream is not null)
+            {
+                using var s = streamInfo.Stream;
+                return new Icon(s);
+            }
+        }
+        catch
+        {
+            // Fall through to executable icon
+        }
+
+        try
+        {
+            var exe = Environment.ProcessPath;
+            if (!string.IsNullOrWhiteSpace(exe) && File.Exists(exe))
+                return Icon.ExtractAssociatedIcon(exe);
+        }
+        catch
+        {
+            // Fallback to SystemIcons.Shield
+        }
+
+        return null;
     }
 
     public void UpdateActiveState(bool active, string? serverName, string? endpoint, string targetDomain, long queries)
@@ -54,5 +88,6 @@ public sealed class TrayNotificationService : IDisposable
     {
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
+        _customIcon?.Dispose();
     }
 }

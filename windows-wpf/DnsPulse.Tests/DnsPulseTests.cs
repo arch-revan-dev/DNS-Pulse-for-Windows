@@ -209,4 +209,39 @@ public class DnsPulseTests
         Assert.True(candidates.Count >= 200);
         Assert.Contains("192.255.159.240", candidates);
     }
+
+    [Fact]
+    public void AppUpdateService_ParsesReleaseJson_Versions_And_Sha256Sums()
+    {
+        Assert.True(AppUpdateService.TryParseVersion("v1.4.2+abc123", out var parsed));
+        Assert.Equal(new Version(1, 4, 2), parsed);
+        Assert.True(AppUpdateService.CompareVersions(new Version(1, 4, 0), new Version(1, 3, 0)) > 0);
+        Assert.Equal(0, AppUpdateService.CompareVersions(new Version(1, 3, 0), new Version(1, 3)));
+
+        const string json = """
+        {
+          "tag_name": "v1.4.0",
+          "html_url": "https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/tag/v1.4.0",
+          "body": "Release notes",
+          "assets": [
+            { "name": "DNS-Pulse-win-x64-setup.exe", "browser_download_url": "https://example.com/setup.exe" },
+            { "name": "DnsPulse.exe", "browser_download_url": "https://example.com/DnsPulse.exe" },
+            { "name": "SHA256SUMS.txt", "browser_download_url": "https://example.com/SHA256SUMS.txt" }
+          ]
+        }
+        """;
+
+        var rel = AppUpdateService.ParseReleaseJson(json);
+        Assert.NotNull(rel);
+        Assert.Equal("v1.4.0", rel!.VersionText);
+        Assert.Equal("https://example.com/setup.exe", rel.SetupExeUrl);
+        Assert.Equal("https://example.com/DnsPulse.exe", rel.PortableExeUrl);
+        Assert.Equal("https://example.com/SHA256SUMS.txt", rel.Sha256SumsUrl);
+
+        var sums = AppUpdateService.ParseSha256Sums(
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  DnsPulse.exe\n" +
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef *DNS-Pulse-win-x64-setup.exe");
+        Assert.Equal("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", sums["DnsPulse.exe"]);
+        Assert.Equal("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", sums["DNS-Pulse-win-x64-setup.exe"]);
+    }
 }
