@@ -208,6 +208,9 @@ public sealed partial class MainViewModel : ObservableObject
     private int _benchmarkWorkingCount;
 
     [ObservableProperty]
+    private string _benchmarkScopeLabel = "Проверка";
+
+    [ObservableProperty]
     private bool _hasAvailableUpdate;
 
     [ObservableProperty]
@@ -233,7 +236,7 @@ public sealed partial class MainViewModel : ObservableObject
     public bool IsElevated => WindowsNetworkAdapterService.IsElevated();
     public bool NeedsElevationForSystemDns => !IsElevated;
     public string BenchmarkProgressText => IsBenchmarkRunning && BenchmarkTotal > 0
-        ? $"Проверка: {BenchmarkDone} / {BenchmarkTotal} · Рабочих: {BenchmarkWorkingCount}"
+        ? $"{BenchmarkScopeLabel}: {BenchmarkDone} / {BenchmarkTotal} · Рабочих: {BenchmarkWorkingCount}"
         : string.Empty;
     public double BenchmarkProgressPercent => BenchmarkTotal > 0
         ? BenchmarkDone * 100.0 / BenchmarkTotal
@@ -502,6 +505,7 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(BenchmarkProgressPercent));
     }
     partial void OnBenchmarkWorkingCountChanged(int value) => OnPropertyChanged(nameof(BenchmarkProgressText));
+    partial void OnBenchmarkScopeLabelChanged(string value) => OnPropertyChanged(nameof(BenchmarkProgressText));
     partial void OnHasAvailableUpdateChanged(bool value) => OnPropertyChanged(nameof(UpdateBannerText));
     partial void OnAvailableVersionTextChanged(string value) => OnPropertyChanged(nameof(UpdateBannerText));
     partial void OnSelectedCategoryChanged(string value) { RefreshCategoryChips(); ApplyFilterAndSort(); }
@@ -737,12 +741,12 @@ public sealed partial class MainViewModel : ObservableObject
 
     [RelayCommand]
     private async Task BenchmarkVisibleAsync(CancellationToken ct) =>
-        await BenchmarkServersListAsync(_filteredServers.ToList(), ct);
+        await BenchmarkServersListAsync(_filteredServers.ToList(), ct, $"Раздел «{SelectedCategory}»");
 
     public async Task BenchmarkTopAsync(int count, CancellationToken ct) =>
-        await BenchmarkServersListAsync(VisibleServers.Take(count).ToList(), ct);
+        await BenchmarkServersListAsync(VisibleServers.Take(count).ToList(), ct, "LIVE (топ)");
 
-    private async Task BenchmarkServersListAsync(List<DnsServerEntry> targets, CancellationToken ct)
+    private async Task BenchmarkServersListAsync(List<DnsServerEntry> targets, CancellationToken ct, string? scopeLabel = null)
     {
         _benchmarkCts?.Cancel();
         _benchmarkCts?.Dispose();
@@ -764,10 +768,11 @@ public sealed partial class MainViewModel : ObservableObject
 
         IsBusy = true;
         IsBenchmarkRunning = true;
+        BenchmarkScopeLabel = scopeLabel ?? "Проверка";
         BenchmarkTotal = targets.Count;
         BenchmarkDone = 0;
         BenchmarkWorkingCount = 0;
-        StatusMessage = $"Проверка всех {targets.Count} узлов открытого раздела для {TargetDomain}...";
+        StatusMessage = $"{BenchmarkScopeLabel}: проверка {targets.Count} узлов для {TargetDomain}...";
 
         try
         {
@@ -894,26 +899,71 @@ public sealed partial class MainViewModel : ObservableObject
 
         try
         {
-            var candidates = RequiresBypass
-                ? _allServers
-                    .Where(s => !s.IsSubscription &&
-                                (s.SupportsBypass ||
-                                 s.Protocol == DnsProtocol.SNI443 ||
-                                 s.Category is "Smart-DNS" or "Свои / Найденные" or "Игры и Регионы"))
-                    .OrderByDescending(s => s.Protocol == DnsProtocol.SNI443)
-                    .ThenBy(s => s.LastLatencyMs ?? double.MaxValue)
-                    .ToList()
-                : _filteredServers.Where(s => !s.IsSubscription).Take(25).ToList();
+            static bool IsBypassCandidate(DnsServerEntry s) =>
+                !s.IsSubscription &&
+                (s.SupportsBypass ||
+                 s.Protocol == DnsProtocol.SNI443 ||
+                 s.Category is "Smart-DNS" or "Свои / Найденные" or "Игры и Регионы");
 
-            if (candidates.Count > 0)
+            DnsServerEntry? winner = null;
+            var testedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (RequiresBypass)
             {
-                await BenchmarkServersListAsync(candidates, ct);
-            }
+                // If user opened a specific bypass section (e.g. Smart-DNS 70), check that section first so counts match & connection is fast
+                if (!string.Equals(SelectedCategory, "Все", StringComparison.Ordinal))
+                {
+                    var scopedCandidates = _filteredServers
+                        .Where(IsBypassCandidate)
+                        .OrderByDescending(s => s.Protocol == DnsProtocol.SNI443)
+                        .ThenBy(s => s.LastLatencyMs ?? double.MaxValue)
+                        .ToList();
 
-            DnsServerEntry? winner = _allServers
-                .Where(s => s.Verdict == BypassVerdict.VERIFIED_PROXY_OK && !s.IsSubscription)
-                .OrderBy(s => s.LastLatencyMs ?? double.MaxValue)
-                .FirstOrDefault();
+                    if (scopedCandidates.Count > 0)
+                    {
+                        foreach (var c in scopedCandidates) testedIds.Add(c.Id);
+                        await BenchmarkServersListAsync(scopedCandidates, ct, $"Автоподбор ({SelectedCategory})");
+                    }
+
+                    winner = _allServers
+                        .Where(s => s.Verdict == BypassVerdict.VERIFIED_PROXY_OK && !s.IsSubscription && testedIds.Contains(s.Id))
+                        .OrderBy(s => s.LastLatencyMs ?? double.MaxValue)
+                        .FirstOrDefault();
+                }
+
+                // If selected section had 0 working bypass nodes (or "Все" is active), check remaining bypass nodes across catalog
+                if (winner is null && !ct.IsCancellationRequested)
+                {
+                    var globalCandidates = _allServers
+                        .Where(s => IsBypassCandidate(s) && !testedIds.Contains(s.Id))
+                        .OrderByDescending(s => s.Protocol == DnsProtocol.SNI443)
+                        .ThenBy(s => s.LastLatencyMs ?? double.MaxValue)
+                        .ToList();
+
+                    if (globalCandidates.Count > 0)
+                    {
+                        await BenchmarkServersListAsync(globalCandidates, ct, "Автоподбор (вся база обхода)");
+                    }
+
+                    winner = _allServers
+                        .Where(s => s.Verdict == BypassVerdict.VERIFIED_PROXY_OK && !s.IsSubscription)
+                        .OrderBy(s => s.LastLatencyMs ?? double.MaxValue)
+                        .FirstOrDefault();
+                }
+            }
+            else
+            {
+                var pingCandidates = _filteredServers.Where(s => !s.IsSubscription).Take(25).ToList();
+                if (pingCandidates.Count > 0)
+                {
+                    await BenchmarkServersListAsync(pingCandidates, ct, $"Автоподбор ({SelectedCategory})");
+                }
+
+                winner = _allServers
+                    .Where(s => s.Verdict == BypassVerdict.VERIFIED_PROXY_OK && !s.IsSubscription)
+                    .OrderBy(s => s.LastLatencyMs ?? double.MaxValue)
+                    .FirstOrDefault();
+            }
 
             if (winner is null && RequiresBypass && forceRescanIfEmpty && !ct.IsCancellationRequested)
             {

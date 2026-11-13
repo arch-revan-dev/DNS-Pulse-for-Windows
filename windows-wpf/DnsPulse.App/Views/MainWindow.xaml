@@ -536,26 +536,8 @@
                         Margin="0,0,0,12"
                         Visibility="{Binding HasAvailableUpdate, Converter={StaticResource BoolToVis}}">
                     <StackPanel>
-                        <DockPanel LastChildFill="False">
-                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
-                                <Path Data="M 8,2 L 8,10.5 M 4.5,7.5 L 8,11 L 11.5,7.5 M 2.5,13.5 L 13.5,13.5"
-                                      Stroke="{DynamicResource StatusOkBrush}"
-                                      StrokeThickness="1.6"
-                                      StrokeStartLineCap="Round"
-                                      StrokeEndLineCap="Round"
-                                      StrokeLineJoin="Round"
-                                      Width="16"
-                                      Height="16"
-                                      Margin="0,0,10,0"
-                                      VerticalAlignment="Center" />
-                                <TextBlock Text="{Binding UpdateBannerText}"
-                                           FontSize="12.5"
-                                           FontWeight="SemiBold"
-                                           Foreground="{DynamicResource StatusOkBrush}"
-                                           VerticalAlignment="Center" />
-                            </StackPanel>
-
-                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <DockPanel LastChildFill="True">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
                                 <Button Content="Скачать и обновить сейчас"
                                         Style="{StaticResource AccentButtonStyle}"
                                         MinHeight="30"
@@ -576,6 +558,26 @@
                                           Height="10" />
                                 </Button>
                             </StackPanel>
+
+                            <DockPanel LastChildFill="True" VerticalAlignment="Center">
+                                <Path DockPanel.Dock="Left"
+                                      Data="M 8,2 L 8,10.5 M 4.5,7.5 L 8,11 L 11.5,7.5 M 2.5,13.5 L 13.5,13.5"
+                                      Stroke="{DynamicResource StatusOkBrush}"
+                                      StrokeThickness="1.6"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      StrokeLineJoin="Round"
+                                      Width="16"
+                                      Height="16"
+                                      Margin="0,0,10,0"
+                                      VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding UpdateBannerText}"
+                                           FontSize="12.5"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource StatusOkBrush}"
+                                           TextWrapping="Wrap"
+                                           VerticalAlignment="Center" />
+                            </DockPanel>
                         </DockPanel>
 
                         <StackPanel Margin="0,8,0,0" Visibility="{Binding IsUpdatingApp, Converter={StaticResource BoolToVis}}">
@@ -626,34 +628,30 @@
                                         Padding="12,8"
                                         Margin="0,0,0,12"
                                         Visibility="{Binding NeedsElevationForSystemDns, Converter={StaticResource BoolToVis}}">
-                                    <DockPanel LastChildFill="False">
-                                        <TextBlock DockPanel.Dock="Left"
-                                                   Text="Запуск без прав администратора: тесты и сканер работают сразу, но для автопереключения DNS Windows требуется UAC."
-                                                   FontSize="12"
-                                                   Foreground="{DynamicResource StatusWarnBrush}"
-                                                   VerticalAlignment="Center" />
+                                    <DockPanel LastChildFill="True">
                                         <Button DockPanel.Dock="Right"
                                                 Content="Перезапустить от админа"
                                                 Style="{StaticResource ChipButtonStyle}"
                                                 MinHeight="28"
                                                 Padding="10,4"
+                                                Margin="12,0,0,0"
+                                                VerticalAlignment="Center"
                                                 Command="{Binding RestartAsAdminCommand}" />
+                                        <TextBlock Text="Запуск без прав администратора: тесты и сканер работают сразу, но для автопереключения DNS Windows требуется UAC."
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource StatusWarnBrush}"
+                                                   TextWrapping="Wrap"
+                                                   VerticalAlignment="Center" />
                                     </DockPanel>
                                 </Border>
 
-                                <DockPanel LastChildFill="False">
-                                    <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
-                                        <TextBlock Text="Диагностика и подбор" Style="{StaticResource PageTitleStyle}" />
-                                        <TextBlock Text="{Binding ModeExplanationText}"
-                                                   Style="{StaticResource CaptionMutedStyle}"
-                                                   Margin="0,2,0,0" />
-                                    </StackPanel>
-
-                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                <DockPanel LastChildFill="True">
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
                                         <ToggleButton Style="{StaticResource FluentToggleButtonStyle}"
                                                       IsChecked="{Binding AutoModeEnabled, Mode=OneWay}"
                                                       Command="{Binding ToggleAutoModeCommand}"
-                                                      Margin="0,0,8,0"
+                                                      Padding="11,6"
+                                                      Margin="0,0,6,0"
                                                       ToolTip="Автоматически проверить кандидатов, выбрать лучший рабочий узел и сразу переключить системный DNS (с автозаменой при сбое)">
                                             <StackPanel Orientation="Horizontal">
                                                 <Path Data="M 8,1 L 3,8.5 L 7.5,8.5 L 6.5,14 L 12.5,6.5 L 8,6.5 Z"
@@ -669,7 +667,8 @@
                                         <ToggleButton Style="{StaticResource FluentToggleButtonStyle}"
                                                       IsChecked="{Binding IsLiveRunning, Mode=OneWay}"
                                                       Command="{Binding ToggleLiveCommand}"
-                                                      Margin="0,0,8,0"
+                                                      Padding="11,6"
+                                                      Margin="0,0,6,0"
                                                       ToolTip="Автоматическая проверка топ-6 серверов каждые 3 сек">
                                             <StackPanel Orientation="Horizontal">
                                                 <Ellipse Width="7" Height="7" Fill="{DynamicResource StatusOkBrush}" Margin="0,0,7,0" VerticalAlignment="Center" />
@@ -679,14 +678,24 @@
 
                                         <Button Content="{Binding BenchmarkButtonText}"
                                                 Style="{StaticResource PrimaryButtonStyle}"
+                                                Padding="13,7"
                                                 Visibility="{Binding IsBenchmarkRunning, Converter={StaticResource InverseBoolToVis}}"
                                                 Command="{Binding BenchmarkVisibleCommand}"
                                                 ToolTip="Проверить абсолютно все DNS в открытой категории / фильтре" />
 
                                         <Button Content="Остановить тест"
                                                 Style="{StaticResource DangerButtonStyle}"
+                                                Padding="13,7"
                                                 Visibility="{Binding IsBenchmarkRunning, Converter={StaticResource BoolToVis}}"
                                                 Command="{Binding StopBenchmarkCommand}" />
+                                    </StackPanel>
+
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Диагностика и подбор" Style="{StaticResource PageTitleStyle}" />
+                                        <TextBlock Text="{Binding ModeExplanationText}"
+                                                   Style="{StaticResource CaptionMutedStyle}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,2,0,0" />
                                     </StackPanel>
                                 </DockPanel>
 
@@ -706,19 +715,20 @@
                             <Border Grid.Row="1" Style="{StaticResource SurfaceCardStyle}" Padding="16,14" Margin="0,0,0,12">
                                 <StackPanel>
                                     <!-- Tier 1: Target Service Group + Domain Input -->
-                                    <Grid Margin="0,0,0,10">
+                                    <Grid Margin="0,0,0,8">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
 
-                                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <TextBlock Text="Сервис:"
+                                        <DockPanel Grid.Column="0" LastChildFill="True" VerticalAlignment="Center" MaxWidth="360">
+                                            <TextBlock DockPanel.Dock="Left"
+                                                       Text="Сервис:"
                                                        FontSize="12.5"
                                                        FontWeight="SemiBold"
                                                        Foreground="{DynamicResource MutedTextBrush}"
                                                        VerticalAlignment="Center"
-                                                       Margin="0,0,10,0" />
+                                                       Margin="0,0,8,4" />
                                             <ItemsControl ItemsSource="{Binding PresetGroups}">
                                                 <ItemsControl.ItemsPanel>
                                                     <ItemsPanelTemplate>
@@ -728,7 +738,7 @@
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
                                                         <Button Content="{Binding Label}"
-                                                                Margin="0,0,6,0"
+                                                                Margin="0,0,6,4"
                                                                 Command="{Binding DataContext.SelectPresetGroupCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                 CommandParameter="{Binding Id}">
                                                             <Button.Style>
@@ -746,24 +756,27 @@
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
-                                        </StackPanel>
+                                        </DockPanel>
 
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
-                                            <CheckBox Content="Сплит-туннель (только ИИ/блокировки)"
+                                        <WrapPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="12,0,0,0">
+                                            <CheckBox Content="Сплит-туннель (только ИИ/обход)"
                                                       IsChecked="{Binding SplitTunnelEnabled}"
-                                                      Margin="0,0,12,0"
+                                                      Margin="0,2,12,2"
+                                                      VerticalAlignment="Center"
                                                       ToolTip="Направляет через Smart-DNS только заблокированные ИИ/сервисы, а обычный интернет (VK, банки, загрузки) пускает напрямую через 1.1.1.1" />
                                             <CheckBox Content="Обход 443"
                                                       IsChecked="{Binding RequiresBypass}"
-                                                      Margin="0,0,12,0"
+                                                      Margin="0,2,10,2"
+                                                      VerticalAlignment="Center"
                                                       ToolTip="Включить 4-этапный Anti-Direct-IP + TLS 443 фильтр" />
                                             <TextBox Text="{Binding TargetDomain, UpdateSourceTrigger=PropertyChanged}"
-                                                     MinWidth="210"
-                                                     MaxWidth="260"
+                                                     MinWidth="175"
+                                                     MaxWidth="220"
+                                                     Margin="0,2,0,2"
                                                      FontFamily="JetBrains Mono, Cascadia Mono, Consolas"
                                                      FontSize="12.5"
                                                      Tag="gemini.google.com" />
-                                        </StackPanel>
+                                        </WrapPanel>
                                     </Grid>
 
                                     <!-- Quick Presets WrapPanel -->
@@ -1079,30 +1092,34 @@
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
 
-                            <DockPanel Grid.Row="0" LastChildFill="False" Margin="0,0,0,14">
-                                <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
-                                    <TextBlock Text="Каталог серверов" Style="{StaticResource PageTitleStyle}" />
-                                    <TextBlock Text="{Binding VisibleSummaryText}"
-                                               Style="{StaticResource CaptionMutedStyle}"
-                                               Margin="0,2,0,0" />
-                                </StackPanel>
-                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                            <DockPanel Grid.Row="0" LastChildFill="True" Margin="0,0,0,14">
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
                                     <Button Content="{Binding BenchmarkButtonText}"
                                             Style="{StaticResource AccentButtonStyle}"
-                                            Margin="0,0,8,0"
+                                            Padding="13,7"
+                                            Margin="0,0,6,0"
                                             Visibility="{Binding IsBenchmarkRunning, Converter={StaticResource InverseBoolToVis}}"
                                             Command="{Binding BenchmarkVisibleCommand}"
                                             ToolTip="Проверить все DNS, показанные в текущем разделе/фильтре" />
                                     <Button Content="Остановить тест"
                                             Style="{StaticResource DangerButtonStyle}"
-                                            Margin="0,0,8,0"
+                                            Padding="13,7"
+                                            Margin="0,0,6,0"
                                             Visibility="{Binding IsBenchmarkRunning, Converter={StaticResource BoolToVis}}"
                                             Command="{Binding StopBenchmarkCommand}" />
                                     <Button Content="+ Добавить свой DNS"
                                             Style="{StaticResource PrimaryButtonStyle}"
-                                            Margin="0,0,8,0"
+                                            Padding="13,7"
+                                            Margin="0,0,6,0"
                                             Click="OnOpenManualAddClick" />
-                                    <Button Content="Параметры сети Windows" Click="OnOpenWinSettingsClick" />
+                                    <Button Content="Параметры сети Windows" Padding="12,7" Click="OnOpenWinSettingsClick" />
+                                </StackPanel>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Каталог серверов" Style="{StaticResource PageTitleStyle}" />
+                                    <TextBlock Text="{Binding VisibleSummaryText}"
+                                               Style="{StaticResource CaptionMutedStyle}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,2,0,0" />
                                 </StackPanel>
                             </DockPanel>
 
@@ -1196,15 +1213,15 @@
 
                     <!-- SHARED RIGHT INSPECTOR DRAWER (Tester + Catalog) -->
                     <Border Grid.Column="1"
-                            Width="352"
-                            Margin="16,0,0,0"
-                            Padding="18"
+                            Width="332"
+                            Margin="14,0,0,0"
+                            Padding="16"
                             Style="{StaticResource ElevatedCardStyle}"
                             Visibility="{Binding IsInspectorOpen, Converter={StaticResource BoolToVis}}">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <StackPanel DataContext="{Binding SelectedServer}">
                                 <DockPanel LastChildFill="False" Margin="0,0,0,8">
-                                    <StackPanel DockPanel.Dock="Left" MaxWidth="264">
+                                    <StackPanel DockPanel.Dock="Left" MaxWidth="248">
                                         <TextBlock Text="{Binding Name}"
                                                    FontSize="16"
                                                    FontWeight="SemiBold"
@@ -1378,16 +1395,17 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <DockPanel Grid.Row="0" LastChildFill="False" Margin="0,0,0,14">
-                        <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
+                    <DockPanel Grid.Row="0" LastChildFill="True" Margin="0,0,0,14">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                            <Button Content="Загрузить файл" Margin="0,0,8,0" Click="OnLoadConfigFileClick" />
+                            <Button Content="+ Добавить вручную" Style="{StaticResource PrimaryButtonStyle}" Click="OnOpenManualAddClick" />
+                        </StackPanel>
+                        <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Конфиги и управление базой" Style="{StaticResource PageTitleStyle}" />
                             <TextBlock Text="Пакетный импорт DoH, DoT, UDP, SNI-Proxy 443, JSON и CSV с резервным JSON-сейфом"
                                        Style="{StaticResource CaptionMutedStyle}"
+                                       TextWrapping="Wrap"
                                        Margin="0,2,0,0" />
-                        </StackPanel>
-                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Button Content="Загрузить файл" Margin="0,0,8,0" Click="OnLoadConfigFileClick" />
-                            <Button Content="+ Добавить вручную" Style="{StaticResource PrimaryButtonStyle}" Click="OnOpenManualAddClick" />
                         </StackPanel>
                     </DockPanel>
 
@@ -1504,20 +1522,21 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <DockPanel Grid.Row="0" LastChildFill="False" Margin="0,0,0,14">
-                        <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
-                            <TextBlock Text="Настройки и кастомизация" Style="{StaticResource PageTitleStyle}" />
-                            <TextBlock Text="Обновления с GitHub, надёжный автозапуск Windows, поведение трея, авторежим и параметры туннеля"
-                                       Style="{StaticResource CaptionMutedStyle}"
-                                       Margin="0,2,0,0" />
-                        </StackPanel>
-                        <Border DockPanel.Dock="Right" Style="{StaticResource BadgePillStyle}" Padding="10,4" VerticalAlignment="Center">
+                    <DockPanel Grid.Row="0" LastChildFill="True" Margin="0,0,0,14">
+                        <Border DockPanel.Dock="Right" Style="{StaticResource BadgePillStyle}" Padding="10,4" VerticalAlignment="Center" Margin="14,0,0,0">
                             <TextBlock Text="{Binding CurrentVersionText, StringFormat='DNS Pulse {0}'}"
                                        FontFamily="JetBrains Mono, Cascadia Mono, Consolas"
                                        FontSize="11.5"
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource SecondaryTextBrush}" />
                         </Border>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Настройки и кастомизация" Style="{StaticResource PageTitleStyle}" />
+                            <TextBlock Text="Обновления с GitHub, надёжный автозапуск Windows, поведение трея, авторежим и параметры туннеля"
+                                       Style="{StaticResource CaptionMutedStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,2,0,0" />
+                        </StackPanel>
                     </DockPanel>
 
                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
