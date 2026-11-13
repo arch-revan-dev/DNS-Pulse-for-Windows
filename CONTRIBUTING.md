@@ -4,8 +4,8 @@
 
 ## Среда разработки
 
-- **Windows WPF клиент (`windows-wpf/`):** .NET 8 SDK (`net8.0-windows`), C# 12 с `Nullable` и `ImplicitUsings`, `CommunityToolkit.Mvvm`, `Microsoft.Data.Sqlite`.
-- **Web Studio (`src/`, `server/`):** Node.js 22+, TypeScript, React 19, Vite 8, Express.
+- **PulseCore & Windows Desktop / Service (`src/`, `tests/`, `DnsPulse.sln`):** .NET 9 SDK (`net9.0` для `DnsPulse.Core` и `DnsPulse.Engine`; `net9.0-windows10.0.19041.0` для `DnsPulse.Platform.Windows`, `DnsPulse.Service` и `DnsPulse.App`), C# 13 (`LangVersion=latest`) с `Nullable`, `ImplicitUsings`, `TreatWarningsAsErrors=true`, `AnalysisLevel=latest-all`, `WPF-UI` 4.3, `CommunityToolkit.Mvvm`, `Microsoft.Data.Sqlite`, `Serilog`.
+- **Web Studio (`tools/web-studio/`, опционально):** Node.js 22+, TypeScript, React 19, Vite 8, Express.
 
 ## Процесс работы с ветками и коммитами
 
@@ -23,19 +23,22 @@
 ## Требования к качеству и безопасности
 
 - **Никаких секретов и личных токенов:** категорически запрещено добавлять в каталог серверов, тесты или примеры персональные DoH/NextDNS/ControlD URL-токены, API-ключи или пароли.
-- **Минимальные привилегии:** не повышайте `requestedExecutionLevel` в [`app.manifest`](windows-wpf/DnsPulse.App/app.manifest) выше `asInvoker` — запрос UAC должен выполняться точечно только при изменении системного DNS/NRPT.
+- **Минимальные привилегии:** не повышайте `requestedExecutionLevel` в [`app.manifest`](src/DnsPulse.App/app.manifest) выше `asInvoker` — привилегированный системный перехват выполняется через службу Windows `DnsPulseService` / точечный UAC-запрос, а unprivileged-режим использует локальный `LocalProxyPacOnly`.
 - **Сетевая устойчивость:** внешний сетевой код должен учитывать таймауты, отмену через `CancellationToken` и корректно откатывать временное состояние при сбое.
 - **Без мусорных файлов:** не коммитьте локальные `.db`, `.log`, `artifacts/`, `bin/`, `obj/`, `__pycache__/`.
 
 ## Обязательные проверки перед Pull Request
 
-### Если менялся код Windows WPF (`.cs`, `.xaml`, `.csproj`)
+### Если менялся код .NET 9 (`.cs`, `.xaml`, `.csproj`, `.props`)
 ```powershell
-dotnet test windows-wpf/DnsPulse.sln --configuration Release --verbosity normal
+dotnet build DnsPulse.sln -c Release
+dotnet test DnsPulse.sln -c Release --no-build --verbosity normal
+dotnet format DnsPulse.sln --verify-no-changes
 ```
 
-### Если менялся код Web Studio / общего ядра (`.ts`, `.tsx`, `.json`)
+### Если менялся код Web Studio (`tools/web-studio/`)
 ```bash
+cd tools/web-studio
 npm test
 npm run lint
 npm run build

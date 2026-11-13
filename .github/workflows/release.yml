@@ -1,4 +1,4 @@
-name: Build & Release DNS Pulse (Windows x64)
+name: Build & Release DNS Pulse (win-x64 & win-arm64)
 
 on:
   push:
@@ -7,90 +7,114 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Тег релиза (например v1.0.0). Оставьте пустым только для сборки артефактов.'
+        description: 'Release tag (e.g. v2.0.0). Leave empty for dry-run artifact build.'
         required: false
         default: ''
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  verify-core-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js 22
-        if: hashFiles('package.json') != ''
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Install Node dependencies
-        if: hashFiles('package.json') != ''
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install --no-audit --no-fund
-          fi
-
-      - name: Run core unit tests, lint, and build
-        if: hashFiles('package.json') != ''
-        run: |
-          npx tsx --test src/core/dnsEngine.test.ts
-          npm run lint
-          npm run build
-
-      - name: Skip notice for standalone Windows WPF repository
-        if: hashFiles('package.json') == ''
-        run: echo "Standalone Windows WPF repository detected (no package.json); proceeding directly to Windows build."
-
-  build-and-release-windows:
-    needs: verify-core-tests
+  verify-pulsecore:
+    name: Verify PulseCore .NET 9 Suite
     runs-on: windows-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup .NET 8 SDK
+      - name: Setup .NET 9 SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '9.0.x'
 
       - name: Restore dependencies
-        run: dotnet restore windows-wpf/DnsPulse.sln
+        run: dotnet restore DnsPulse.sln
+
+      - name: Verify formatting
+        run: dotnet format DnsPulse.sln --verify-no-changes --no-restore
 
       - name: Run xUnit test suite
-        run: dotnet test windows-wpf/DnsPulse.sln --configuration Release --no-restore --verbosity normal
+        run: dotnet test DnsPulse.sln --configuration Release --no-restore --verbosity normal
 
-      - name: Publish self-contained Windows x64 single-file executable
+  build-and-package:
+    name: Build & Package (${{ matrix.rid }})
+    needs: verify-pulsecore
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [ win-x64, win-arm64 ]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Resolve release version
+        id: version
         shell: pwsh
         run: |
-          dotnet publish windows-wpf/DnsPulse.App/DnsPulse.App.csproj `
+          $rawTag = "${{ inputs.release_tag }}"
+          if ([string]::IsNullOrWhiteSpace($rawTag) -and "${{ github.ref_name }}".StartsWith("v")) {
+            $rawTag = "${{ github.ref_name }}"
+          }
+          $appVersion = if ([string]::IsNullOrWhiteSpace($rawTag)) { "2.0.0" } else { $rawTag.TrimStart('v') }
+          "app_version=$appVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Publish deterministic single-file binaries (${{ matrix.rid }})
+        shell: pwsh
+        run: |
+          $outDir = "artifacts/${{ matrix.rid }}"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+          dotnet publish src/DnsPulse.App/DnsPulse.App.csproj `
             -c Release `
-            -r win-x64 `
+            -r ${{ matrix.rid }} `
             --self-contained true `
             -p:PublishSingleFile=true `
             -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:EnableCompressionInSingleFile=true `
-            -o artifacts/win-x64
+            -p:ContinuousIntegrationBuild=true `
+            -p:Deterministic=true `
+            -p:Version=${{ steps.version.outputs.app_version }} `
+            -o $outDir
 
-      - name: Copy assets & license into portable folder
+          dotnet publish src/DnsPulse.Service/DnsPulse.Service.csproj `
+            -c Release `
+            -r ${{ matrix.rid }} `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:ContinuousIntegrationBuild=true `
+            -p:Deterministic=true `
+            -p:Version=${{ steps.version.outputs.app_version }} `
+            -o $outDir
+
+      - name: Copy catalog assets, license & READMEs
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path artifacts/win-x64/assets | Out-Null
-          if (Test-Path assets/dns_catalog_1000.tsv) { Copy-Item assets/dns_catalog_1000.tsv artifacts/win-x64/assets/dns_catalog_1000.tsv -Force }
-          if (Test-Path LICENSE) { Copy-Item LICENSE artifacts/win-x64/LICENSE.txt -Force }
-          if (Test-Path README.md) { Copy-Item README.md artifacts/win-x64/README.md -Force }
+          $outDir = "artifacts/${{ matrix.rid }}"
+          New-Item -ItemType Directory -Force -Path "$outDir/assets" | Out-Null
+          if (Test-Path assets/dns_catalog_1000.tsv) {
+            Copy-Item assets/dns_catalog_1000.tsv "$outDir/assets/dns_catalog_1000.tsv" -Force
+          }
+          if (Test-Path LICENSE) { Copy-Item LICENSE "$outDir/LICENSE.txt" -Force }
+          if (Test-Path README.md) { Copy-Item README.md "$outDir/README.md" -Force }
+          if (Test-Path README.ru.md) { Copy-Item README.ru.md "$outDir/README.ru.md" -Force }
 
-      - name: Package portable ZIP
+      - name: Package Portable ZIP (${{ matrix.rid }})
         shell: pwsh
         run: |
-          Compress-Archive -Path artifacts/win-x64/* -DestinationPath artifacts/DNS-Pulse-win-x64-portable.zip -Force
+          Compress-Archive `
+            -Path "artifacts/${{ matrix.rid }}/*" `
+            -DestinationPath "artifacts/DNS-Pulse-${{ matrix.rid }}-portable.zip" `
+            -Force
 
-      - name: Build Windows Installer (Inno Setup)
+      - name: Build Inno Setup Installer (${{ matrix.rid }})
         shell: pwsh
         run: |
           $innoPath = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
@@ -102,36 +126,82 @@ jobs:
               choco install innosetup -y --no-progress
             }
           }
+          $isccArgs = @(
+            "/DArch=${{ matrix.rid }}",
+            "/DAppVersion=${{ steps.version.outputs.app_version }}",
+            "installer\DnsPulse.iss"
+          )
           if (Test-Path $innoPath) {
-            & $innoPath "windows-wpf\installer\DnsPulse.iss"
+            & $innoPath @isccArgs
           } else {
-            iscc.exe "windows-wpf\installer\DnsPulse.iss"
+            iscc.exe @isccArgs
           }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Generate SHA256 checksums
+      - name: Generate CycloneDX SBOM (${{ matrix.rid }})
         shell: pwsh
         run: |
-          $files = @(
-            "artifacts/win-x64/DnsPulse.exe",
-            "artifacts/DNS-Pulse-win-x64-portable.zip",
-            "artifacts/DNS-Pulse-win-x64-setup.exe"
-          ) | Where-Object { Test-Path $_ }
-          $lines = foreach ($f in $files) {
-            $hash = (Get-FileHash -Algorithm SHA256 $f).Hash.ToLowerInvariant()
-            $name = Split-Path -Leaf $f
-            "$hash  $name"
-          }
-          $lines | Out-File -FilePath artifacts/SHA256SUMS.txt -Encoding ascii
+          dotnet tool install --global CycloneDX
+          dotnet CycloneDX DnsPulse.sln `
+            --json `
+            --output artifacts `
+            --filename "sbom-${{ matrix.rid }}.cdx.json" `
+            --exclude-dev
 
-      - name: Upload build artifacts
+      - name: Stage release files (${{ matrix.rid }})
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path staged | Out-Null
+          Copy-Item "artifacts/DNS-Pulse-${{ matrix.rid }}-portable.zip" "staged/" -Force
+          Copy-Item "artifacts/DNS-Pulse-${{ matrix.rid }}-setup.exe" "staged/" -Force
+          Copy-Item "artifacts/sbom-${{ matrix.rid }}.cdx.json" "staged/" -Force
+
+      - name: Upload staged artifacts (${{ matrix.rid }})
         uses: actions/upload-artifact@v4
         with:
-          name: DNS-Pulse-win-x64
-          path: |
-            artifacts/win-x64/DnsPulse.exe
-            artifacts/DNS-Pulse-win-x64-portable.zip
-            artifacts/DNS-Pulse-win-x64-setup.exe
-            artifacts/SHA256SUMS.txt
+          name: release-${{ matrix.rid }}
+          path: staged/*
+          retention-days: 14
+
+  attest-and-release:
+    name: Attest Provenance & Publish Release
+    needs: build-and-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download staged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS.txt
+        working-directory: release-assets
+        run: |
+          sha256sum DNS-Pulse-*.zip DNS-Pulse-*.exe sbom-*.cdx.json > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Generate GitHub Build Provenance Attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            release-assets/DNS-Pulse-*.zip
+            release-assets/DNS-Pulse-*.exe
+            release-assets/sbom-*.cdx.json
+
+      - name: Upload combined release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: DNS-Pulse-release-bundle
+          path: release-assets/*
+          retention-days: 14
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
@@ -140,9 +210,12 @@ jobs:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
           name: DNS Pulse ${{ inputs.release_tag || github.ref_name }}
           files: |
-            artifacts/win-x64/DnsPulse.exe
-            artifacts/DNS-Pulse-win-x64-portable.zip
-            artifacts/DNS-Pulse-win-x64-setup.exe
-            artifacts/SHA256SUMS.txt
+            release-assets/DNS-Pulse-win-x64-portable.zip
+            release-assets/DNS-Pulse-win-x64-setup.exe
+            release-assets/DNS-Pulse-win-arm64-portable.zip
+            release-assets/DNS-Pulse-win-arm64-setup.exe
+            release-assets/sbom-win-x64.cdx.json
+            release-assets/sbom-win-arm64.cdx.json
+            release-assets/SHA256SUMS.txt
           body_path: CHANGELOG.md
           generate_release_notes: true

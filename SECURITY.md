@@ -1,31 +1,61 @@
-# Политика безопасности (Security Policy)
+# Security Policy
 
-## Поддерживаемые версии
+## Supported Versions
 
-Обновления безопасности и исправления критических ошибок выпускаются для актуальной ветки:
+Security fixes and integrity patches are actively maintained for the current major release branch:
 
-| Версия | Статус поддержки |
+| Version | Status |
 | --- | --- |
-| `1.5.x` | ✅ Поддерживается |
-| `< 1.5.0` | ❌ Не поддерживается (обновитесь до актуального релиза) |
+| `2.0.x` (PulseCore) | Supported |
+| `1.5.x` (Legacy WPF) | Security fixes only (upgrade to `2.0.x` recommended) |
+| `< 1.5.0` | End of life (unsupported) |
 
-## Модель безопасности DNS Pulse
+---
 
-1. **Принцип минимальных привилегий:** приложение запускается с правами обычного пользователя (`asInvoker` в `app.manifest`). Повышение прав (UAC) запрашивается только при применении системного DNS или правил NRPT Windows.
-2. **Обратимость сетевых изменений:** перед изменением DNS на сетевых адаптерах сохраняется снимок исходных параметров (`restore_network_state.json`) для гарантированного отката.
-3. **Проверка целостности обновлений:** встроенный апдейтер (`AppUpdateService`) сверяет контрольную сумму загруженного установщика или исполняемого файла по `SHA-256` из файла релиза `SHA256SUMS.txt` перед запуском.
-4. **Нулевая телеметрия:** DNS Pulse не отправляет аналитику, статистику использования или пользовательские настройки на сторонние серверы.
-5. **Локальное хранение данных:** каталог, кеш замеров и опциональный read-only GitHub Token хранятся исключительно локально на машине пользователя.
+## PulseCore Security Boundaries & Invariants
 
-## Сообщение об уязвимостях
+DNS Pulse v2.0 (**PulseCore**) enforces defense-in-depth across network parsing, IPC privilege separation, cryptography, and Windows state recovery:
 
-Если вы обнаружили уязвимость (например, обход проверки подписи/хеша обновлений, ошибку эскалации привилегий, инъекцию в командную строку установщика/реестра или утечку DNS-запросов):
+1. **Privilege Separation & Named Pipe ACLs (`DnsPulse.App` ↔ `DnsPulse.Service`):**
+   - The desktop UI (`DnsPulse.App`) runs strictly unprivileged (`requestedExecutionLevel level="asInvoker"`).
+   - Privileged DNS/NRPT/firewall changes are isolated inside `DnsPulseService` (`DnsPulse.Service.exe`) behind `\\.\pipe\DnsPulse.Control.v1`.
+   - `PipeSecurityBuilder` strips inherited permissions and grants `FullControl` **only** to `LocalSystemSid`, `BuiltinAdministratorsSid`, and the specific interactive user SID—explicitly rejecting `WorldSid` (Everyone), `AnonymousSid`, and `BuiltinGuestsSid`.
+   - `PulsePipeIpcServer` enforces 4-byte little-endian length-prefixed framing capped at **1 MiB** and validates every command against the canonical `PipeCommandNames` allowlist.
 
-1. **Пожалуйста, не создавайте публичный GitHub Issue** с деталями эксплуатации.
-2. Используйте вкладку **Security → Advisories → Report a vulnerability** в репозитории GitHub или отправьте письмо с темой `[SECURITY] DNS Pulse` на адрес `arch.revan.dev@gmail.com`.
-3. В отчёте желательно указать:
-   - Версию приложения и ОС Windows (`winver`)
-   - Шаги для воспроизведения или Proof-of-Concept
-   - Оценку потенциального влияния и рекомендации по исправлению (если есть)
+2. **Zero-Trust Zone 4 Invariant:**
+   - `TrustTierPolicy.CanServeDefaultInternet` strictly blocks `Tier4ExperimentalLab` servers, plaintext `UDP`/`TCP` resolvers, and `SniProxy` nodes from serving Zone 4 default internet traffic or security-pinned domains (`ocsp.*`, `crl.*`, OS updates, banking, CAs, authentication).
 
-Первичное подтверждение получения отчёта — в течение **72 часов**.
+3. **Fail-Closed TLS Verification & Pinning:**
+   - `DotDnsClient`, `DohDnsClient`, `DoqDnsClient`, and `SixLayerDiagnosticEngine` validate OS-trusted X.509 certificate chains and Subject Alternative Names (SANs) with `TargetHost` enforcement (`TlsMitmRejected` on mismatch/untrusted chain), plus optional `SpkiPinSha256` pinning.
+
+4. **Ed25519 Manifest, Update, and Feed Signing:**
+   - `Ed25519Verifier` implements RFC 8032 signature verification with canonical point (`y < p`, curve check, small-order key rejection) and canonical scalar (`s < L`) checks.
+   - `VerifiedAppUpdateService` verifies `SHA-256` (`CryptographicOperations.FixedTimeEquals`) against `SHA256SUMS.txt` plus optional detached Ed25519 signatures and Authenticode before staging updates.
+   - `SignedFeedSyncService` supports `FeedVerificationMode.RequireSigned` for external feeds and enforces `IpSafetyInspector.IsPublicRoutable` SSRF guards.
+
+5. **DNS Rebinding & SSRF Protections:**
+   - `IpSafetyInspector` (including IPv4-mapped IPv6 unwrapping) and `DnsRebindingValidator` reject loopback, RFC 1918, ULA, CGNAT, link-local, and multicast answers for public domains.
+   - `TlsFragmentationProxyServer` enforces `BlockPrivateDestinationIps` to prevent SSRF via PAC/HTTP/SOCKS5 proxy requests.
+
+6. **Crash-Safe Recovery & Dead-Man's Switch:**
+   - `NetworkSnapshotJournal` persists checksummed pre-Pulse adapter/NRPT/SMHNR state atomically before any network mutation.
+   - `DnsPulseWorkerService` polls listener health every 2 seconds and executes `EmergencyRestoreAsync` automatically after 10 seconds of continuous failure, or on `DnsPulse.exe --restore-network` / uninstaller rollback.
+
+7. **Zero Telemetry & Redacted Diagnostics:**
+   - Zero DNS query disk logging by default (`ZeroDiskQueryLogging = true`).
+   - `DiagnosticBundleExporter` scrubs Bearer/GitHub tokens, `Authorization` headers, and user profile paths, and omits query telemetry unless explicitly opted in.
+
+---
+
+## Reporting a Vulnerability
+
+If you discover a security vulnerability (such as a Named Pipe ACL bypass, Ed25519/SHA-256 verification bypass, DNS rebinding/SSRF bypass, or privilege escalation):
+
+1. **Please do not open a public GitHub Issue** with exploit details.
+2. Report privately via **GitHub Security → Advisories → Report a vulnerability** or email `arch.revan.dev@gmail.com` with subject `[SECURITY] DNS Pulse`.
+3. Include:
+   - Application version and Windows build (`winver`)
+   - Reproduction steps or Proof-of-Concept
+   - Impact assessment and suggested remediation (if known)
+
+Initial acknowledgment is provided within **72 hours**.

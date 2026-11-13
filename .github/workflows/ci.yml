@@ -1,4 +1,4 @@
-name: CI (Web & Windows .NET 8)
+name: CI (PulseCore .NET 9 & Web Studio)
 
 on:
   push:
@@ -6,21 +6,71 @@ on:
   pull_request:
     branches: [ main, master ]
 
+permissions:
+  contents: read
+
 jobs:
-  web-and-core-tests:
+  pulsecore-dotnet:
+    name: PulseCore .NET 9 (Build, Format, Test & ARM64 Check)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore NuGet dependencies
+        run: dotnet restore DnsPulse.sln
+
+      - name: Verify formatting (dotnet format)
+        run: dotnet format DnsPulse.sln --verify-no-changes --no-restore
+
+      - name: Build solution (Release, warnings as errors)
+        run: dotnet build DnsPulse.sln --configuration Release --no-restore
+
+      - name: Run xUnit test suite with code coverage
+        run: >
+          dotnet test DnsPulse.sln
+          --configuration Release
+          --no-build
+          --verbosity normal
+          --collect:"XPlat Code Coverage"
+          --results-directory TestResults
+
+      - name: Upload test coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulsecore-coverage
+          path: TestResults/**/coverage.cobertura.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Verify win-arm64 compilation (App & Service)
+        run: |
+          dotnet build src/DnsPulse.App/DnsPulse.App.csproj --configuration Release -r win-arm64 --self-contained false
+          dotnet build src/DnsPulse.Service/DnsPulse.Service.csproj --configuration Release -r win-arm64 --self-contained false
+
+  web-studio:
+    name: Companion Web Studio (tools/web-studio)
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js 22
-        if: hashFiles('package.json') != ''
+        if: hashFiles('tools/web-studio/package.json') != ''
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Install Node dependencies
-        if: hashFiles('package.json') != ''
+      - name: Install dependencies
+        if: hashFiles('tools/web-studio/package.json') != ''
+        working-directory: tools/web-studio
         run: |
           if [ -f package-lock.json ]; then
             npm ci
@@ -28,32 +78,17 @@ jobs:
             npm install --no-audit --no-fund
           fi
 
-      - name: Run core unit tests
-        if: hashFiles('package.json') != ''
-        run: npx tsx --test src/core/dnsEngine.test.ts
+      - name: Run Web Studio unit tests
+        if: hashFiles('tools/web-studio/package.json') != ''
+        working-directory: tools/web-studio
+        run: npm test
 
       - name: TypeScript typecheck
-        if: hashFiles('package.json') != ''
+        if: hashFiles('tools/web-studio/package.json') != ''
+        working-directory: tools/web-studio
         run: npm run lint
 
       - name: Production Vite build
-        if: hashFiles('package.json') != ''
+        if: hashFiles('tools/web-studio/package.json') != ''
+        working-directory: tools/web-studio
         run: npm run build
-
-      - name: Skip notice for standalone Windows WPF repository
-        if: hashFiles('package.json') == ''
-        run: echo "Standalone Windows WPF repository detected (no package.json); skipping Web Studio checks."
-
-  windows-wpf-tests:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup .NET 8 SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
-
-      - name: Restore & run xUnit tests
-        run: dotnet test windows-wpf/DnsPulse.sln --configuration Release --verbosity normal

@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+
+PackageIdentifier: arch-revan-dev.DnsPulse
+PackageVersion: 2.0.0
+PackageLocale: en-US
+Publisher: DNS Pulse Open Source Contributors
+PublisherUrl: https://github.com/arch-revan-dev/DNS-Pulse-for-Windows
+PublisherSupportUrl: https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/issues
+Author: reVan
+PackageName: DNS Pulse
+PackageUrl: https://github.com/arch-revan-dev/DNS-Pulse-for-Windows
+License: MIT
+LicenseUrl: https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/blob/main/LICENSE
+ShortDescription: Encrypted DNS router, 6-layer availability doctor, 4-zone split-namespace engine, and driverless TLS-split PAC sidecar for Windows 10/11.
+Description: >-
+  DNS Pulse v2.0 (PulseCore) is an open-source Windows 10/11 encrypted DNS router and diagnostic suite.
+  It supports DoH, DoH3, DoT, DoQ, DNSCrypt v2, ODoH, and SNI-Proxy nodes with 4-zone split-namespace routing,
+  6-layer end-to-end availability diagnostics, a driverless TLS ClientHello SNI-split PAC sidecar,
+  crash-safe atomic network rollback, and zero telemetry.
+Moniker: dnspulse
+Tags:
+  - dns
+  - doh
+  - dot
+  - doq
+  - dnscrypt
+  - privacy
+  - networking
+  - diagnostics
+ReleaseNotesUrl: https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/tag/v2.0.0
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

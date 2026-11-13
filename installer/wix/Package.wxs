@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <?ifndef AppVersion?>
+    <?define AppVersion = "2.0.0.0" ?>
+  <?endif?>
+  <?ifndef PublishDir?>
+    <?define PublishDir = "..\..\artifacts\win-x64" ?>
+  <?endif?>
+
+  <Package Name="DNS Pulse"
+           Manufacturer="DNS Pulse Open Source Contributors"
+           Version="$(var.AppVersion)"
+           UpgradeCode="8D6B5F2E-7C41-4A19-9E5A-6E1F2A8D4C90"
+           Scope="perMachine">
+
+    <SummaryInformation Description="DNS Pulse v2.0 (PulseCore) — Encrypted DNS Router, 6-Layer Diagnostics &amp; TLS-Split Sidecar"
+                        Manufacturer="DNS Pulse Open Source Contributors" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed."
+                  Schedule="afterInstallInitialize" />
+
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="AppIcon.ico" SourceFile="..\..\src\DnsPulse.App\Assets\app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/arch-revan-dev/DNS-Pulse-for-Windows" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="DNS Pulse">
+        <Directory Id="ASSETSFOLDER" Name="assets" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="DNS Pulse" />
+    </StandardDirectory>
+
+    <!-- Main Desktop Application & Emergency Restore -->
+    <ComponentGroup Id="AppComponents" Directory="INSTALLFOLDER">
+      <Component Id="DnsPulseExeComponent" Guid="*">
+        <File Id="DnsPulseExe"
+              Source="$(var.PublishDir)\DnsPulse.exe"
+              KeyPath="yes" />
+      </Component>
+
+      <Component Id="CatalogAssetComponent" Directory="ASSETSFOLDER" Guid="*">
+        <File Id="CatalogTsv"
+              Source="$(var.PublishDir)\assets\dns_catalog_1000.tsv"
+              KeyPath="yes" />
+      </Component>
+
+      <Component Id="StartMenuShortcutsComponent" Directory="ApplicationProgramsFolder" Guid="*">
+        <Shortcut Id="ApplicationStartMenuShortcut"
+                  Name="DNS Pulse"
+                  Description="Launch DNS Pulse"
+                  Target="[INSTALLFOLDER]DnsPulse.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="AppIcon.ico" />
+        <Shortcut Id="EmergencyRestoreShortcut"
+                  Name="Emergency Network Restore"
+                  Description="Restore original Windows DNS, NRPT, SMHNR, and WinINet PAC settings"
+                  Target="[INSTALLFOLDER]DnsPulse.exe"
+                  Arguments="--restore-network"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="AppIcon.ico" />
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\DNS Pulse\Shortcuts"
+                       Name="installed"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Windows Background Service (PulseCore Service + Dead-Man's Switch) -->
+    <ComponentGroup Id="ServiceComponents" Directory="INSTALLFOLDER">
+      <Component Id="DnsPulseServiceComponent" Guid="*">
+        <File Id="DnsPulseServiceExe"
+              Source="$(var.PublishDir)\DnsPulse.Service.exe"
+              KeyPath="yes" />
+
+        <ServiceInstall Id="DnsPulseServiceInstall"
+                        Name="DnsPulseService"
+                        DisplayName="DNS Pulse Core Service"
+                        Description="PulseCore local encrypted DNS router, TLS-split sidecar, and Dead-Man's Switch recovery service."
+                        Type="ownProcess"
+                        Start="auto"
+                        ErrorControl="normal"
+                        Account="LocalSystem" />
+
+        <ServiceControl Id="DnsPulseServiceControl"
+                        Name="DnsPulseService"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Guaranteed Network Rollback BEFORE Files Are Removed on Uninstall -->
+    <CustomAction Id="RestoreNetworkOnUninstall"
+                  FileRef="DnsPulseExe"
+                  ExeCommand="--restore-network"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="RestoreNetworkOnUninstall"
+              Before="RemoveFiles"
+              Condition="Installed AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+
+    <Feature Id="MainFeature" Title="DNS Pulse Desktop Application" Level="1">
+      <ComponentGroupRef Id="AppComponents" />
+    </Feature>
+
+    <Feature Id="ServiceFeature" Title="DNS Pulse Core Windows Service" Level="1">
+      <ComponentGroupRef Id="ServiceComponents" />
+    </Feature>
+  </Package>
+</Wix>

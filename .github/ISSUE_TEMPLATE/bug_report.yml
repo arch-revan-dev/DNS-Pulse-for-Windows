@@ -11,8 +11,8 @@ body:
     id: version
     attributes:
       label: Версия DNS Pulse
-      description: Указана в заголовке/настройках приложения (например, v1.5.2)
-      placeholder: "v1.5.3"
+      description: Указана в заголовке/настройках приложения (например, v2.0.0)
+      placeholder: "v2.0.0"
     validations:
       required: true
   - type: dropdown
@@ -20,9 +20,9 @@ body:
     attributes:
       label: Операционная система / среда
       options:
-        - Windows 11 (x64)
-        - Windows 10 (x64)
-        - Web Studio (Node / Browser)
+        - Windows 11 (x64 / ARM64)
+        - Windows 10 19041+ (x64)
+        - Web Studio (`tools/web-studio/`)
     validations:
       required: true
   - type: dropdown
@@ -30,18 +30,18 @@ body:
     attributes:
       label: Способ запуска
       options:
-        - Установленная версия (Setup .exe)
+        - Установленная версия (MSI / Setup + Windows Service DnsPulseService)
         - Портативная версия (Portable ZIP / DnsPulse.exe)
-        - Сборка из исходников (dotnet run / Visual Studio)
+        - Сборка из исходников (dotnet run / .NET 9 SDK)
     validations:
       required: true
   - type: dropdown
     id: admin_rights
     attributes:
-      label: Права администратора для туннеля 127.0.0.1:53
+      label: Режим перехвата и права (DnsPulseService / UAC)
       options:
-        - Да (запущен с UAC / туннель включён)
-        - Нет (обычный пользователь, только тестирование)
+        - Служба Windows (DnsPulseService) / права администратора (AdapterDns / SplitNrpt)
+        - Обычный пользователь (Portable LocalProxyPacOnly / asInvoker)
         - Не уверен(а)
     validations:
       required: true

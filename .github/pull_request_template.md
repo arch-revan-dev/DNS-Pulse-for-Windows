@@ -12,7 +12,9 @@
 
 ## Проверка перед отправкой
 
-- [ ] Пройдены тесты `.NET` (`dotnet test windows-wpf/DnsPulse.sln --configuration Release`)
-- [ ] Пройдены тесты/сборка Web Studio (`npm test && npm run lint && npm run build`), если затрагивались `src/` или `server/`
+- [ ] Сборка `.NET 9` проходит без предупреждений и ошибок (`dotnet build DnsPulse.sln -c Release`)
+- [ ] Пройдены тесты `.NET 9` (`dotnet test DnsPulse.sln -c Release --no-build`)
+- [ ] Проверка форматирования пройдена (`dotnet format DnsPulse.sln --verify-no-changes`)
+- [ ] Пройдены тесты/сборка Web Studio (`cd tools/web-studio && npm test && npm run lint && npm run build`), если затрагивалась директория `tools/web-studio/`
 - [ ] В коде, тестах и данных **нет** личных токенов, паролей и тестовых баз (`.db`)
 - [ ] При изменении публичного поведения обновлён `CHANGELOG.md` или `README.md`
