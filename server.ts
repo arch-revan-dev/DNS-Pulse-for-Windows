@@ -229,9 +229,41 @@ async function startServer() {
     });
   } else {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+        ws: false,
+      },
       appType: 'spa',
     });
+
+    // HMR is disabled in this environment (and remote proxies only forward port 3000).
+    // Vite 8's /@vite/client still invokes transport.connect() against port 24678 even
+    // when hmr/ws are false, so strip the connect call while preserving CSS/HMR exports.
+    app.get('/@vite/client', async (_req, res, next) => {
+      try {
+        const transformed = await vite.transformRequest('/@vite/client');
+        if (!transformed) {
+          next();
+          return;
+        }
+        const safeCode = transformed.code
+          .replace(
+            'transport.connect(createHMRHandler(handleMessage));',
+            '/* HMR WebSocket disabled */'
+          )
+          .replace(
+            'ws.send(JSON.stringify(data));',
+            'ws?.send(JSON.stringify(data));'
+          );
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.send(safeCode);
+      } catch (err) {
+        next(err);
+      }
+    });
+
     app.use(vite.middlewares);
   }
 

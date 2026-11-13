@@ -13,15 +13,34 @@ jobs:
   verify-core-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        if: hashFiles('package.json') != ''
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
-      - run: npm ci
-      - run: npx tsx --test src/core/dnsEngine.test.ts
-      - run: npm run lint
-      - run: npm run build
+
+      - name: Install Node dependencies
+        if: hashFiles('package.json') != ''
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Run core unit tests, lint, and build
+        if: hashFiles('package.json') != ''
+        run: |
+          npx tsx --test src/core/dnsEngine.test.ts
+          npm run lint
+          npm run build
+
+      - name: Skip notice for standalone Windows WPF repository
+        if: hashFiles('package.json') == ''
+        run: echo "Standalone Windows WPF repository detected (no package.json); proceeding directly to Windows build."
 
   build-and-release-windows:
     needs: verify-core-tests
@@ -42,6 +61,7 @@ jobs:
         run: dotnet test windows-wpf/DnsPulse.sln --configuration Release --no-restore --verbosity normal
 
       - name: Publish self-contained Windows x64 single-file executable
+        shell: pwsh
         run: |
           dotnet publish windows-wpf/DnsPulse.App/DnsPulse.App.csproj `
             -c Release `
@@ -56,9 +76,9 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path artifacts/win-x64/assets | Out-Null
-          Copy-Item assets/dns_catalog_1000.tsv artifacts/win-x64/assets/dns_catalog_1000.tsv -Force
-          Copy-Item LICENSE artifacts/win-x64/LICENSE.txt -Force
-          Copy-Item README.md artifacts/win-x64/README.md -Force
+          if (Test-Path assets/dns_catalog_1000.tsv) { Copy-Item assets/dns_catalog_1000.tsv artifacts/win-x64/assets/dns_catalog_1000.tsv -Force }
+          if (Test-Path LICENSE) { Copy-Item LICENSE artifacts/win-x64/LICENSE.txt -Force }
+          if (Test-Path README.md) { Copy-Item README.md artifacts/win-x64/README.md -Force }
 
       - name: Package portable ZIP
         shell: pwsh
@@ -68,11 +88,15 @@ jobs:
       - name: Build Windows Installer (Inno Setup)
         shell: pwsh
         run: |
-          $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
-          if (-not $iscc) {
-            choco install innosetup -y --no-progress
-          }
           $innoPath = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $innoPath)) {
+            $cmd = Get-Command iscc.exe -ErrorAction SilentlyContinue
+            if ($cmd) {
+              $innoPath = $cmd.Source
+            } else {
+              choco install innosetup -y --no-progress
+            }
+          }
           if (Test-Path $innoPath) {
             & $innoPath "windows-wpf\installer\DnsPulse.iss"
           } else {
