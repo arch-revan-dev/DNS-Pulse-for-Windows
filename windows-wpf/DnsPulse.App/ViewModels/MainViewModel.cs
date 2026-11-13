@@ -139,6 +139,8 @@ public sealed partial class MainViewModel : ObservableObject
 
     public bool IsTunnelActive => _tunnel.IsRunning;
     public DnsServerEntry? ActiveTunnelServer => _tunnel.ActiveServer;
+    public string? ActiveTunnelServerId => _tunnel.ActiveServer?.Id;
+    public string ThemeLabel => IsDarkTheme ? "Светлая тема" : "Тёмная тема";
     public long TunnelQueries => _tunnel.QueriesHandled;
     public long TunnelCacheHits => _tunnel.CacheHits;
 
@@ -194,6 +196,8 @@ public sealed partial class MainViewModel : ObservableObject
     {
         IsInspectorOpen = value is not null;
     }
+
+    partial void OnIsDarkThemeChanged(bool value) => OnPropertyChanged(nameof(ThemeLabel));
 
     partial void OnSearchQueryChanged(string value)
     {
@@ -485,6 +489,44 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task ConnectBestAsync(CancellationToken ct)
+    {
+        if (IsTunnelActive)
+        {
+            await StopTunnelAsync();
+            return;
+        }
+
+        DnsServerEntry? PickBestVerified() =>
+            _allServers
+                .Where(s => s.Verdict == BypassVerdict.VERIFIED_PROXY_OK && !s.IsSubscription)
+                .OrderBy(s => s.LastLatencyMs ?? double.MaxValue)
+                .FirstOrDefault();
+
+        var best = PickBestVerified();
+        if (best is null)
+        {
+            await BenchmarkTopAsync(12, ct);
+            best = PickBestVerified();
+        }
+
+        if (best is null)
+        {
+            best = _filteredServers.FirstOrDefault(s => s.SupportsBypass && !s.IsSubscription)
+                   ?? _allServers.FirstOrDefault(s => s.SupportsBypass && !s.IsSubscription);
+        }
+
+        if (best is null)
+        {
+            StatusMessage = "Не найден подходящий сервер для подключения";
+            return;
+        }
+
+        SelectedServer = best;
+        await StartTunnelAsync(best);
+    }
+
+    [RelayCommand]
     public async Task RotateTunnelAsync()
     {
         var queue = ServerFilterSorter.BuildRotationQueue(_allServers, _tunnel.ActiveServer?.Id);
@@ -634,6 +676,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsTunnelActive));
         OnPropertyChanged(nameof(ActiveTunnelServer));
+        OnPropertyChanged(nameof(ActiveTunnelServerId));
         OnPropertyChanged(nameof(TunnelQueries));
         OnPropertyChanged(nameof(TunnelCacheHits));
         OnPropertyChanged(nameof(TunnelSummaryTitle));

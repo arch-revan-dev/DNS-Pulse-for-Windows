@@ -16,6 +16,7 @@
             <conv:VerdictToBrushConverter x:Key="VerdictToBrush" />
             <conv:FavoriteGlyphConverter x:Key="FavGlyph" />
             <conv:EqualityToBoolConverter x:Key="EqToBool" />
+            <conv:EqualityMultiConverter x:Key="EqMulti" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

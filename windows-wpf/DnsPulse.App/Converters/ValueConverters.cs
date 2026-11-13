@@ -89,3 +89,18 @@ public sealed class EqualityToBoolConverter : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         value is true && parameter is not null ? parameter : System.Windows.Data.Binding.DoNothing;
 }
+
+public sealed class EqualityMultiConverter : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (values.Length < 2 || values[0] is null || values[1] is null)
+            return false;
+        var a = values[0].ToString();
+        var b = values[1].ToString();
+        return !string.IsNullOrEmpty(a) && string.Equals(a, b, StringComparison.Ordinal);
+    }
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
