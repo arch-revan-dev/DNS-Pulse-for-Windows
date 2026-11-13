@@ -304,4 +304,152 @@ public class DnsPulseTests
         Assert.True(candidates.Count >= 900, $"Expected >= 900 AUTO scanner candidates, got {candidates.Count}");
         Assert.Contains("185.236.10.37", candidates);
     }
+
+    [Fact]
+    public void AutoProxy_DomainClassification_SortingWithBuiltins_And_LegacyDeduplication()
+    {
+        // 1. Domain classification across AI/Streaming, Gaming, and Clean Speed
+        var ai = SubnetScannerService.ClassifyTargetDomain("gemini.google.com", requiresBypass: true);
+        Assert.Equal("Smart-DNS", ai.Category);
+        Assert.Equal("Gemini", ai.ServiceTag);
+
+        var studio = SubnetScannerService.ClassifyTargetDomain("aistudio.google.com", requiresBypass: true);
+        Assert.Equal("Smart-DNS", studio.Category);
+        Assert.Equal("AIStudio", studio.ServiceTag);
+
+        var brawl = SubnetScannerService.ClassifyTargetDomain("game.brawlstarsgame.com", requiresBypass: true);
+        Assert.Equal("Игры и Регионы", brawl.Category);
+        Assert.Equal("BrawlStars", brawl.ServiceTag);
+
+        var xbox = SubnetScannerService.ClassifyTargetDomain("login.live.com", requiresBypass: true);
+        Assert.Equal("Игры и Регионы", xbox.Category);
+        Assert.Equal("Xbox", xbox.ServiceTag);
+
+        var steam = SubnetScannerService.ClassifyTargetDomain("store.steampowered.com", requiresBypass: true);
+        Assert.Equal("Игры и Регионы", steam.Category);
+        Assert.Equal("Steam", steam.ServiceTag);
+
+        var fast = SubnetScannerService.ClassifyTargetDomain("one.one.one.one", requiresBypass: false);
+        Assert.Equal("Скоростные", fast.Category);
+        Assert.Equal("CleanPing", fast.ServiceTag);
+
+        // 2. Auto Proxy Node appears directly inside matched class alongside built-in servers
+        var autoNode = new DnsServerEntry
+        {
+            Id = "auto_proxy_185_236_10_37",
+            Name = "Auto Proxy Node 185.236.10.37",
+            Protocol = DnsProtocol.SNI443,
+            PrimaryIp = "185.236.10.37",
+            SmartProxyIp = "185.236.10.37",
+            DohUrl = "smartproxy://185.236.10.37",
+            Port = 443,
+            Category = ai.Category,
+            SupportsBypass = true,
+            LastLatencyMs = 31,
+            Verdict = BypassVerdict.VERIFIED_PROXY_OK
+        };
+        var builtinSmart = new DnsServerEntry
+        {
+            Id = "builtin_smart_test",
+            Name = "Xbox-DNS",
+            Protocol = DnsProtocol.DoH,
+            DohUrl = "https://xbox-dns.ru/dns-query",
+            Category = "Smart-DNS",
+            IsBuiltin = true,
+            SupportsBypass = true,
+            LastLatencyMs = 55,
+            Verdict = BypassVerdict.UNCHECKED
+        };
+        var ranked = ServerFilterSorter.FilterAndSort(
+            new[] { builtinSmart, autoNode },
+            "Smart-DNS",
+            bypassOnly: true,
+            favoritesOnly: false,
+            encryptedOnly: false,
+            freeOnly: false,
+            searchQuery: "",
+            sortMode: SortMode.BEST,
+            hideUnsafeDirectIps: true);
+        Assert.Equal(2, ranked.Count);
+        Assert.Equal("auto_proxy_185_236_10_37", ranked[0].Id);
+
+        // 3. Legacy scan_sni_* deduplication, favorite preservation, and re-classification update
+        var tempDir = Path.Combine(Path.GetTempPath(), $"dnspulse-autoproxy-db-{Guid.NewGuid():N}");
+        try
+        {
+            var repo = new DnsDatabaseRepository(tempDir);
+            repo.UpsertCustomServers(new[]
+            {
+                new DnsServerEntry
+                {
+                    Id = "scan_sni_192_255_159_2",
+                    Name = "Smart-Proxy SNI 192.255.159.2",
+                    Protocol = DnsProtocol.SNI443,
+                    PrimaryIp = "192.255.159.2",
+                    SmartProxyIp = "192.255.159.2",
+                    DohUrl = "smartproxy://192.255.159.2",
+                    Port = 443,
+                    Category = "Свои / Найденные",
+                    SupportsBypass = true,
+                    IsFavorite = true
+                }
+            });
+
+            repo.UpsertCustomServers(new[]
+            {
+                new DnsServerEntry
+                {
+                    Id = "auto_proxy_192_255_159_2",
+                    Name = "Auto Proxy Node 192.255.159.2",
+                    Protocol = DnsProtocol.SNI443,
+                    PrimaryIp = "192.255.159.2",
+                    SmartProxyIp = "192.255.159.2",
+                    DohUrl = "smartproxy://192.255.159.2",
+                    Port = 443,
+                    Category = "Игры и Регионы",
+                    Tags = new List<string> { "AutoProxy", "SNI443", "BrawlStars" },
+                    SupportsBypass = true,
+                    LastLatencyMs = 28,
+                    Verdict = BypassVerdict.VERIFIED_PROXY_OK,
+                    VerdictReason = "Auto Proxy SNI-443 (HTTP 200, 28 мс)"
+                }
+            });
+
+            var rows = repo.GetAllServers();
+            Assert.DoesNotContain(rows, s => s.Id == "scan_sni_192_255_159_2");
+            var migrated = Assert.Single(rows, s => s.Id == "auto_proxy_192_255_159_2");
+            Assert.True(migrated.IsFavorite);
+            Assert.Equal("Игры и Регионы", migrated.Category);
+            Assert.Equal(28, migrated.LastLatencyMs);
+            Assert.Equal(BypassVerdict.VERIFIED_PROXY_OK, migrated.Verdict);
+
+            repo.UpsertCustomServers(new[]
+            {
+                new DnsServerEntry
+                {
+                    Id = "auto_proxy_192_255_159_2",
+                    Name = "Auto Proxy Node 192.255.159.2",
+                    Protocol = DnsProtocol.SNI443,
+                    PrimaryIp = "192.255.159.2",
+                    SmartProxyIp = "192.255.159.2",
+                    DohUrl = "smartproxy://192.255.159.2",
+                    Port = 443,
+                    Category = "Smart-DNS",
+                    Tags = new List<string> { "AutoProxy", "SNI443", "Gemini" },
+                    SupportsBypass = true,
+                    LastLatencyMs = 22,
+                    Verdict = BypassVerdict.VERIFIED_PROXY_OK,
+                    VerdictReason = "Auto Proxy SNI-443 (HTTP 200, 22 мс)"
+                }
+            });
+
+            var reclassified = Assert.Single(repo.GetAllServers(), s => s.Id == "auto_proxy_192_255_159_2");
+            Assert.Equal("Smart-DNS", reclassified.Category);
+            Assert.Equal(22, reclassified.LastLatencyMs);
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, true); } catch { /* ignore sqlite handle release lag */ }
+        }
+    }
 }

@@ -12,7 +12,7 @@ body:
     attributes:
       label: Версия DNS Pulse
       description: Указана в заголовке/настройках приложения (например, v1.5.2)
-      placeholder: "v1.5.2"
+      placeholder: "v1.5.3"
     validations:
       required: true
   - type: dropdown

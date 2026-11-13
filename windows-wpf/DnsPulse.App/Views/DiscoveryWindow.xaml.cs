@@ -11,6 +11,8 @@ public partial class DiscoveryWindow : Window
     private readonly SubnetScannerService _scanner = new();
     private CancellationTokenSource? _cts;
     private List<DnsServerEntry> _found = [];
+    private bool _alreadyAutoSaved;
+    private string? _lastClassifiedCategory;
 
     public DiscoveryWindow(MainViewModel vm)
     {
@@ -45,7 +47,10 @@ public partial class DiscoveryWindow : Window
 
         var domain = string.IsNullOrWhiteSpace(TargetDomainInput.Text) ? _vm.TargetDomain : TargetDomainInput.Text.Trim();
         bool requiresBypass = RequiresBypassCheck.IsChecked == true;
-        StatusLabel.Text = $"Старт 4-этапного сканирования под {domain}...";
+        var classified = SubnetScannerService.ClassifyTargetDomain(domain, requiresBypass);
+        _alreadyAutoSaved = false;
+        _lastClassifiedCategory = classified.Category;
+        StatusLabel.Text = $"Старт Auto Proxy / сканирования под {domain} ({classified.Category})...";
 
         try
         {
@@ -66,9 +71,16 @@ public partial class DiscoveryWindow : Window
                 detailed);
 
             FoundList.ItemsSource = _found;
-            StatusLabel.Text = _found.Count > 0
-                ? $"Готово! Найдено рабочих узлов: {_found.Count} (нажмите «Добавить найденные в базу»)"
-                : "Рабочих узлов в указанной подсети не найдено — попробуйте режим AUTO или синхронизацию списков";
+            if (_found.Count > 0)
+            {
+                _vm.AddDiscoveredServers(_found, classified.Category);
+                _alreadyAutoSaved = true;
+                StatusLabel.Text = $"Готово! Сохранено {_found.Count} узлов → раздел «{classified.Category}»";
+            }
+            else
+            {
+                StatusLabel.Text = "Рабочих узлов в указанной подсети не найдено — попробуйте режим AUTO или синхронизацию списков";
+            }
         }
         catch (OperationCanceledException)
         {
@@ -106,9 +118,9 @@ public partial class DiscoveryWindow : Window
 
     private void OnSaveFoundClick(object sender, RoutedEventArgs e)
     {
-        if (_found.Count > 0)
+        if (_found.Count > 0 && !_alreadyAutoSaved)
         {
-            _vm.AddDiscoveredServers(_found);
+            _vm.AddDiscoveredServers(_found, _lastClassifiedCategory);
         }
         Close();
     }

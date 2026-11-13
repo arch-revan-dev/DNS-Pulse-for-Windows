@@ -374,6 +374,24 @@
                                    Foreground="{DynamicResource MutedTextBrush}"
                                    Margin="10,0,0,8" />
 
+                        <Button Style="{StaticResource SidebarActionButtonStyle}"
+                                Command="{Binding ScanAutoProxyCommand}"
+                                ToolTip="Найти рабочие Auto Proxy SNI-443 и SmartDNS узлы под выбранный домен и сразу классифицировать в нужный раздел"
+                                Margin="0,0,0,4">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="M 8,2 A 6,6 0 1 1 2,8 M 8,5 A 3,3 0 1 1 5,8 M 8,8 L 13,3"
+                                      Stroke="{DynamicResource EmeraldBrush}"
+                                      StrokeThickness="1.5"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      Width="15"
+                                      Height="15"
+                                      Margin="0,0,10,0"
+                                      VerticalAlignment="Center" />
+                                <TextBlock Text="Подбор Auto Proxy" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
                         <Button Style="{StaticResource SidebarActionButtonStyle}" Click="OnOpenDiscoveryClick" Margin="0,0,0,4">
                             <StackPanel Orientation="Horizontal">
                                 <Path Data="M 8,1 L 8,15 M 1,8 L 15,8 M 3,3 L 13,13 M 13,3 L 3,13"

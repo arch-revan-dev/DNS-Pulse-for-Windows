@@ -98,8 +98,8 @@
 
                     <Border BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,0,0,1" Margin="0,0,0,14" />
 
-                    <TextBlock Text="Сканер подсетей /24 и открытых SNI-прокси (порт 443)" Style="{StaticResource SectionTitleStyle}" Margin="0,0,0,4" />
-                    <TextBlock Text="AUTO сканирует 12 проверенных Smart-Proxy подсетей (/24), или укажите свой IP / подсеть вида 192.255.159.0/24"
+                    <TextBlock Text="Сканер подсетей /24 и подбор Auto Proxy (SNI 443 + SmartDNS)" Style="{StaticResource SectionTitleStyle}" Margin="0,0,0,4" />
+                    <TextBlock Text="AUTO проверяет 16 проверенных Smart-Proxy подсетей (/24) и классифицирует найденное под выбранный домен"
                                Style="{StaticResource CaptionMutedStyle}"
                                Margin="0,0,0,10" />
                     <Grid Margin="0,0,0,10">
@@ -157,6 +157,9 @@
                                     <TextBlock Text="{Binding Name}" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center" />
                                     <Border Style="{StaticResource BadgePillStyle}" Margin="8,0,0,0">
                                         <TextBlock Text="{Binding ProtocolBadge}" FontFamily="JetBrains Mono, Cascadia Mono, Consolas" FontSize="10.5" />
+                                    </Border>
+                                    <Border Style="{StaticResource BadgePillStyle}" Margin="6,0,0,0">
+                                        <TextBlock Text="{Binding Category}" FontSize="10.5" />
                                     </Border>
                                 </StackPanel>
                                 <TextBlock Text="{Binding VerdictReason}" Style="{StaticResource CaptionMutedStyle}" TextTrimming="CharacterEllipsis" Margin="0,3,0,0" />

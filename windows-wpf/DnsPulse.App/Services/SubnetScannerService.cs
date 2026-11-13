@@ -31,8 +31,60 @@ public sealed partial class SubnetScannerService
 
     private static readonly int[] KnownClusterOctets =
     {
-        2, 3, 5, 10, 21, 37, 40, 54, 93, 120, 134, 141, 155, 192, 240, 241, 252, 253
+        1, 2, 3, 5, 10, 20, 21, 37, 40, 54, 77, 81, 93, 104, 112, 120, 134, 141, 149,
+        155, 171, 177, 190, 192, 200, 221, 240, 241, 252, 253, 254
     };
+
+    private static readonly string[] GamingDomainKeywords =
+    {
+        "xbox", "live.com", "brawlstars", "supercell", "clash", "hayday", "boombeach",
+        "steam", "epicgames", "unrealengine", "playstation", "psn", "nintendo",
+        "geforcenow", "nvidia", "roblox", "fortnite", "ea.com", "origin.com",
+        "riot", "valorant", "leagueoflegends", "discord", "blizzard", "battle.net"
+    };
+
+    public static (string Category, string ServiceTag, string GroupHint) ClassifyTargetDomain(
+        string? targetDomain,
+        bool requiresBypass)
+    {
+        var domain = string.IsNullOrWhiteSpace(targetDomain)
+            ? "gemini.google.com"
+            : targetDomain.Trim().TrimEnd('.').ToLowerInvariant();
+
+        if (!requiresBypass)
+        {
+            return ("Скоростные", "CleanPing", "Чистая скорость");
+        }
+
+        string serviceTag = ResolveServiceTag(domain);
+        foreach (var kw in GamingDomainKeywords)
+        {
+            if (domain.Contains(kw, StringComparison.OrdinalIgnoreCase))
+            {
+                return ("Игры и Регионы", serviceTag, "Игры и консоли");
+            }
+        }
+
+        return ("Smart-DNS", serviceTag, "Smart-DNS обход");
+    }
+
+    private static string ResolveServiceTag(string domain)
+    {
+        if (domain.Contains("aistudio.google", StringComparison.OrdinalIgnoreCase)) return "AIStudio";
+        if (domain.Contains("gemini.google", StringComparison.OrdinalIgnoreCase)) return "Gemini";
+        if (domain.Contains("chatgpt.com", StringComparison.OrdinalIgnoreCase) || domain.Contains("openai.com", StringComparison.OrdinalIgnoreCase)) return "ChatGPT";
+        if (domain.Contains("claude.ai", StringComparison.OrdinalIgnoreCase)) return "Claude";
+        if (domain.Contains("copilot.microsoft", StringComparison.OrdinalIgnoreCase)) return "Copilot";
+        if (domain.Contains("spotify", StringComparison.OrdinalIgnoreCase)) return "Spotify";
+        if (domain.Contains("youtube", StringComparison.OrdinalIgnoreCase)) return "YouTube";
+        if (domain.Contains("twitch", StringComparison.OrdinalIgnoreCase)) return "Twitch";
+        if (domain.Contains("netflix", StringComparison.OrdinalIgnoreCase)) return "Netflix";
+        if (domain.Contains("xbox", StringComparison.OrdinalIgnoreCase) || domain.Contains("live.com", StringComparison.OrdinalIgnoreCase)) return "Xbox";
+        if (domain.Contains("brawlstars", StringComparison.OrdinalIgnoreCase) || domain.Contains("supercell", StringComparison.OrdinalIgnoreCase)) return "BrawlStars";
+        if (domain.Contains("steam", StringComparison.OrdinalIgnoreCase)) return "Steam";
+        if (domain.Contains("epicgames", StringComparison.OrdinalIgnoreCase)) return "EpicGames";
+        return domain;
+    }
 
     public async Task<List<DnsServerEntry>> ScanAsync(
         string subnetOrAuto,
@@ -54,8 +106,9 @@ public sealed partial class SubnetScannerService
         var checkDomain = string.IsNullOrWhiteSpace(targetDomain)
             ? "gemini.google.com"
             : targetDomain.Trim().TrimEnd('.').ToLowerInvariant();
+        var classified = ClassifyTargetDomain(checkDomain, requiresBypass);
 
-        using var sem = new SemaphoreSlim(36);
+        using var sem = new SemaphoreSlim(48);
         var tasks = targets.Select(async ip =>
         {
             await sem.WaitAsync(ct).ConfigureAwait(false);
@@ -63,58 +116,54 @@ public sealed partial class SubnetScannerService
             {
                 if (ct.IsCancellationRequested) return;
 
-                bool addedForThisIp = false;
-
-                // 1. Fast Probe UDP 53 Resolver / Smart-DNS (900ms timeout so 1000+ IPs complete rapidly)
-                if (scanUdp53)
+                Task ProbeUdpAsync() => Task.Run(async () =>
                 {
+                    if (!scanUdp53) return;
                     try
                     {
                         var (ips, lat) = await prober.QueryUdp53Async(ip, checkDomain, ct, timeoutMs: 900).ConfigureAwait(false);
-                        if (ips.Count > 0)
-                        {
-                            bool isDirect = AntiDirectIpFilter.IsDirectServiceIp(ips[0], checkDomain);
-                            if (!requiresBypass || !isDirect)
-                            {
-                                bool p443Ok = true;
-                                int? httpCode = null;
-                                if (requiresBypass || checkPort443)
-                                {
-                                    var sni = await prober.ProbeSniPort443DetailedAsync(ips[0], checkDomain, null, ct).ConfigureAwait(false);
-                                    p443Ok = sni.Port443Ok && !sni.GeoBlockedBody && !AntiDirectIpFilter.IsGeoBlockedRedirect(sni.HttpStatus, sni.RedirectLocation);
-                                    httpCode = sni.HttpStatus;
-                                }
+                        if (ips.Count == 0) return;
 
-                                if (!requiresBypass || p443Ok)
-                                {
-                                    found.Add(new DnsServerEntry
-                                    {
-                                        Id = $"scan_udp_{ip.Replace('.', '_')}",
-                                        Name = requiresBypass ? $"Найден Smart-DNS {ip}" : $"Найден DNS {ip}",
-                                        Provider = "Сканер подсетей",
-                                        Protocol = DnsProtocol.UDP,
-                                        PrimaryIp = ip,
-                                        Category = "Свои / Найденные",
-                                        Country = "SCAN",
-                                        Tags = new List<string> { "Scan", "UDP", requiresBypass ? "SmartDNS" : "DNS" },
-                                        Description = $"Обнаружен сканером на порту UDP 53 → {ips[0]}.",
-                                        SupportsBypass = requiresBypass,
-                                        IsBuiltin = false,
-                                        IsFreeUnlimited = true,
-                                        LastLatencyMs = Math.Round(lat),
-                                        LastTps = Math.Round(1000.0 / Math.Max(1.0, lat), 1),
-                                        SuccessRatePercent = 100,
-                                        Port443Ok = requiresBypass ? p443Ok : null,
-                                        HttpStatus = httpCode,
-                                        ResolvedIps = ips,
-                                        Verdict = BypassVerdict.VERIFIED_PROXY_OK,
-                                        VerdictReason = $"Найден сканером ({Math.Round(lat)} мс → {ips[0]})",
-                                        LastCheckedDomain = checkDomain
-                                    });
-                                    addedForThisIp = true;
-                                    Interlocked.Increment(ref foundCount);
-                                }
-                            }
+                        bool isDirect = AntiDirectIpFilter.IsDirectServiceIp(ips[0], checkDomain);
+                        if (requiresBypass && isDirect) return;
+
+                        bool p443Ok = true;
+                        int? httpCode = null;
+                        if (requiresBypass || checkPort443)
+                        {
+                            var sni = await prober.ProbeSniPort443DetailedAsync(ips[0], checkDomain, null, ct).ConfigureAwait(false);
+                            p443Ok = sni.Port443Ok && !sni.GeoBlockedBody && !AntiDirectIpFilter.IsGeoBlockedRedirect(sni.HttpStatus, sni.RedirectLocation);
+                            httpCode = sni.HttpStatus;
+                        }
+
+                        if (!requiresBypass || p443Ok)
+                        {
+                            double roundedLat = Math.Max(1, Math.Round(lat));
+                            found.Add(new DnsServerEntry
+                            {
+                                Id = $"auto_smartdns_{ip.Replace('.', '_')}",
+                                Name = requiresBypass ? $"Auto SmartDNS {ip}" : $"Auto FastDNS {ip}",
+                                Provider = "Auto Discovery (UDP 53)",
+                                Protocol = DnsProtocol.UDP,
+                                PrimaryIp = ip,
+                                Category = classified.Category,
+                                Country = "AUTO",
+                                Tags = new List<string> { "AutoSmartDNS", "UDP53", classified.ServiceTag, checkDomain },
+                                Description = $"Автоподбор ({classified.GroupHint}) на порту UDP 53 для {checkDomain} → {ips[0]}.",
+                                SupportsBypass = requiresBypass,
+                                IsBuiltin = false,
+                                IsFreeUnlimited = true,
+                                LastLatencyMs = roundedLat,
+                                LastTps = Math.Round(1000.0 / Math.Max(1.0, roundedLat), 1),
+                                SuccessRatePercent = 100,
+                                Port443Ok = requiresBypass ? p443Ok : null,
+                                HttpStatus = httpCode,
+                                ResolvedIps = ips,
+                                Verdict = BypassVerdict.VERIFIED_PROXY_OK,
+                                VerdictReason = $"Auto SmartDNS ({roundedLat} мс → {ips[0]})",
+                                LastCheckedDomain = checkDomain
+                            });
+                            Interlocked.Increment(ref foundCount);
                         }
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -125,52 +174,52 @@ public sealed partial class SubnetScannerService
                     {
                         // IP did not answer UDP 53
                     }
-                }
+                }, ct);
 
-                // 2. Fast TCP-443 pre-filter (950ms) -> then deep HTTPS SNI check for Smart-Proxy SNI443 nodes
-                if (checkPort443 && !addedForThisIp)
+                Task ProbeSni443Async() => Task.Run(async () =>
                 {
+                    if (!checkPort443) return;
+                    if (requiresBypass && AntiDirectIpFilter.IsDirectServiceIp(ip, checkDomain)) return;
                     try
                     {
                         var (tcpOpen, tcpMs) = await prober.ProbeTcp443LatencyAsync(ip, 950, ct).ConfigureAwait(false);
-                        if (tcpOpen)
-                        {
-                            var sw = Stopwatch.StartNew();
-                            var sni = await prober.ProbeSniPort443DetailedAsync(ip, checkDomain, null, ct).ConfigureAwait(false);
-                            sw.Stop();
+                        if (!tcpOpen) return;
 
-                            if (sni.Port443Ok && !sni.GeoBlockedBody && !AntiDirectIpFilter.IsGeoBlockedRedirect(sni.HttpStatus, sni.RedirectLocation))
+                        var sw = Stopwatch.StartNew();
+                        var sni = await prober.ProbeSniPort443DetailedAsync(ip, checkDomain, null, ct).ConfigureAwait(false);
+                        sw.Stop();
+
+                        if (sni.Port443Ok && !sni.GeoBlockedBody && !AntiDirectIpFilter.IsGeoBlockedRedirect(sni.HttpStatus, sni.RedirectLocation))
+                        {
+                            double lat = Math.Max(1, Math.Min(tcpMs, Math.Round(sw.Elapsed.TotalMilliseconds)));
+                            found.Add(new DnsServerEntry
                             {
-                                double lat = Math.Max(1, Math.Min(tcpMs, Math.Round(sw.Elapsed.TotalMilliseconds)));
-                                found.Add(new DnsServerEntry
-                                {
-                                    Id = $"scan_sni_{ip.Replace('.', '_')}",
-                                    Name = $"Smart-Proxy SNI {ip}",
-                                    Provider = "Сканер SNI 443",
-                                    Protocol = DnsProtocol.SNI443,
-                                    PrimaryIp = ip,
-                                    SmartProxyIp = ip,
-                                    DohUrl = $"smartproxy://{ip}",
-                                    Port = 443,
-                                    Category = "Свои / Найденные",
-                                    Country = "SCAN",
-                                    Tags = new List<string> { "Scan", "SNI443", "SmartProxy" },
-                                    Description = $"Открытый Smart-Proxy узел на порту 443 для {checkDomain}.",
-                                    SupportsBypass = true,
-                                    IsBuiltin = false,
-                                    IsFreeUnlimited = true,
-                                    LastLatencyMs = lat,
-                                    LastTps = Math.Round(1000.0 / Math.Max(1.0, lat), 1),
-                                    SuccessRatePercent = 100,
-                                    Port443Ok = true,
-                                    HttpStatus = sni.HttpStatus,
-                                    ResolvedIps = new List<string> { ip },
-                                    Verdict = BypassVerdict.VERIFIED_PROXY_OK,
-                                    VerdictReason = $"Рабочий SNI-443 прокси (HTTP {sni.HttpStatus?.ToString() ?? "OK"}, {lat} мс)",
-                                    LastCheckedDomain = checkDomain
-                                });
-                                Interlocked.Increment(ref foundCount);
-                            }
+                                Id = $"auto_proxy_{ip.Replace('.', '_')}",
+                                Name = $"Auto Proxy Node {ip}",
+                                Provider = "Auto Proxy (Smart-VPN 443)",
+                                Protocol = DnsProtocol.SNI443,
+                                PrimaryIp = ip,
+                                SmartProxyIp = ip,
+                                DohUrl = $"smartproxy://{ip}",
+                                Port = 443,
+                                Category = classified.Category,
+                                Country = "AUTO",
+                                Tags = new List<string> { "AutoProxy", "SNI443", classified.ServiceTag, checkDomain },
+                                Description = $"Auto Proxy SNI-443 узел ({classified.GroupHint}) для {checkDomain}.",
+                                SupportsBypass = requiresBypass,
+                                IsBuiltin = false,
+                                IsFreeUnlimited = true,
+                                LastLatencyMs = lat,
+                                LastTps = Math.Round(1000.0 / Math.Max(1.0, lat), 1),
+                                SuccessRatePercent = 100,
+                                Port443Ok = true,
+                                HttpStatus = sni.HttpStatus,
+                                ResolvedIps = new List<string> { ip },
+                                Verdict = BypassVerdict.VERIFIED_PROXY_OK,
+                                VerdictReason = $"Auto Proxy SNI-443 (HTTP {sni.HttpStatus?.ToString() ?? "OK"}, {lat} мс)",
+                                LastCheckedDomain = checkDomain
+                            });
+                            Interlocked.Increment(ref foundCount);
                         }
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -181,7 +230,9 @@ public sealed partial class SubnetScannerService
                     {
                         // Port 443 closed or TLS failed
                     }
-                }
+                }, ct);
+
+                await Task.WhenAll(ProbeUdpAsync(), ProbeSni443Async()).ConfigureAwait(false);
             }
             finally
             {

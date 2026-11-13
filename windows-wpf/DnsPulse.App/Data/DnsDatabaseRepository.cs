@@ -110,6 +110,30 @@ public sealed class DnsDatabaseRepository
 
         foreach (var s in servers)
         {
+            bool effectiveFavorite = s.IsFavorite;
+            if (s.Id.StartsWith("auto_proxy_", StringComparison.Ordinal) || s.Id.StartsWith("auto_smartdns_", StringComparison.Ordinal))
+            {
+                bool isProxy = s.Id.StartsWith("auto_proxy_", StringComparison.Ordinal);
+                string suffix = isProxy ? s.Id["auto_proxy_".Length..] : s.Id["auto_smartdns_".Length..];
+                string legacyId = isProxy ? $"scan_sni_{suffix}" : $"scan_udp_{suffix}";
+
+                using var checkFavCmd = conn.CreateCommand();
+                checkFavCmd.Transaction = tx;
+                checkFavCmd.CommandText = "SELECT isFavorite FROM dns_servers WHERE id = $legacyId AND isBuiltin = 0 LIMIT 1;";
+                checkFavCmd.Parameters.AddWithValue("$legacyId", legacyId);
+                var existingFav = checkFavCmd.ExecuteScalar();
+                if (existingFav is long favLong && favLong == 1)
+                {
+                    effectiveFavorite = true;
+                }
+
+                using var delCmd = conn.CreateCommand();
+                delCmd.Transaction = tx;
+                delCmd.CommandText = "DELETE FROM dns_servers WHERE id = $legacyId AND isBuiltin = 0;";
+                delCmd.Parameters.AddWithValue("$legacyId", legacyId);
+                delCmd.ExecuteNonQuery();
+            }
+
             using var cmd = conn.CreateCommand();
             cmd.Transaction = tx;
             cmd.CommandText = """
@@ -124,7 +148,15 @@ public sealed class DnsDatabaseRepository
                     dohUrl = excluded.dohUrl,
                     dotHost = excluded.dotHost,
                     smartProxyIp = excluded.smartProxyIp,
-                    supportsBypass = excluded.supportsBypass;
+                    category = excluded.category,
+                    country = excluded.country,
+                    tagsJson = excluded.tagsJson,
+                    description = excluded.description,
+                    supportsBypass = excluded.supportsBypass,
+                    isFavorite = MAX(isFavorite, excluded.isFavorite),
+                    lastLatencyMs = COALESCE(excluded.lastLatencyMs, lastLatencyMs),
+                    verdict = CASE WHEN excluded.verdict != 'UNCHECKED' THEN excluded.verdict ELSE verdict END,
+                    verdictReason = CASE WHEN excluded.verdictReason != '' THEN excluded.verdictReason ELSE verdictReason END;
                 """;
             cmd.Parameters.AddWithValue("$id", s.Id);
             cmd.Parameters.AddWithValue("$name", s.Name);
@@ -140,7 +172,7 @@ public sealed class DnsDatabaseRepository
             cmd.Parameters.AddWithValue("$tags", JsonSerializer.Serialize(s.Tags));
             cmd.Parameters.AddWithValue("$desc", s.Description);
             cmd.Parameters.AddWithValue("$bypass", s.SupportsBypass ? 1 : 0);
-            cmd.Parameters.AddWithValue("$fav", s.IsFavorite ? 1 : 0);
+            cmd.Parameters.AddWithValue("$fav", effectiveFavorite ? 1 : 0);
             cmd.Parameters.AddWithValue("$sub", s.IsSubscription ? 1 : 0);
             cmd.Parameters.AddWithValue("$free", s.IsFreeUnlimited ? 1 : 0);
             cmd.Parameters.AddWithValue("$lat", (object?)s.LastLatencyMs ?? DBNull.Value);

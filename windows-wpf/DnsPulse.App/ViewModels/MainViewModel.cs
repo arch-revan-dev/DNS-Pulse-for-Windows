@@ -743,6 +743,81 @@ public sealed partial class MainViewModel : ObservableObject
     private async Task BenchmarkVisibleAsync(CancellationToken ct) =>
         await BenchmarkServersListAsync(_filteredServers.ToList(), ct, $"Раздел «{SelectedCategory}»");
 
+    [RelayCommand]
+    private async Task ScanAutoProxyAsync(CancellationToken ct)
+    {
+        _benchmarkCts?.Cancel();
+        _benchmarkCts?.Dispose();
+        _benchmarkCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var token = _benchmarkCts.Token;
+
+        var domain = string.IsNullOrWhiteSpace(TargetDomain) ? "gemini.google.com" : TargetDomain.Trim();
+        var classified = SubnetScannerService.ClassifyTargetDomain(domain, RequiresBypass);
+        var totalCandidates = SubnetScannerService.BuildHunterCandidateIps("AUTO").Count;
+
+        IsBusy = true;
+        IsBenchmarkRunning = true;
+        BenchmarkScopeLabel = $"Подбор Auto Proxy ({domain} → {classified.Category})";
+        BenchmarkTotal = totalCandidates;
+        BenchmarkDone = 0;
+        BenchmarkWorkingCount = 0;
+        StatusMessage = $"Auto Proxy: поиск рабочих узлов для {domain} ({classified.Category})...";
+
+        try
+        {
+            var scanner = new SubnetScannerService();
+            var progress = new Progress<(int Done, int Total, int Found, string CurrentIp)>(p =>
+            {
+                _dispatchToUi(() =>
+                {
+                    BenchmarkTotal = p.Total;
+                    BenchmarkDone = p.Done;
+                    BenchmarkWorkingCount = p.Found;
+                    if (p.Done % 25 == 0 || p.Done == p.Total || p.Found > 0)
+                    {
+                        StatusMessage = $"Auto Proxy: {p.Done}/{p.Total} ({p.CurrentIp}) • найдено: {p.Found}";
+                    }
+                });
+            });
+
+            var found = await scanner.ScanAsync(
+                "AUTO",
+                domain,
+                RequiresBypass,
+                scanUdp53: true,
+                checkPort443: true,
+                progress: null,
+                token,
+                detailedProgress: progress);
+
+            _dispatchToUi(() =>
+            {
+                if (found.Count > 0)
+                {
+                    AddDiscoveredServers(found, classified.Category);
+                    SelectedServer = _allServers.FirstOrDefault(s => s.Id == found[0].Id);
+                    StatusMessage = $"Auto Proxy: найдено {found.Count} узлов → раздел «{classified.Category}»";
+                }
+                else
+                {
+                    StatusMessage = $"Auto Proxy: рабочих узлов для {domain} не найдено (попробуйте Свои подсети в Сканере)";
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            _dispatchToUi(() => StatusMessage = "Подбор Auto Proxy остановлен");
+        }
+        finally
+        {
+            _dispatchToUi(() =>
+            {
+                IsBenchmarkRunning = false;
+                IsBusy = false;
+            });
+        }
+    }
+
     public async Task BenchmarkTopAsync(int count, CancellationToken ct) =>
         await BenchmarkServersListAsync(VisibleServers.Take(count).ToList(), ct, "LIVE (топ)");
 
@@ -1230,10 +1305,16 @@ public sealed partial class MainViewModel : ObservableObject
         return added;
     }
 
-    public void AddDiscoveredServers(IEnumerable<DnsServerEntry> discovered)
+    public void AddDiscoveredServers(IEnumerable<DnsServerEntry> discovered, string? switchToCategory = null)
     {
-        _repo.UpsertCustomServers(discovered);
+        var list = discovered.ToList();
+        if (list.Count == 0) return;
+        _repo.UpsertCustomServers(list);
         ReloadFromDb();
+        if (!string.IsNullOrWhiteSpace(switchToCategory) && CategoryNames.Contains(switchToCategory))
+        {
+            SelectedCategory = switchToCategory;
+        }
     }
 
     public void AddCustomServer(DnsServerEntry entry)
