@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Сообщить об уязвимости безопасности (приватно)
+    url: https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/security/advisories/new
+    about: Не публикуйте детали уязвимостей в открытых Issues — используйте приватный Security Advisory.
+  - name: Скачать последний стабильный релиз
+    url: https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/latest
+    about: Убедитесь, что ошибка воспроизводится на актуальной версии приложения.

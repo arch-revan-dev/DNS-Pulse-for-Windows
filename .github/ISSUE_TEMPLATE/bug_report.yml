@@ -1,0 +1,77 @@
+name: Сообщить об ошибке (Bug Report)
+description: Опишите сбой в работе DNS-тестера, авторежима, локального туннеля или интерфейса
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо за сообщение об ошибке! Пожалуйста, заполните поля ниже как можно точнее — это поможет быстро воспроизвести и исправить проблему.
+  - type: input
+    id: version
+    attributes:
+      label: Версия DNS Pulse
+      description: Указана в заголовке/настройках приложения (например, v1.5.1)
+      placeholder: "v1.5.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Операционная система / среда
+      options:
+        - Windows 11 (x64)
+        - Windows 10 (x64)
+        - Web Studio (Node / Browser)
+    validations:
+      required: true
+  - type: dropdown
+    id: install_type
+    attributes:
+      label: Способ запуска
+      options:
+        - Установленная версия (Setup .exe)
+        - Портативная версия (Portable ZIP / DnsPulse.exe)
+        - Сборка из исходников (dotnet run / Visual Studio)
+    validations:
+      required: true
+  - type: dropdown
+    id: admin_rights
+    attributes:
+      label: Права администратора для туннеля 127.0.0.1:53
+      options:
+        - Да (запущен с UAC / туннель включён)
+        - Нет (обычный пользователь, только тестирование)
+        - Не уверен(а)
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Что пошло не так?
+      description: Кратко опишите наблюдаемую проблему.
+      placeholder: "Например: при нажатии «Тест раздела» статус зависает на..."
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Шаги для воспроизведения
+      value: |
+        1. Открытый раздел / режим:
+        2. Тестируемый сервер или протокол (DoH / DoT / UDP / SNI-443):
+        3. Выполненные действия:
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемое поведение
+      description: Что должно было произойти?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Логи, скриншот или текст ошибки
+      description: Скопируйте текст ошибки из диалога/журнала или прикрепите скриншот перетаскиванием.

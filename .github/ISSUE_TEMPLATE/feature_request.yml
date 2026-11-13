@@ -1,0 +1,36 @@
+name: Предложить улучшение (Feature Request)
+description: Идея новой функции, источника DNS-фидов или улучшения интерфейса
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Область улучшения
+      options:
+        - Диагностика / Пробер (DoH, DoT, SNI-443)
+        - Авторежим и локальный туннель 127.0.0.1:53
+        - Каталог серверов / сканер /24 / фиды
+        - Интерфейс и настройки (WPF)
+        - Автообновление / Установщик / CI
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую задачу или проблему это решает?
+      placeholder: "Например: хотелось бы экспортировать профили в..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Предлагаемое решение
+      description: Как вы видите работу этой функции?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Альтернативы и дополнительные детали
+      description: Необязательно — ссылки на похожие решения, протоколы или спецификации.

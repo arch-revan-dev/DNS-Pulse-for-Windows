@@ -1,19 +1,41 @@
+# Dependencies & web build outputs
 node_modules/
 dist/
 .playwright-cli/
-data/
+
+# Runtime SQLite databases & local state
+/data/
 *.db
 *.db-shm
 *.db-wal
+logs/
+*.log
 
-# .NET / Windows WPF build artifacts
+# Environment secrets (keep .env.example tracked)
+.env
+.env.*
+!.env.example
+
+# .NET / Windows WPF build, test & release artifacts
 windows-wpf/**/bin/
 windows-wpf/**/obj/
 windows-wpf/**/publish/
+artifacts/
+TestResults/
 *.exe
 *.dll
 *.pdb
 *.zip
 *.msix
 *.user
+*.suo
 .vs/
+
+# Python / local tooling caches & OS metadata
+__pycache__/
+*.py[cod]
+.vscode/*
+!.vscode/extensions.json
+.idea/
+Thumbs.db
+.DS_Store
