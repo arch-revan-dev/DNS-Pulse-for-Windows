@@ -228,6 +228,33 @@ public static class CatalogSeeder
                 supportsBypass: true));
         }
 
+        (string Id, string Name, string Ip, string Country, string Desc)[] communitySniNodes =
+        [
+            ("smart_open_sni_nl1", "Open SNI Node NL #1", "185.236.10.37", "NL", "Нидерландский открытый SNI-узел (185.236.10.37:443) для локального туннеля."),
+            ("smart_open_sni_uk2", "Open SNI Node UK #2", "82.47.171.252", "UK", "Британский открытый SNI-узел (82.47.171.252:443) для локального туннеля."),
+            ("smart_open_sni_pl3", "Open SNI Node PL #3", "163.5.63.112", "PL", "Польский открытый SNI-узел (163.5.63.112:443) с низким пингом."),
+            ("smart_open_sni_de4", "Open SNI Node DE #4", "5.10.223.177", "DE", "Немецкий открытый SNI-узел (5.10.223.177:443) во Франкфурте."),
+            ("smart_open_sni_nord5", "Open SNI Node Nord #5", "185.194.177.120", "EU", "Североевропейский открытый SNI-узел (185.194.177.120:443)."),
+            ("smart_open_sni_central6", "Open SNI Node Central #6", "87.229.95.190", "EU", "Центральноевропейский открытый SNI-узел (87.229.95.190:443).")
+        ];
+
+        foreach (var node in communitySniNodes)
+        {
+            list.Add(Builtin(
+                node.Id,
+                node.Name,
+                "Community SNI Relay",
+                DnsProtocol.SNI443,
+                "Smart-DNS",
+                primaryIp: node.Ip,
+                smartProxyIp: node.Ip,
+                port: 443,
+                country: node.Country,
+                tags: ["smart-dns", "sni443", "smartproxy", "community", node.Country.ToLowerInvariant()],
+                description: node.Desc,
+                supportsBypass: true));
+        }
+
         return list;
     }
 

@@ -41,6 +41,12 @@ public sealed class LocalDnsTunnelServer : IAsyncDisposable
     /// </summary>
     public bool SplitTunnelBypassOnly { get; set; } = true;
 
+    /// <summary>
+    /// When true (default), suppresses AAAA (IPv6) and HTTPS/SVCB queries on bypass domains so Windows browsers
+    /// don't bypass the Smart-DNS/SNI-443 IPv4 proxy over direct IPv6 routes.
+    /// </summary>
+    public bool BlockIpv6OnBypass { get; set; } = true;
+
     public void UpdateBypassDomains(IEnumerable<string> domains)
     {
         if (domains is null) return;
@@ -193,7 +199,9 @@ public sealed class LocalDnsTunnelServer : IAsyncDisposable
             (server.Protocol == DnsProtocol.SNI443 ||
              (!string.IsNullOrWhiteSpace(server.DohUrl) && server.DohUrl.StartsWith("smartproxy://", StringComparison.OrdinalIgnoreCase)));
 
-        if ((isSmartProxyNode || (SplitTunnelBypassOnly && isBypassTarget && server?.SupportsBypass == true)) &&
+        if (BlockIpv6OnBypass &&
+            (isSmartProxyNode || isBypassTarget || !SplitTunnelBypassOnly) &&
+            isBypassTarget &&
             qType is 28 or 65) // AAAA (28) or HTTPS/SVCB (65)
         {
             return BuildEmptyNoErrorResponse(queryBytes);

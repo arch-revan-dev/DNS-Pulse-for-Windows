@@ -17,15 +17,25 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly WindowsNetworkAdapterService _adapter;
     private readonly OnlineFeedSyncService _feedSync = new();
     private readonly AppUpdateService _updater = new();
+    private readonly AppSettingsService _settingsService;
+    private readonly SubnetScannerService _scanner = new();
     private readonly Action<Action> _dispatchToUi;
 
+    private AppSettings _settings;
+    private bool _isApplyingSettings;
     private List<DnsServerEntry> _allServers = [];
     private List<DnsServerEntry> _filteredServers = [];
     private AppReleaseInfo? _availableRelease;
     private CancellationTokenSource? _liveCts;
     private CancellationTokenSource? _benchmarkCts;
+    private CancellationTokenSource? _autoModeCts;
     private CancellationTokenSource? _searchDebounceCts;
     private bool _startupSyncStarted;
+    private DateTime _lastAutoFailoverCheckUtc = DateTime.MinValue;
+
+    public event Action<bool, string>? OnVisualSettingsChanged;
+
+    public static IReadOnlyList<string> BootstrapDnsOptions { get; } = ["Auto", "1.1.1.1", "8.8.8.8", "9.9.9.9"];
 
     private static readonly IReadOnlyList<DomainPresetItem> AllPresets =
     [
@@ -123,6 +133,51 @@ public sealed partial class MainViewModel : ObservableObject
     private bool _isDarkTheme = true;
 
     [ObservableProperty]
+    private string _accentPreset = "Emerald";
+
+    [ObservableProperty]
+    private bool _compactMode;
+
+    [ObservableProperty]
+    private bool _startWithWindows;
+
+    [ObservableProperty]
+    private bool _startMinimizedToTray = true;
+
+    [ObservableProperty]
+    private bool _minimizeToTrayOnClose = true;
+
+    [ObservableProperty]
+    private bool _autoModeEnabled;
+
+    [ObservableProperty]
+    private bool _autoFailoverOnDrop = true;
+
+    [ObservableProperty]
+    private bool _isAutoModeRunning;
+
+    [ObservableProperty]
+    private bool _autoCheckUpdates = true;
+
+    [ObservableProperty]
+    private bool _autoSyncFeedsOnStartup = true;
+
+    [ObservableProperty]
+    private bool _blockIpv6OnBypass = true;
+
+    [ObservableProperty]
+    private string _bootstrapDnsProvider = "Auto";
+
+    [ObservableProperty]
+    private int _probeTimeoutMs = 2600;
+
+    [ObservableProperty]
+    private int _benchmarkConcurrency = 6;
+
+    [ObservableProperty]
+    private string _autostartStatusText = "Автозапуск отключён";
+
+    [ObservableProperty]
     private string _importEditorText =
         "https://dns.bezmezhau.com/dns-query Bezmezhau Public\r\n" +
         "https://dns.magicdns.ru/dns-query MagicDNS\r\n" +
@@ -187,9 +242,24 @@ public sealed partial class MainViewModel : ObservableObject
     public bool IsTesterTab => ActiveTabIndex == 0;
     public bool IsCatalogTab => ActiveTabIndex == 1;
     public bool IsConfigsTab => ActiveTabIndex == 2;
+    public bool IsSettingsTab => ActiveTabIndex == 3;
     public bool IsCustomPresetGroup => SelectedPresetGroup == "custom";
     public bool HasActiveFilters =>
         SelectedCategory != "Все" || BypassOnly || FavoritesOnly || EncryptedOnly || FreeOnly || !string.IsNullOrWhiteSpace(SearchQuery);
+
+    public string BenchmarkButtonText => FilteredCount > 0
+        ? $"Тест раздела ({FilteredCount})"
+        : "Тест раздела";
+
+    public System.Windows.Thickness ServerRowPadding => CompactMode
+        ? new System.Windows.Thickness(12, 6, 12, 6)
+        : new System.Windows.Thickness(14, 10, 14, 10);
+
+    public string AutoModeLabel => IsAutoModeRunning
+        ? "Автоподбор..."
+        : AutoModeEnabled
+            ? "Авторежим ВКЛ"
+            : "Авторежим";
 
     public bool IsTunnelActive => _tunnel.IsRunning;
     public DnsServerEntry? ActiveTunnelServer => _tunnel.ActiveServer;
@@ -212,10 +282,16 @@ public sealed partial class MainViewModel : ObservableObject
     public bool IsEmptyResult => VisibleServers.Count == 0;
     public string VisibleSummaryText => $"Показано {VisibleServers.Count} из {_filteredServers.Count} (всего в базе: {_allServers.Count})";
 
-    public MainViewModel(DnsDatabaseRepository repo, Action<Action>? dispatchToUi = null)
+    public MainViewModel(
+        DnsDatabaseRepository repo,
+        Action<Action>? dispatchToUi = null,
+        AppSettingsService? settingsService = null)
     {
         _repo = repo;
         _dispatchToUi = dispatchToUi ?? (action => action());
+        _settingsService = settingsService ?? new AppSettingsService();
+        _settings = _settingsService.Load();
+
         var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DNS-Pulse");
         _adapter = new WindowsNetworkAdapterService(appData);
         DynamicBypassRegistry.LoadOfflineCache(appData);
@@ -226,9 +302,70 @@ public sealed partial class MainViewModel : ObservableObject
         CachedHostsCount = Math.Max(cachedHosts.Count, DynamicBypassRegistry.GetAllProtectedDomains().Count);
         _tunnel.UpdateBypassDomains(DynamicBypassRegistry.GetAllProtectedDomains());
         _tunnel.SetActiveTargetDomain(TargetDomain);
-        _tunnel.SplitTunnelBypassOnly = SplitTunnelEnabled;
+
+        ApplyLoadedSettings(_settings);
         RefreshPresetGroupsAndItems();
         ReloadFromDb();
+    }
+
+    private void ApplyLoadedSettings(AppSettings s)
+    {
+        _isApplyingSettings = true;
+        try
+        {
+            IsDarkTheme = s.IsDarkTheme;
+            AccentPreset = s.AccentPreset;
+            CompactMode = s.CompactMode;
+            StartWithWindows = s.StartWithWindows;
+            StartMinimizedToTray = s.StartMinimizedToTray;
+            MinimizeToTrayOnClose = s.MinimizeToTrayOnClose;
+            AutoModeEnabled = s.AutoModeEnabled;
+            AutoFailoverOnDrop = s.AutoFailoverOnDrop;
+            AutoCheckUpdates = s.AutoCheckUpdates;
+            AutoSyncFeedsOnStartup = s.AutoSyncFeedsOnStartup;
+            SplitTunnelEnabled = s.SplitTunnelEnabled;
+            BlockIpv6OnBypass = s.BlockIpv6OnBypass;
+            BootstrapDnsProvider = s.BootstrapDnsProvider;
+            ProbeTimeoutMs = s.ProbeTimeoutMs;
+            BenchmarkConcurrency = s.BenchmarkConcurrency;
+
+            _tunnel.SplitTunnelBypassOnly = SplitTunnelEnabled;
+            _tunnel.BlockIpv6OnBypass = BlockIpv6OnBypass;
+            _prober.ProbeTimeoutMs = ProbeTimeoutMs;
+            BootstrapDnsResolver.PreferredBootstrapProvider = BootstrapDnsProvider;
+
+            if (OperatingSystem.IsWindows())
+            {
+                WindowsAutostartService.RepairIfEnabled(StartWithWindows, StartMinimizedToTray);
+                var (_, detail) = WindowsAutostartService.GetStatus();
+                AutostartStatusText = detail;
+            }
+        }
+        finally
+        {
+            _isApplyingSettings = false;
+        }
+    }
+
+    private void PersistSettings()
+    {
+        if (_isApplyingSettings) return;
+        _settings.IsDarkTheme = IsDarkTheme;
+        _settings.AccentPreset = AccentPreset;
+        _settings.CompactMode = CompactMode;
+        _settings.StartWithWindows = StartWithWindows;
+        _settings.StartMinimizedToTray = StartMinimizedToTray;
+        _settings.MinimizeToTrayOnClose = MinimizeToTrayOnClose;
+        _settings.AutoModeEnabled = AutoModeEnabled;
+        _settings.AutoFailoverOnDrop = AutoFailoverOnDrop;
+        _settings.AutoCheckUpdates = AutoCheckUpdates;
+        _settings.AutoSyncFeedsOnStartup = AutoSyncFeedsOnStartup;
+        _settings.SplitTunnelEnabled = SplitTunnelEnabled;
+        _settings.BlockIpv6OnBypass = BlockIpv6OnBypass;
+        _settings.BootstrapDnsProvider = BootstrapDnsProvider;
+        _settings.ProbeTimeoutMs = ProbeTimeoutMs;
+        _settings.BenchmarkConcurrency = BenchmarkConcurrency;
+        _settingsService.Save(_settings);
     }
 
     partial void OnActiveTabIndexChanged(int value)
@@ -236,6 +373,7 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(IsTesterTab));
         OnPropertyChanged(nameof(IsCatalogTab));
         OnPropertyChanged(nameof(IsConfigsTab));
+        OnPropertyChanged(nameof(IsSettingsTab));
         if (value == 1 && VisibleLimit < 200)
         {
             VisibleLimit = 200;
@@ -255,7 +393,97 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(ModeExplanationText));
     }
 
-    partial void OnSplitTunnelEnabledChanged(bool value) => _tunnel.SplitTunnelBypassOnly = value;
+    partial void OnSplitTunnelEnabledChanged(bool value)
+    {
+        _tunnel.SplitTunnelBypassOnly = value;
+        PersistSettings();
+    }
+
+    partial void OnBlockIpv6OnBypassChanged(bool value)
+    {
+        _tunnel.BlockIpv6OnBypass = value;
+        PersistSettings();
+    }
+
+    partial void OnBootstrapDnsProviderChanged(string value)
+    {
+        BootstrapDnsResolver.PreferredBootstrapProvider = value;
+        BootstrapDnsResolver.ClearCache();
+        PersistSettings();
+    }
+
+    partial void OnProbeTimeoutMsChanged(int value)
+    {
+        _prober.ProbeTimeoutMs = Math.Clamp(value, 1000, 6000);
+        PersistSettings();
+    }
+
+    partial void OnBenchmarkConcurrencyChanged(int value) => PersistSettings();
+    partial void OnMinimizeToTrayOnCloseChanged(bool value) => PersistSettings();
+    partial void OnAutoFailoverOnDropChanged(bool value) => PersistSettings();
+    partial void OnAutoCheckUpdatesChanged(bool value) => PersistSettings();
+    partial void OnAutoSyncFeedsOnStartupChanged(bool value) => PersistSettings();
+
+    partial void OnCompactModeChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ServerRowPadding));
+        PersistSettings();
+    }
+
+    partial void OnAccentPresetChanged(string value)
+    {
+        PersistSettings();
+        OnVisualSettingsChanged?.Invoke(IsDarkTheme, value);
+    }
+
+    partial void OnStartWithWindowsChanged(bool value)
+    {
+        if (_isApplyingSettings) return;
+        if (OperatingSystem.IsWindows())
+        {
+            var (ok, detail) = WindowsAutostartService.SetEnabled(value, StartMinimizedToTray);
+            AutostartStatusText = detail;
+            StatusMessage = detail;
+            if (!ok && value)
+            {
+                _isApplyingSettings = true;
+                StartWithWindows = false;
+                _isApplyingSettings = false;
+            }
+        }
+        PersistSettings();
+    }
+
+    partial void OnStartMinimizedToTrayChanged(bool value)
+    {
+        if (_isApplyingSettings) return;
+        if (OperatingSystem.IsWindows() && StartWithWindows)
+        {
+            var (_, detail) = WindowsAutostartService.SetEnabled(true, value);
+            AutostartStatusText = detail;
+        }
+        PersistSettings();
+    }
+
+    partial void OnIsAutoModeRunningChanged(bool value) => OnPropertyChanged(nameof(AutoModeLabel));
+
+    partial void OnAutoModeEnabledChanged(bool value)
+    {
+        OnPropertyChanged(nameof(AutoModeLabel));
+        if (_isApplyingSettings) return;
+        PersistSettings();
+
+        if (value)
+        {
+            _ = RunAutoModeAsync(forceRescanIfEmpty: true, CancellationToken.None);
+        }
+        else
+        {
+            _autoModeCts?.Cancel();
+            StatusMessage = "Авторежим выключен";
+        }
+    }
+
     partial void OnIsBenchmarkRunningChanged(bool value) => OnPropertyChanged(nameof(BenchmarkProgressText));
     partial void OnBenchmarkDoneChanged(int value)
     {
@@ -282,7 +510,12 @@ public sealed partial class MainViewModel : ObservableObject
         IsInspectorOpen = value is not null;
     }
 
-    partial void OnIsDarkThemeChanged(bool value) => OnPropertyChanged(nameof(ThemeLabel));
+    partial void OnIsDarkThemeChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ThemeLabel));
+        PersistSettings();
+        OnVisualSettingsChanged?.Invoke(value, AccentPreset);
+    }
 
     partial void OnSearchQueryChanged(string value)
     {
@@ -327,6 +560,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         OnPropertyChanged(nameof(VisibleServers));
         OnPropertyChanged(nameof(FilteredCount));
+        OnPropertyChanged(nameof(BenchmarkButtonText));
         OnPropertyChanged(nameof(CanShowMore));
         OnPropertyChanged(nameof(IsEmptyResult));
         OnPropertyChanged(nameof(VisibleSummaryText));
@@ -496,32 +730,46 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task BenchmarkVisibleAsync(CancellationToken ct) => await BenchmarkTopAsync(18, ct);
+    private async Task BenchmarkVisibleAsync(CancellationToken ct) =>
+        await BenchmarkServersListAsync(_filteredServers.ToList(), ct);
 
-    public async Task BenchmarkTopAsync(int count, CancellationToken ct)
+    public async Task BenchmarkTopAsync(int count, CancellationToken ct) =>
+        await BenchmarkServersListAsync(VisibleServers.Take(count).ToList(), ct);
+
+    private async Task BenchmarkServersListAsync(List<DnsServerEntry> targets, CancellationToken ct)
     {
         _benchmarkCts?.Cancel();
         _benchmarkCts?.Dispose();
         _benchmarkCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var token = _benchmarkCts.Token;
 
-        var targets = VisibleServers.Take(count).ToList();
         if (targets.Count == 0)
         {
             StatusMessage = "Нет серверов для проверки под текущие фильтры";
             return;
         }
 
+        // Prioritize Smart-DNS / SNI443 / Discovered nodes so working bypass candidates show up first
+        targets = targets
+            .OrderByDescending(s => s.Protocol == DnsProtocol.SNI443)
+            .ThenByDescending(s => s.SupportsBypass)
+            .ThenBy(s => s.LastLatencyMs ?? double.MaxValue)
+            .ToList();
+
         IsBusy = true;
         IsBenchmarkRunning = true;
         BenchmarkTotal = targets.Count;
         BenchmarkDone = 0;
         BenchmarkWorkingCount = 0;
-        StatusMessage = $"Проверка {targets.Count} узлов для {TargetDomain}...";
+        StatusMessage = $"Проверка всех {targets.Count} узлов открытого раздела для {TargetDomain}...";
 
         try
         {
-            using var gate = new SemaphoreSlim(6);
+            int concurrency = targets.Count > 50
+                ? Math.Clamp(Math.Max(BenchmarkConcurrency, 10), 2, 16)
+                : Math.Clamp(BenchmarkConcurrency, 2, 16);
+
+            using var gate = new SemaphoreSlim(concurrency);
             int done = 0;
             int working = 0;
 
@@ -544,7 +792,8 @@ public sealed partial class MainViewModel : ObservableObject
                         BenchmarkDone = d;
                         BenchmarkWorkingCount = w;
                         StatusMessage = $"Проверено {d}/{targets.Count}: {srv.Name} -> {res.VerdictReason}";
-                        if (d % 3 == 0 || d == targets.Count)
+                        int flushStep = targets.Count > 100 ? 10 : 3;
+                        if (d % flushStep == 0 || d == targets.Count)
                         {
                             ReloadFromDb();
                         }
@@ -564,7 +813,7 @@ public sealed partial class MainViewModel : ObservableObject
             _dispatchToUi(() =>
             {
                 ReloadFromDb();
-                StatusMessage = $"Тест завершён: {targets.Count} узлов, рабочих: {Volatile.Read(ref working)}";
+                StatusMessage = $"Проверка раздела завершена: {targets.Count} узлов, рабочих: {Volatile.Read(ref working)}";
             });
         }
         catch (OperationCanceledException)
@@ -582,6 +831,183 @@ public sealed partial class MainViewModel : ObservableObject
                 IsBenchmarkRunning = false;
                 IsBusy = false;
             });
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleAutoMode()
+    {
+        AutoModeEnabled = !AutoModeEnabled;
+    }
+
+    [RelayCommand]
+    private void SelectAccentPreset(string? preset)
+    {
+        if (!string.IsNullOrWhiteSpace(preset))
+            AccentPreset = preset;
+    }
+
+    [RelayCommand]
+    private void VerifyAutostart()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        if (StartWithWindows)
+        {
+            var (ok, detail) = WindowsAutostartService.SetEnabled(true, StartMinimizedToTray);
+            AutostartStatusText = detail;
+            StatusMessage = ok ? detail : $"Ошибка автозапуска: {detail}";
+        }
+        else
+        {
+            var (_, detail) = WindowsAutostartService.GetStatus();
+            AutostartStatusText = detail;
+            StatusMessage = detail;
+        }
+    }
+
+    [RelayCommand]
+    private void ResetAllSettings()
+    {
+        var defaults = new AppSettings();
+        ApplyLoadedSettings(defaults);
+        PersistSettings();
+        OnVisualSettingsChanged?.Invoke(IsDarkTheme, AccentPreset);
+        StatusMessage = "Настройки сброшены на значения по умолчанию";
+    }
+
+    public async Task RunAutoModeAsync(bool forceRescanIfEmpty, CancellationToken externalCt)
+    {
+        _autoModeCts?.Cancel();
+        _autoModeCts?.Dispose();
+        _autoModeCts = CancellationTokenSource.CreateLinkedTokenSource(externalCt);
+        var ct = _autoModeCts.Token;
+
+        IsAutoModeRunning = true;
+        IsBusy = true;
+        StatusMessage = $"Авторежим: диагностика лучших узлов под {TargetDomain}...";
+
+        try
+        {
+            var candidates = RequiresBypass
+                ? _allServers
+                    .Where(s => !s.IsSubscription &&
+                                (s.SupportsBypass ||
+                                 s.Protocol == DnsProtocol.SNI443 ||
+                                 s.Category is "Smart-DNS" or "Свои / Найденные" or "Игры и Регионы"))
+                    .OrderByDescending(s => s.Protocol == DnsProtocol.SNI443)
+                    .ThenBy(s => s.LastLatencyMs ?? double.MaxValue)
+                    .ToList()
+                : _filteredServers.Where(s => !s.IsSubscription).Take(25).ToList();
+
+            if (candidates.Count > 0)
+            {
+                await BenchmarkServersListAsync(candidates, ct);
+            }
+
+            DnsServerEntry? winner = _allServers
+                .Where(s => s.Verdict == BypassVerdict.VERIFIED_PROXY_OK && !s.IsSubscription)
+                .OrderBy(s => s.LastLatencyMs ?? double.MaxValue)
+                .FirstOrDefault();
+
+            if (winner is null && RequiresBypass && forceRescanIfEmpty && !ct.IsCancellationRequested)
+            {
+                StatusMessage = $"Авторежим: в каталоге 0 рабочих под {TargetDomain} — запускаем авто-сканер /24...";
+                var scanProgress = new Progress<(int Done, int Total, int Found, string CurrentIp)>(info =>
+                {
+                    _dispatchToUi(() =>
+                        StatusMessage = $"Авторежим (сканер {info.Done}/{info.Total}): найдено {info.Found}...");
+                });
+
+                var found = await _scanner.ScanAsync(
+                    "AUTO",
+                    TargetDomain,
+                    requiresBypass: true,
+                    scanUdp53: true,
+                    checkPort443: true,
+                    progress: null,
+                    ct: ct,
+                    detailedProgress: scanProgress);
+
+                if (found.Count > 0)
+                {
+                    AddDiscoveredServers(found);
+                    winner = found.OrderBy(s => s.LastLatencyMs ?? double.MaxValue).FirstOrDefault();
+                }
+            }
+
+            if (winner is null && !RequiresBypass)
+            {
+                winner = _filteredServers.FirstOrDefault(s => !s.IsSubscription)
+                         ?? _allServers.FirstOrDefault(s => !s.IsSubscription);
+            }
+
+            if (winner is null)
+            {
+                StatusMessage = $"Авторежим: рабочий узел под {TargetDomain} не найден — попробуйте сменить домен или подключить свой Smart-DNS";
+                return;
+            }
+
+            SelectedServer = winner;
+            if (IsTunnelActive && ActiveTunnelServer?.Id != winner.Id)
+            {
+                _tunnel.SwitchServer(winner);
+                if (WindowsNetworkAdapterService.IsElevated())
+                    await _adapter.FlushSystemDnsCacheAsync();
+                NotifyTunnelProperties();
+                StatusMessage = $"Авторежим переключил туннель на лучший узел: {winner.Name} ({winner.LatencyDisplay})";
+            }
+            else if (!IsTunnelActive)
+            {
+                await StartTunnelAsync(winner);
+                if (IsTunnelActive)
+                    StatusMessage = $"Авторежим подключил лучший узел: {winner.Name} ({winner.LatencyDisplay})";
+            }
+            else
+            {
+                StatusMessage = $"Авторежим подтвердил текущий лучший узел: {winner.Name} ({winner.LatencyDisplay})";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "Автоподбор остановлен";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Ошибка авторежима: {ex.Message}";
+        }
+        finally
+        {
+            IsAutoModeRunning = false;
+            IsBusy = false;
+        }
+    }
+
+    public async Task CheckActiveTunnelHealthForFailoverAsync()
+    {
+        if (!AutoModeEnabled || !AutoFailoverOnDrop || !IsTunnelActive || IsAutoModeRunning || IsBenchmarkRunning)
+            return;
+
+        if ((DateTime.UtcNow - _lastAutoFailoverCheckUtc).TotalSeconds < 25)
+            return;
+
+        _lastAutoFailoverCheckUtc = DateTime.UtcNow;
+        var active = ActiveTunnelServer;
+        if (active is null) return;
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var probe = await _prober.ProbeFourStagesAsync(active, TargetDomain, RequiresBypass, cts.Token);
+            _repo.SaveProbeResult(probe);
+            if (probe.Verdict != BypassVerdict.VERIFIED_PROXY_OK)
+            {
+                _dispatchToUi(() => StatusMessage = $"Авторежим: узел {active.Name} недоступен ({probe.VerdictReason}), ищем замену...");
+                await RunAutoModeAsync(forceRescanIfEmpty: false, CancellationToken.None);
+            }
+        }
+        catch
+        {
+            // Keep running on transient probe cancel
         }
     }
 
@@ -668,33 +1094,19 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
-        DnsServerEntry? PickBestVerified() =>
-            _allServers
-                .Where(s => s.Verdict == BypassVerdict.VERIFIED_PROXY_OK && !s.IsSubscription)
-                .OrderBy(s => s.LastLatencyMs ?? double.MaxValue)
-                .FirstOrDefault();
+        var best = _allServers
+            .Where(s => s.Verdict == BypassVerdict.VERIFIED_PROXY_OK && !s.IsSubscription)
+            .OrderBy(s => s.LastLatencyMs ?? double.MaxValue)
+            .FirstOrDefault();
 
-        var best = PickBestVerified();
-        if (best is null)
+        if (best is not null)
         {
-            await BenchmarkTopAsync(18, ct);
-            best = PickBestVerified();
-        }
-
-        if (best is null && !RequiresBypass)
-        {
-            best = _filteredServers.FirstOrDefault(s => !s.IsSubscription)
-                   ?? _allServers.FirstOrDefault(s => !s.IsSubscription);
-        }
-
-        if (best is null)
-        {
-            StatusMessage = $"Не найдено рабочих Smart-DNS под {TargetDomain} в топ-18 — откройте «Сканер /24 и списки» или отключите «Обход 443»";
+            SelectedServer = best;
+            await StartTunnelAsync(best);
             return;
         }
 
-        SelectedServer = best;
-        await StartTunnelAsync(best);
+        await RunAutoModeAsync(forceRescanIfEmpty: true, ct);
     }
 
     [RelayCommand]
@@ -847,6 +1259,11 @@ public sealed partial class MainViewModel : ObservableObject
                     }
                 }
             }
+
+            if (!IsTunnelActive && AutoModeEnabled)
+            {
+                await RunAutoModeAsync(forceRescanIfEmpty: true, CancellationToken.None);
+            }
         }
         catch
         {
@@ -856,56 +1273,62 @@ public sealed partial class MainViewModel : ObservableObject
         // Background hosts & community feeds refresh + silent GitHub release check
         _ = Task.Run(async () =>
         {
-            try
+            if (AutoSyncFeedsOnStartup)
             {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(12));
-                var (hosts, servers) = await _feedSync.SyncAsync(cts.Token);
-                _dispatchToUi(() =>
+                try
                 {
-                    if (hosts.Count > 0)
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+                    var (hosts, servers) = await _feedSync.SyncAsync(cts.Token);
+                    _dispatchToUi(() =>
                     {
-                        var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DNS-Pulse");
-                        DynamicBypassRegistry.ClassifyAndAddDomains(hosts);
-                        DynamicBypassRegistry.SaveOfflineCache(appData);
-                        var allProtected = DynamicBypassRegistry.GetAllProtectedDomains().ToList();
-                        _repo.SaveHostsCache(allProtected);
-                        _tunnel.UpdateBypassDomains(allProtected);
-                        CachedHostsCount = allProtected.Count;
-                    }
-                    if (servers.Count > 0)
-                    {
-                        _repo.UpsertCustomServers(servers);
-                        ReloadFromDb();
-                    }
-                });
-            }
-            catch
-            {
-                // Keep offline built-in domains on network restriction
+                        if (hosts.Count > 0)
+                        {
+                            var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DNS-Pulse");
+                            DynamicBypassRegistry.ClassifyAndAddDomains(hosts);
+                            DynamicBypassRegistry.SaveOfflineCache(appData);
+                            var allProtected = DynamicBypassRegistry.GetAllProtectedDomains().ToList();
+                            _repo.SaveHostsCache(allProtected);
+                            _tunnel.UpdateBypassDomains(allProtected);
+                            CachedHostsCount = allProtected.Count;
+                        }
+                        if (servers.Count > 0)
+                        {
+                            _repo.UpsertCustomServers(servers);
+                            ReloadFromDb();
+                        }
+                    });
+                }
+                catch
+                {
+                    // Keep offline built-in domains on network restriction
+                }
             }
 
-            try
+            if (AutoCheckUpdates)
             {
-                using var updCts = new CancellationTokenSource(TimeSpan.FromSeconds(12));
-                var check = await _updater.CheckForUpdateAsync(updCts.Token);
-                _dispatchToUi(() =>
+                try
                 {
-                    if (check.UpdateAvailable && check.LatestRelease is { } rel)
+                    using var updCts = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+                    var check = await _updater.CheckForUpdateAsync(updCts.Token);
+                    _dispatchToUi(() =>
                     {
-                        _availableRelease = rel;
-                        AvailableVersionText = rel.VersionText;
-                        HasAvailableUpdate = true;
-                        UpdateStatusText = $"Доступно обновление {rel.VersionText} (текущая v{check.CurrentVersion})";
-                    }
-                    else if (check.LatestRelease is not null)
-                    {
-                        UpdateStatusText = $"Установлена актуальная версия v{check.CurrentVersion}";
-                    }
-                });
-            }
-            catch
-            {
-                // Silent check never disturbs user on offline launch
+                        if (check.UpdateAvailable && check.LatestRelease is { } rel)
+                        {
+                            _availableRelease = rel;
+                            AvailableVersionText = rel.VersionText;
+                            HasAvailableUpdate = true;
+                            UpdateStatusText = $"Доступно обновление {rel.VersionText} (текущая v{check.CurrentVersion})";
+                        }
+                        else if (check.LatestRelease is not null)
+                        {
+                            UpdateStatusText = $"Установлена актуальная версия v{check.CurrentVersion}";
+                        }
+                    });
+                }
+                catch
+                {
+                    // Silent check never disturbs user on offline launch
+                }
             }
         });
     }

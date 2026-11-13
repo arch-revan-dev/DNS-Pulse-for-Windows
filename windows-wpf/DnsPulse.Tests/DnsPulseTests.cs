@@ -244,4 +244,61 @@ public class DnsPulseTests
         Assert.Equal("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", sums["DnsPulse.exe"]);
         Assert.Equal("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", sums["DNS-Pulse-win-x64-setup.exe"]);
     }
+
+    [Fact]
+    public void Settings_Autostart_ScannerParity_And_Sni443Nodes_AreValid()
+    {
+        // 1. Settings persistence & normalization round-trip
+        var tempDir = Path.Combine(Path.GetTempPath(), $"dnspulse-settings-{Guid.NewGuid():N}");
+        try
+        {
+            var svc = new AppSettingsService(tempDir);
+            var initial = svc.Load();
+            Assert.True(initial.MinimizeToTrayOnClose);
+            Assert.True(initial.BlockIpv6OnBypass);
+            Assert.Equal("Emerald", initial.AccentPreset);
+
+            initial.IsDarkTheme = false;
+            initial.AccentPreset = "Violet";
+            initial.CompactMode = true;
+            initial.MinimizeToTrayOnClose = false;
+            initial.AutoModeEnabled = true;
+            initial.BootstrapDnsProvider = "8.8.8.8";
+            initial.ProbeTimeoutMs = 99999;      // should clamp to 6000
+            initial.BenchmarkConcurrency = 99;  // should clamp to 16
+            svc.Save(initial);
+
+            var reloaded = svc.Load();
+            Assert.False(reloaded.IsDarkTheme);
+            Assert.Equal("Violet", reloaded.AccentPreset);
+            Assert.True(reloaded.CompactMode);
+            Assert.False(reloaded.MinimizeToTrayOnClose);
+            Assert.True(reloaded.AutoModeEnabled);
+            Assert.Equal("8.8.8.8", reloaded.BootstrapDnsProvider);
+            Assert.Equal(6000, reloaded.ProbeTimeoutMs);
+            Assert.Equal(16, reloaded.BenchmarkConcurrency);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+
+        // 2. Quoted autostart command with spaces & extraction
+        var cmdMin = WindowsAutostartService.BuildQuotedLaunchCommand(@"C:\Program Files\DNS Pulse\DnsPulse.exe", startMinimized: true);
+        Assert.Equal("\"C:\\Program Files\\DNS Pulse\\DnsPulse.exe\" --autostart --minimized", cmdMin);
+        Assert.Equal(@"C:\Program Files\DNS Pulse\DnsPulse.exe", WindowsAutostartService.ExtractExecutablePath(cmdMin));
+
+        var cmdNormal = WindowsAutostartService.BuildQuotedLaunchCommand(@"D:\Tools\DnsPulse.exe", startMinimized: false);
+        Assert.Equal("\"D:\\Tools\\DnsPulse.exe\" --autostart", cmdNormal);
+
+        // 3. Built-in Open SNI Node smartproxy:// entries from Android parity + >= 900 scanner candidates
+        var catalog = CatalogSeeder.LoadFullCatalog(FindCatalogTsvPath());
+        Assert.Contains(catalog, s => s.DohUrl == "smartproxy://185.236.10.37" && s.Protocol == DnsProtocol.SNI443);
+        Assert.Contains(catalog, s => s.DohUrl == "smartproxy://163.5.63.112" && s.Protocol == DnsProtocol.SNI443);
+
+        var candidates = SubnetScannerService.BuildHunterCandidateIps("AUTO");
+        Assert.True(candidates.Count >= 900, $"Expected >= 900 AUTO scanner candidates, got {candidates.Count}");
+        Assert.Contains("185.236.10.37", candidates);
+    }
 }

@@ -16,6 +16,19 @@ public static class BootstrapDnsResolver
 {
     private static readonly string[] BootstrapServers = { "1.1.1.1", "8.8.8.8", "9.9.9.9" };
     private static readonly string[] BootstrapDohIps = { "https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query", "https://9.9.9.9/dns-query" };
+    public static volatile string PreferredBootstrapProvider = "Auto";
+
+    public static string[] GetOrderedBootstrapServers()
+    {
+        var pref = PreferredBootstrapProvider;
+        if (pref is "1.1.1.1" or "8.8.8.8" or "9.9.9.9")
+        {
+            return new[] { pref }
+                .Concat(BootstrapServers.Where(s => !string.Equals(s, pref, StringComparison.Ordinal)))
+                .ToArray();
+        }
+        return BootstrapServers;
+    }
     private static readonly HttpClient BootstrapDohClient = new(new SocketsHttpHandler
     {
         PooledConnectionLifetime = TimeSpan.FromMinutes(2),
@@ -55,7 +68,7 @@ public static class BootstrapDnsResolver
         var resolved = new List<IPAddress>();
         var query = DnsPacketCodec.EncodeQuery(clean, qtype: 1);
 
-        foreach (var dnsIp in BootstrapServers)
+        foreach (var dnsIp in GetOrderedBootstrapServers())
         {
             try
             {

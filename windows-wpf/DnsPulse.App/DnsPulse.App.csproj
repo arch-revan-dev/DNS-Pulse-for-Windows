@@ -10,7 +10,7 @@
     <RootNamespace>DnsPulse.App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
     <Authors>DNS Pulse Open Source Contributors</Authors>
     <Description>Windows 10/11 Smart-DNS, DoH/DoT/SNI-Proxy Diagnostics &amp; Local Tunnel</Description>
   </PropertyGroup>

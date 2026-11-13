@@ -16,14 +16,42 @@ public sealed class FourStageProber
     // Uses direct public UDP bootstrap DNS (1.1.1.1 / 8.8.8.8) instead of Windows system DNS
     // so probing works even if 127.0.0.1 local tunnel is active or ISP DNS blocks DoH hostnames.
     private readonly HttpClient _httpClient = BootstrapDnsResolver.CreateBootstrapHttpClient(
-        TimeSpan.FromMilliseconds(3200),
+        TimeSpan.FromMilliseconds(3800),
         allowAutoRedirect: false);
+
+    public int ProbeTimeoutMs { get; set; } = 2600;
 
     public async Task<(List<string> Ips, double LatencyMs)> ResolveAsync(
         DnsServerEntry server, string domain, CancellationToken ct)
     {
         var (ips, latencyMs, _) = await ResolveWithProtocolAsync(server, domain, ct).ConfigureAwait(false);
         return (ips, latencyMs);
+    }
+
+    public async Task<(bool Ok, double LatencyMs)> ProbeTcp443LatencyAsync(
+        string hostIp, int timeoutMs, CancellationToken ct)
+    {
+        if (!IPAddress.TryParse((hostIp ?? string.Empty).Trim(), out var targetIp))
+            return (false, 0);
+
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(Math.Clamp(timeoutMs, 400, 6000));
+            using var tcp = new TcpClient(targetIp.AddressFamily) { NoDelay = true };
+            await tcp.ConnectAsync(targetIp, 443, timeoutCts.Token).ConfigureAwait(false);
+            sw.Stop();
+            return (true, Math.Max(1, Math.Round(sw.Elapsed.TotalMilliseconds)));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return (false, 0);
+        }
     }
 
     public async Task<(List<string> Ips, double LatencyMs, string ProtocolUsed)> ResolveWithProtocolAsync(
@@ -42,7 +70,10 @@ public sealed class FourStageProber
             if (!AntiDirectIpFilter.IsValidNonBogonIp(proxyIp))
                 return (new List<string>(), 0, "Smart-VPN 443");
 
-            return (new List<string> { proxyIp }, 1, "Smart-VPN 443");
+            var (tcpOk, tcpMs) = await ProbeTcp443LatencyAsync(proxyIp, Math.Min(ProbeTimeoutMs, 2200), ct).ConfigureAwait(false);
+            return tcpOk
+                ? (new List<string> { proxyIp }, tcpMs, "Smart-VPN 443")
+                : (new List<string>(), 0, "Smart-VPN 443");
         }
 
         // 1. DoH (RFC 8484 POST -> GET), with UDP 53 fallback if PrimaryIp exists
@@ -197,11 +228,13 @@ public sealed class FourStageProber
         return (FilterValidIps(DnsPacketCodec.DecodeResponse(getWire).Ips), Math.Max(1, sw.Elapsed.TotalMilliseconds));
     }
 
-    public async Task<(List<string> Ips, double LatencyMs)> QueryUdp53Async(string serverIp, string domain, CancellationToken ct)
+    public async Task<(List<string> Ips, double LatencyMs)> QueryUdp53Async(
+        string serverIp, string domain, CancellationToken ct, int? timeoutMs = null)
     {
         var query = DnsPacketCodec.EncodeQuery(domain);
         var sw = Stopwatch.StartNew();
-        var raw = await BootstrapDnsResolver.ForwardRawUdpAsync(serverIp, query, 2200, ct).ConfigureAwait(false);
+        int effectiveTimeout = Math.Clamp(timeoutMs ?? ProbeTimeoutMs, 500, 6000);
+        var raw = await BootstrapDnsResolver.ForwardRawUdpAsync(serverIp, query, effectiveTimeout, ct).ConfigureAwait(false);
         sw.Stop();
         if (raw is not { Length: >= 12 })
             return (new List<string>(), 0);
@@ -213,7 +246,7 @@ public sealed class FourStageProber
     {
         var query = DnsPacketCodec.EncodeQuery(domain);
         var sw = Stopwatch.StartNew();
-        var raw = await BootstrapDnsResolver.ForwardRawTcpAsync(serverIp, query, 2400, ct).ConfigureAwait(false);
+        var raw = await BootstrapDnsResolver.ForwardRawTcpAsync(serverIp, query, Math.Clamp(ProbeTimeoutMs, 800, 6000), ct).ConfigureAwait(false);
         sw.Stop();
         if (raw is not { Length: >= 12 })
             return (new List<string>(), 0);
@@ -225,7 +258,7 @@ public sealed class FourStageProber
     {
         var query = DnsPacketCodec.EncodeQuery(domain);
         var sw = Stopwatch.StartNew();
-        var raw = await BootstrapDnsResolver.ForwardRawDotAsync(dotHost, fallbackIp, query, 2600, ct).ConfigureAwait(false);
+        var raw = await BootstrapDnsResolver.ForwardRawDotAsync(dotHost, fallbackIp, query, Math.Clamp(ProbeTimeoutMs, 1000, 6000), ct).ConfigureAwait(false);
         sw.Stop();
         if (raw is not { Length: >= 12 })
             return (new List<string>(), 0);

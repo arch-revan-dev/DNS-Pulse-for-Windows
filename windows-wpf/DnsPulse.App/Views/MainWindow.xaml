@@ -332,6 +332,38 @@
                                 <TextBlock Text="Конфиги и база" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
+
+                        <RadioButton GroupName="MainNav"
+                                     Style="{StaticResource SidebarNavRadioStyle}"
+                                     IsChecked="{Binding IsSettingsTab, Mode=OneWay}"
+                                     Command="{Binding SelectTabCommand}"
+                                     CommandParameter="3">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Path Grid.Column="0"
+                                      Data="M 8,5 A 3,3 0 1 1 7.99,5 Z M 8,1 L 8,2.8 M 8,13.2 L 8,15 M 1,8 L 2.8,8 M 13.2,8 L 15,8 M 3.05,3.05 L 4.35,4.35 M 11.65,11.65 L 12.95,12.95 M 12.95,3.05 L 11.65,4.35 M 4.35,11.65 L 3.05,12.95"
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"
+                                      StrokeThickness="1.4"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      Width="16"
+                                      Height="16"
+                                      Margin="0,0,10,0"
+                                      VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="Настройки" VerticalAlignment="Center" />
+                                <Ellipse Grid.Column="2"
+                                         Width="7"
+                                         Height="7"
+                                         Fill="{DynamicResource AccentBrush}"
+                                         VerticalAlignment="Center"
+                                         Visibility="{Binding HasAvailableUpdate, Converter={StaticResource BoolToVis}}"
+                                         ToolTip="Доступно обновление" />
+                            </Grid>
+                        </RadioButton>
                     </StackPanel>
 
                     <!-- Quick Tools -->
@@ -562,6 +594,9 @@
                                 <DataTrigger Binding="{Binding IsConfigsTab}" Value="True">
                                     <Setter Property="Visibility" Value="Collapsed" />
                                 </DataTrigger>
+                                <DataTrigger Binding="{Binding IsSettingsTab}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </Grid.Style>
@@ -616,6 +651,22 @@
 
                                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                                         <ToggleButton Style="{StaticResource FluentToggleButtonStyle}"
+                                                      IsChecked="{Binding AutoModeEnabled, Mode=OneWay}"
+                                                      Command="{Binding ToggleAutoModeCommand}"
+                                                      Margin="0,0,8,0"
+                                                      ToolTip="Автоматически проверить кандидатов, выбрать лучший рабочий узел и сразу переключить системный DNS (с автозаменой при сбое)">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Path Data="M 8,1 L 3,8.5 L 7.5,8.5 L 6.5,14 L 12.5,6.5 L 8,6.5 Z"
+                                                      Fill="{DynamicResource AccentBrush}"
+                                                      Width="13"
+                                                      Height="14"
+                                                      Margin="0,0,6,0"
+                                                      VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding AutoModeLabel}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </ToggleButton>
+
+                                        <ToggleButton Style="{StaticResource FluentToggleButtonStyle}"
                                                       IsChecked="{Binding IsLiveRunning, Mode=OneWay}"
                                                       Command="{Binding ToggleLiveCommand}"
                                                       Margin="0,0,8,0"
@@ -626,10 +677,11 @@
                                             </StackPanel>
                                         </ToggleButton>
 
-                                        <Button Content="Тест скорости (топ-18)"
+                                        <Button Content="{Binding BenchmarkButtonText}"
                                                 Style="{StaticResource PrimaryButtonStyle}"
                                                 Visibility="{Binding IsBenchmarkRunning, Converter={StaticResource InverseBoolToVis}}"
-                                                Command="{Binding BenchmarkVisibleCommand}" />
+                                                Command="{Binding BenchmarkVisibleCommand}"
+                                                ToolTip="Проверить абсолютно все DNS в открытой категории / фильтре" />
 
                                         <Button Content="Остановить тест"
                                                 Style="{StaticResource DangerButtonStyle}"
@@ -876,7 +928,7 @@
                                          SelectedItem="{Binding SelectedServer, Mode=TwoWay}">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
-                                            <Grid>
+                                            <Grid Margin="{Binding DataContext.ServerRowPadding, RelativeSource={RelativeSource AncestorType=Window}}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="18" />
                                                     <ColumnDefinition Width="*" />
@@ -1035,6 +1087,17 @@
                                                Margin="0,2,0,0" />
                                 </StackPanel>
                                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Content="{Binding BenchmarkButtonText}"
+                                            Style="{StaticResource AccentButtonStyle}"
+                                            Margin="0,0,8,0"
+                                            Visibility="{Binding IsBenchmarkRunning, Converter={StaticResource InverseBoolToVis}}"
+                                            Command="{Binding BenchmarkVisibleCommand}"
+                                            ToolTip="Проверить все DNS, показанные в текущем разделе/фильтре" />
+                                    <Button Content="Остановить тест"
+                                            Style="{StaticResource DangerButtonStyle}"
+                                            Margin="0,0,8,0"
+                                            Visibility="{Binding IsBenchmarkRunning, Converter={StaticResource BoolToVis}}"
+                                            Command="{Binding StopBenchmarkCommand}" />
                                     <Button Content="+ Добавить свой DNS"
                                             Style="{StaticResource PrimaryButtonStyle}"
                                             Margin="0,0,8,0"
@@ -1424,10 +1487,191 @@
                                                 Click="OnOpenDiscoveryClick" />
                                         <Button Content="Параметры сети Windows"
                                                 HorizontalAlignment="Stretch"
+                                                Margin="0,0,0,12"
                                                 Click="OnOpenWinSettingsClick" />
+                                        <CheckBox Content="Только бесплатные безлимитные" IsChecked="{Binding FreeOnly}" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                </Grid>
+
+                <!-- VIEW 3: НАСТРОЙКИ -->
+                <Grid Grid.Row="1" Visibility="{Binding IsSettingsTab, Converter={StaticResource BoolToVis}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <DockPanel Grid.Row="0" LastChildFill="False" Margin="0,0,0,14">
+                        <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
+                            <TextBlock Text="Настройки и кастомизация" Style="{StaticResource PageTitleStyle}" />
+                            <TextBlock Text="Обновления с GitHub, надёжный автозапуск Windows, поведение трея, авторежим и параметры туннеля"
+                                       Style="{StaticResource CaptionMutedStyle}"
+                                       Margin="0,2,0,0" />
+                        </StackPanel>
+                        <Border DockPanel.Dock="Right" Style="{StaticResource BadgePillStyle}" Padding="10,4" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding CurrentVersionText, StringFormat='DNS Pulse {0}'}"
+                                       FontFamily="JetBrains Mono, Cascadia Mono, Consolas"
+                                       FontSize="11.5"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource SecondaryTextBrush}" />
+                        </Border>
+                    </DockPanel>
+
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1.15*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- LEFT COLUMN: Autostart, Tray, Auto Mode, Network -->
+                            <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                <!-- Autostart & Tray -->
+                                <Border Style="{StaticResource SurfaceCardStyle}" Padding="18" Margin="0,0,0,12">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                            <Path Data="M 8,1.5 L 8,8 M 4.2,3.4 A 5.8,5.8 0 1 0 11.8,3.4"
+                                                  Stroke="{DynamicResource AccentBrush}"
+                                                  StrokeThickness="1.6"
+                                                  StrokeStartLineCap="Round"
+                                                  StrokeEndLineCap="Round"
+                                                  Width="16"
+                                                  Height="16"
+                                                  Margin="0,0,8,0"
+                                                  VerticalAlignment="Center" />
+                                            <TextBlock Text="Автозапуск и системный трей" Style="{StaticResource SectionTitleStyle}" VerticalAlignment="Center" />
+                                        </StackPanel>
+
+                                        <CheckBox Content="Запускать DNS Pulse автоматически вместе с Windows (HKCU Run)"
+                                                  IsChecked="{Binding StartWithWindows}"
+                                                  Margin="0,0,0,8" />
+                                        <CheckBox Content="При автозапуске запускать свёрнутым в трей (--minimized)"
+                                                  IsChecked="{Binding StartMinimizedToTray}"
+                                                  IsEnabled="{Binding StartWithWindows}"
+                                                  Margin="0,0,0,8" />
+                                        <CheckBox Content="При нажатии «✕» сворачивать в трей (если снято — полностью завершать процесс)"
+                                                  IsChecked="{Binding MinimizeToTrayOnClose}"
+                                                  Margin="0,0,0,12" />
+
+                                        <Border Background="{DynamicResource SecondarySurfaceBrush}"
+                                                BorderBrush="{DynamicResource BorderHairlineBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="6"
+                                                Padding="10,8"
+                                                Margin="0,0,0,12">
+                                            <TextBlock Text="{Binding AutostartStatusText}"
+                                                       Style="{StaticResource MonoMetaStyle}"
+                                                       FontSize="11.5"
+                                                       TextWrapping="Wrap" />
+                                        </Border>
+
+                                        <WrapPanel>
+                                            <Button Content="Проверить запись автозапуска"
+                                                    Margin="0,0,8,4"
+                                                    Command="{Binding VerifyAutostartCommand}" />
+                                            <Button Content="Выйти из программы полностью"
+                                                    Style="{StaticResource DangerButtonStyle}"
+                                                    Margin="0,0,0,4"
+                                                    Click="OnExitCompletelyClick"
+                                                    ToolTip="Остановить туннель, восстановить системный DNS и полностью завершить процесс DnsPulse.exe" />
+                                        </WrapPanel>
                                     </StackPanel>
                                 </Border>
 
+                                <!-- Auto Mode -->
+                                <Border Style="{StaticResource SurfaceCardStyle}" Padding="18" Margin="0,0,0,12">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                            <Path Data="M 8,1 L 3,8.5 L 7.5,8.5 L 6.5,14 L 12.5,6.5 L 8,6.5 Z"
+                                                  Fill="{DynamicResource AccentBrush}"
+                                                  Width="15"
+                                                  Height="15"
+                                                  Margin="0,0,8,0"
+                                                  VerticalAlignment="Center" />
+                                            <TextBlock Text="Авторежим (автоподбор и переключение)" Style="{StaticResource SectionTitleStyle}" VerticalAlignment="Center" />
+                                        </StackPanel>
+
+                                        <TextBlock Text="При включении сам проверяет доступные узлы для выбранного сервиса (и запускает сканер при необходимости), выбирает самый быстрый рабочий и сразу включает туннель."
+                                                   Style="{StaticResource CaptionMutedStyle}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,0,0,12" />
+
+                                        <CheckBox Content="Включить Авторежим (автоматический старт и подбор лучшего DNS)"
+                                                  IsChecked="{Binding AutoModeEnabled}"
+                                                  Margin="0,0,0,8" />
+                                        <CheckBox Content="Автопереключение (failover) при сбое или блокировке текущего узла"
+                                                  IsChecked="{Binding AutoFailoverOnDrop}"
+                                                  Margin="0,0,0,12" />
+
+                                        <Button Content="{Binding AutoModeLabel}"
+                                                Style="{StaticResource AccentButtonStyle}"
+                                                HorizontalAlignment="Left"
+                                                IsEnabled="{Binding IsAutoModeRunning, Converter={StaticResource InverseBool}}"
+                                                Command="{Binding ToggleAutoModeCommand}" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Network, Tunnel & Diagnostics -->
+                                <Border Style="{StaticResource SurfaceCardStyle}" Padding="18" Margin="0,0,0,12">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                            <Path Data="M 2,8 A 6,6 0 1 1 14,8 A 6,6 0 1 1 2,8 M 2.5,8 L 13.5,8 M 8,2 C 10.2,4.5 10.2,11.5 8,14 C 5.8,11.5 5.8,4.5 8,2"
+                                                  Stroke="{DynamicResource AccentBrush}"
+                                                  StrokeThickness="1.35"
+                                                  Width="16"
+                                                  Height="16"
+                                                  Margin="0,0,8,0"
+                                                  VerticalAlignment="Center" />
+                                            <TextBlock Text="Сеть, туннель и диагностика" Style="{StaticResource SectionTitleStyle}" VerticalAlignment="Center" />
+                                        </StackPanel>
+
+                                        <CheckBox Content="Умный сплит-туннель (через Smart-DNS только домены обхода)"
+                                                  IsChecked="{Binding SplitTunnelEnabled}"
+                                                  Margin="0,0,0,8" />
+                                        <CheckBox Content="Блокировать IPv6 (AAAA и HTTPS/SVCB) на доменах обхода против утечек"
+                                                  IsChecked="{Binding BlockIpv6OnBypass}"
+                                                  Margin="0,0,0,8" />
+                                        <CheckBox Content="Автосинхронизация онлайн-списков (malw.link, QuickDNS) при запуске"
+                                                  IsChecked="{Binding AutoSyncFeedsOnStartup}"
+                                                  Margin="0,0,0,14" />
+
+                                        <Grid Margin="0,0,0,12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="150" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="Bootstrap DNS (для DoH/DoT и фидов):" VerticalAlignment="Center" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                            <ComboBox Grid.Column="1"
+                                                      ItemsSource="{Binding BootstrapDnsOptions}"
+                                                      SelectedItem="{Binding BootstrapDnsProvider}"
+                                                      MinHeight="32" />
+                                        </Grid>
+
+                                        <StackPanel Margin="0,0,0,12">
+                                            <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                                                <TextBlock DockPanel.Dock="Left" Text="Таймаут запросов диагностики" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                <TextBlock DockPanel.Dock="Right" Text="{Binding ProbeTimeoutMs, StringFormat='{}{0} мс'}" Style="{StaticResource MonoMetaStyle}" FontWeight="SemiBold" />
+                                            </DockPanel>
+                                            <Slider Minimum="1000" Maximum="6000" TickFrequency="200" IsSnapToTickEnabled="True" Value="{Binding ProbeTimeoutMs}" />
+                                        </StackPanel>
+
+                                        <StackPanel>
+                                            <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                                                <TextBlock DockPanel.Dock="Left" Text="Потоки параллельного тестирования" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                <TextBlock DockPanel.Dock="Right" Text="{Binding BenchmarkConcurrency, StringFormat='{}{0} потоков'}" Style="{StaticResource MonoMetaStyle}" FontWeight="SemiBold" />
+                                            </DockPanel>
+                                            <Slider Minimum="2" Maximum="16" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding BenchmarkConcurrency}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- RIGHT COLUMN: GitHub Updates, Customization, Infrastructure Info -->
+                            <StackPanel Grid.Column="1" Margin="6,0,0,0">
+                                <!-- Updates -->
                                 <Border Style="{StaticResource SurfaceCardStyle}" Padding="18" Margin="0,0,0,12">
                                     <StackPanel>
                                         <DockPanel LastChildFill="False" Margin="0,0,0,10">
@@ -1442,7 +1686,7 @@
                                                       Height="16"
                                                       Margin="0,0,8,0"
                                                       VerticalAlignment="Center" />
-                                                <TextBlock Text="Обновление с GitHub" Style="{StaticResource SectionTitleStyle}" VerticalAlignment="Center" />
+                                                <TextBlock Text="Обновления с GitHub" Style="{StaticResource SectionTitleStyle}" VerticalAlignment="Center" />
                                             </StackPanel>
                                             <Border DockPanel.Dock="Right" Style="{StaticResource BadgePillStyle}">
                                                 <TextBlock Text="{Binding CurrentVersionText}"
@@ -1451,6 +1695,10 @@
                                                            FontWeight="SemiBold" />
                                             </Border>
                                         </DockPanel>
+
+                                        <CheckBox Content="Автоматически проверять обновления при запуске"
+                                                  IsChecked="{Binding AutoCheckUpdates}"
+                                                  Margin="0,0,0,10" />
 
                                         <TextBlock Text="{Binding UpdateStatusText}"
                                                    Style="{StaticResource CaptionMutedStyle}"
@@ -1463,33 +1711,89 @@
                                                      Margin="0,0,0,10"
                                                      Visibility="{Binding IsUpdatingApp, Converter={StaticResource BoolToVis}}" />
 
-                                        <Button Content="Проверить обновления"
-                                                HorizontalAlignment="Stretch"
-                                                Margin="0,0,0,8"
-                                                IsEnabled="{Binding IsCheckingUpdates, Converter={StaticResource InverseBool}}"
-                                                Command="{Binding CheckForUpdatesCommand}" />
-                                        <Button Content="Скачать и обновить в 1 клик"
-                                                Style="{StaticResource AccentButtonStyle}"
-                                                HorizontalAlignment="Stretch"
-                                                Visibility="{Binding HasAvailableUpdate, Converter={StaticResource BoolToVis}}"
-                                                IsEnabled="{Binding IsUpdatingApp, Converter={StaticResource InverseBool}}"
-                                                Command="{Binding InstallAppUpdateCommand}" />
+                                        <WrapPanel>
+                                            <Button Content="Проверить обновления"
+                                                    Margin="0,0,8,4"
+                                                    IsEnabled="{Binding IsCheckingUpdates, Converter={StaticResource InverseBool}}"
+                                                    Command="{Binding CheckForUpdatesCommand}" />
+                                            <Button Content="Скачать и обновить в 1 клик"
+                                                    Style="{StaticResource AccentButtonStyle}"
+                                                    Margin="0,0,0,4"
+                                                    Visibility="{Binding HasAvailableUpdate, Converter={StaticResource BoolToVis}}"
+                                                    IsEnabled="{Binding IsUpdatingApp, Converter={StaticResource InverseBool}}"
+                                                    Command="{Binding InstallAppUpdateCommand}" />
+                                        </WrapPanel>
                                     </StackPanel>
                                 </Border>
 
-                                <Border Style="{StaticResource SurfaceCardStyle}" Padding="18">
+                                <!-- Customization -->
+                                <Border Style="{StaticResource SurfaceCardStyle}" Padding="18" Margin="0,0,0,12">
                                     <StackPanel>
-                                        <TextBlock Text="Оформление и фильтры" Style="{StaticResource SectionTitleStyle}" Margin="0,0,0,12" />
+                                        <TextBlock Text="Кастомизация интерфейса" Style="{StaticResource SectionTitleStyle}" Margin="0,0,0,12" />
+
                                         <Button Content="{Binding ThemeLabel}"
                                                 HorizontalAlignment="Stretch"
                                                 Margin="0,0,0,12"
                                                 Click="OnToggleThemeClick" />
-                                        <CheckBox Content="Только бесплатные безлимитные" IsChecked="{Binding FreeOnly}" />
+
+                                        <CheckBox Content="Компактный режим карточек серверов"
+                                                  IsChecked="{Binding CompactMode}"
+                                                  Margin="0,0,0,14" />
+
+                                        <TextBlock Text="Акцентный цвет интерфейса:"
+                                                   Style="{StaticResource CaptionMutedStyle}"
+                                                   Margin="0,0,0,8" />
+
+                                        <WrapPanel Margin="0,0,0,14">
+                                            <Button Content="Изумруд"
+                                                    Margin="0,0,6,6"
+                                                    Style="{StaticResource ChipButtonStyle}"
+                                                    Command="{Binding SelectAccentPresetCommand}"
+                                                    CommandParameter="Emerald" />
+                                            <Button Content="Небесный"
+                                                    Margin="0,0,6,6"
+                                                    Style="{StaticResource ChipButtonStyle}"
+                                                    Command="{Binding SelectAccentPresetCommand}"
+                                                    CommandParameter="Azure" />
+                                            <Button Content="Фиолетовый"
+                                                    Margin="0,0,6,6"
+                                                    Style="{StaticResource ChipButtonStyle}"
+                                                    Command="{Binding SelectAccentPresetCommand}"
+                                                    CommandParameter="Violet" />
+                                            <Button Content="Янтарный"
+                                                    Margin="0,0,6,6"
+                                                    Style="{StaticResource ChipButtonStyle}"
+                                                    Command="{Binding SelectAccentPresetCommand}"
+                                                    CommandParameter="Amber" />
+                                            <Button Content="Рубин"
+                                                    Margin="0,0,0,6"
+                                                    Style="{StaticResource ChipButtonStyle}"
+                                                    Command="{Binding SelectAccentPresetCommand}"
+                                                    CommandParameter="Rose" />
+                                        </WrapPanel>
+
+                                        <TextBlock Text="{Binding AccentPreset, StringFormat='Выбранный акцент: {0}'}"
+                                                   Style="{StaticResource MonoMetaStyle}"
+                                                   Margin="0,0,0,12" />
+
+                                        <Button Content="Сбросить настройки по умолчанию"
+                                                HorizontalAlignment="Stretch"
+                                                Command="{Binding ResetAllSettingsCommand}" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Infrastructure Tips -->
+                                <Border Style="{StaticResource SurfaceCardStyle}" Padding="18">
+                                    <StackPanel>
+                                        <TextBlock Text="Почему срабатывают единицы узлов для Gemini / AI Studio" Style="{StaticResource SectionTitleStyle}" Margin="0,0,0,8" />
+                                        <TextBlock Text="Публичные Smart-DNS массово фильтруются провайдерами или получают анти-фрод/геоблок Google (403 / available-regions), если IP скомпрометирован или утекает IPv6/RPC (alkalimakersuite-pa). Встроены прямые SNI-443 узлы (GeoHide + Community SNI) и расширенный сканер /24 (~1150 адресов), а Авторежим автоматически находит и включает рабочий канал."
+                                                   Style="{StaticResource CaptionMutedStyle}"
+                                                   TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
-                        </ScrollViewer>
-                    </Grid>
+                        </Grid>
+                    </ScrollViewer>
                 </Grid>
             </Grid>
         </Grid>
