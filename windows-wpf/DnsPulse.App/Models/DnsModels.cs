@@ -56,6 +56,7 @@ public sealed class DnsServerEntry
     public double? AvgLatencyMs { get; set; }
     public double? JitterMs { get; set; }
     public double? LastTps { get; set; }
+    public int? SuccessRatePercent { get; set; }
     public BypassVerdict Verdict { get; set; } = BypassVerdict.UNCHECKED;
     public string VerdictReason { get; set; } = "Не проверялся";
     public List<string> ResolvedIps { get; set; } = new();
@@ -120,6 +121,7 @@ public sealed class ProbeResult
     public double? AvgLatencyMs { get; set; }
     public double? JitterMs { get; set; }
     public double? Tps { get; set; }
+    public int? SuccessRatePercent { get; set; }
     public List<string> ResolvedIps { get; set; } = new();
     public BypassVerdict Verdict { get; set; } = BypassVerdict.UNCHECKED;
     public string VerdictReason { get; set; } = "";

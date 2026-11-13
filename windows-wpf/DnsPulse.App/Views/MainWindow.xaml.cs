@@ -44,6 +44,8 @@ public partial class MainWindow : Window
             WindowState = WindowState.Normal;
             Activate();
         });
+
+        Loaded += async (_, _) => await _vm.EnsureStartupSyncAsync(App.StartupArgs);
     }
 
     private void OnMinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;

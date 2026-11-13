@@ -21,7 +21,9 @@ public sealed partial class MainViewModel : ObservableObject
     private List<DnsServerEntry> _allServers = [];
     private List<DnsServerEntry> _filteredServers = [];
     private CancellationTokenSource? _liveCts;
+    private CancellationTokenSource? _benchmarkCts;
     private CancellationTokenSource? _searchDebounceCts;
+    private bool _startupSyncStarted;
 
     private static readonly IReadOnlyList<DomainPresetItem> AllPresets =
     [
@@ -130,6 +132,33 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private int _cachedHostsCount;
 
+    [ObservableProperty]
+    private bool _splitTunnelEnabled = true;
+
+    [ObservableProperty]
+    private bool _isBenchmarkRunning;
+
+    [ObservableProperty]
+    private int _benchmarkDone;
+
+    [ObservableProperty]
+    private int _benchmarkTotal;
+
+    [ObservableProperty]
+    private int _benchmarkWorkingCount;
+
+    public bool IsElevated => WindowsNetworkAdapterService.IsElevated();
+    public bool NeedsElevationForSystemDns => !IsElevated;
+    public string BenchmarkProgressText => IsBenchmarkRunning && BenchmarkTotal > 0
+        ? $"Проверка: {BenchmarkDone} / {BenchmarkTotal} · Рабочих: {BenchmarkWorkingCount}"
+        : string.Empty;
+    public double BenchmarkProgressPercent => BenchmarkTotal > 0
+        ? BenchmarkDone * 100.0 / BenchmarkTotal
+        : 0;
+    public string ModeExplanationText => RequiresBypass
+        ? $"Режим обхода (4 этапа): 1) DNS-ответ -> 2) Фильтр прямого IP ({TargetDomain}) -> 3) TLS порт 443 -> 4) Проверка блока региона (403/available-regions)"
+        : $"Чистый пинг: проверка скорости и стабильности DNS для {TargetDomain} без требования Smart-DNS обхода";
+
     public bool IsTesterTab => ActiveTabIndex == 0;
     public bool IsCatalogTab => ActiveTabIndex == 1;
     public bool IsConfigsTab => ActiveTabIndex == 2;
@@ -164,10 +193,15 @@ public sealed partial class MainViewModel : ObservableObject
         _dispatchToUi = dispatchToUi ?? (action => action());
         var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DNS-Pulse");
         _adapter = new WindowsNetworkAdapterService(appData);
+        DynamicBypassRegistry.LoadOfflineCache(appData);
         _repo.SeedMissingBuiltins(CatalogSeeder.LoadFullCatalog());
         var cachedHosts = _repo.LoadHostsCache();
-        CachedHostsCount = cachedHosts.Count;
-        if (cachedHosts.Count > 0) _tunnel.UpdateBypassDomains(cachedHosts);
+        if (cachedHosts.Count > 0)
+            DynamicBypassRegistry.ClassifyAndAddDomains(cachedHosts);
+        CachedHostsCount = Math.Max(cachedHosts.Count, DynamicBypassRegistry.GetAllProtectedDomains().Count);
+        _tunnel.UpdateBypassDomains(DynamicBypassRegistry.GetAllProtectedDomains());
+        _tunnel.SetActiveTargetDomain(TargetDomain);
+        _tunnel.SplitTunnelBypassOnly = SplitTunnelEnabled;
         RefreshPresetGroupsAndItems();
         ReloadFromDb();
     }
@@ -184,7 +218,31 @@ public sealed partial class MainViewModel : ObservableObject
         ApplyFilterAndSort();
     }
 
-    partial void OnRequiresBypassChanged(bool value) => ApplyFilterAndSort();
+    partial void OnTargetDomainChanged(string value)
+    {
+        _tunnel.SetActiveTargetDomain(value);
+        OnPropertyChanged(nameof(ModeExplanationText));
+    }
+
+    partial void OnRequiresBypassChanged(bool value)
+    {
+        ApplyFilterAndSort();
+        OnPropertyChanged(nameof(ModeExplanationText));
+    }
+
+    partial void OnSplitTunnelEnabledChanged(bool value) => _tunnel.SplitTunnelBypassOnly = value;
+    partial void OnIsBenchmarkRunningChanged(bool value) => OnPropertyChanged(nameof(BenchmarkProgressText));
+    partial void OnBenchmarkDoneChanged(int value)
+    {
+        OnPropertyChanged(nameof(BenchmarkProgressText));
+        OnPropertyChanged(nameof(BenchmarkProgressPercent));
+    }
+    partial void OnBenchmarkTotalChanged(int value)
+    {
+        OnPropertyChanged(nameof(BenchmarkProgressText));
+        OnPropertyChanged(nameof(BenchmarkProgressPercent));
+    }
+    partial void OnBenchmarkWorkingCountChanged(int value) => OnPropertyChanged(nameof(BenchmarkProgressText));
     partial void OnSelectedCategoryChanged(string value) { RefreshCategoryChips(); ApplyFilterAndSort(); }
     partial void OnSelectedSortModeChanged(SortMode value) => ApplyFilterAndSort();
     partial void OnBypassOnlyChanged(bool value) => ApplyFilterAndSort();
@@ -366,6 +424,26 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void ClearSearch() => SearchQuery = string.Empty;
+
+    [RelayCommand]
+    private void RestartAsAdmin()
+    {
+        var args = ActiveTunnelServer is { } s ? $"--connect-id {s.Id}" : "--apply-tunnel";
+        if (!WindowsNetworkAdapterService.RequestElevationAndRestart(args))
+        {
+            StatusMessage = "Перезапуск от имени администратора отменён пользователем";
+        }
+    }
+
+    [RelayCommand]
+    private void StopBenchmark()
+    {
+        _benchmarkCts?.Cancel();
+        StatusMessage = "Останавливаем текущую проверку...";
+    }
+
+    [RelayCommand]
     public async Task TestSingleAsync(DnsServerEntry? server, CancellationToken ct)
     {
         if (server is null) return;
@@ -376,7 +454,9 @@ public sealed partial class MainViewModel : ObservableObject
             var res = await _prober.ProbeFourStagesAsync(server, TargetDomain, RequiresBypass, ct);
             _repo.SaveProbeResult(res);
             ReloadFromDb();
-            StatusMessage = $"{server.Name}: {res.VerdictReason} ({res.LatencyMs?.ToString("0") ?? "—"} мс)";
+            var ipNote = res.ResolvedIps.Count > 0 ? $" [{res.ResolvedIps[0]}]" : string.Empty;
+            var latNote = res.LatencyMs.HasValue ? $" · {res.LatencyMs.Value:0} мс" : string.Empty;
+            StatusMessage = $"{server.Name}: {res.VerdictReason}{ipNote}{latNote}";
         }
         catch (Exception ex)
         {
@@ -393,36 +473,88 @@ public sealed partial class MainViewModel : ObservableObject
 
     public async Task BenchmarkTopAsync(int count, CancellationToken ct)
     {
+        _benchmarkCts?.Cancel();
+        _benchmarkCts?.Dispose();
+        _benchmarkCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var token = _benchmarkCts.Token;
+
+        var targets = VisibleServers.Take(count).ToList();
+        if (targets.Count == 0)
+        {
+            StatusMessage = "Нет серверов для проверки под текущие фильтры";
+            return;
+        }
+
         IsBusy = true;
-        StatusMessage = $"Бенчмарк топ-{count} серверов для {TargetDomain}...";
+        IsBenchmarkRunning = true;
+        BenchmarkTotal = targets.Count;
+        BenchmarkDone = 0;
+        BenchmarkWorkingCount = 0;
+        StatusMessage = $"Проверка {targets.Count} узлов для {TargetDomain}...";
+
         try
         {
             using var gate = new SemaphoreSlim(6);
-            var targets = VisibleServers.Take(count).ToList();
+            int done = 0;
+            int working = 0;
+
             var tasks = targets.Select(async srv =>
             {
-                await gate.WaitAsync(ct);
+                await gate.WaitAsync(token);
                 try
                 {
-                    var res = await _prober.ProbeFourStagesAsync(srv, TargetDomain, RequiresBypass, ct);
+                    if (token.IsCancellationRequested) return;
+                    var res = await _prober.ProbeFourStagesAsync(srv, TargetDomain, RequiresBypass, token);
                     _repo.SaveProbeResult(res);
+
+                    int d = Interlocked.Increment(ref done);
+                    int w = res.Verdict == BypassVerdict.VERIFIED_PROXY_OK
+                        ? Interlocked.Increment(ref working)
+                        : Volatile.Read(ref working);
+
+                    _dispatchToUi(() =>
+                    {
+                        BenchmarkDone = d;
+                        BenchmarkWorkingCount = w;
+                        StatusMessage = $"Проверено {d}/{targets.Count}: {srv.Name} -> {res.VerdictReason}";
+                        if (d % 3 == 0 || d == targets.Count)
+                        {
+                            ReloadFromDb();
+                        }
+                    });
+                }
+                catch (OperationCanceledException)
+                {
+                    // Cancelled cleanly
                 }
                 finally
                 {
                     gate.Release();
                 }
             });
+
             await Task.WhenAll(tasks);
-            ReloadFromDb();
-            StatusMessage = $"Тест завершён ({targets.Count} узлов проверено)";
+            _dispatchToUi(() =>
+            {
+                ReloadFromDb();
+                StatusMessage = $"Тест завершён: {targets.Count} узлов, рабочих: {Volatile.Read(ref working)}";
+            });
         }
         catch (OperationCanceledException)
         {
-            StatusMessage = "Бенчмарк остановлен";
+            _dispatchToUi(() =>
+            {
+                ReloadFromDb();
+                StatusMessage = $"Проверка остановлена ({BenchmarkDone}/{BenchmarkTotal}, рабочих: {BenchmarkWorkingCount})";
+            });
         }
         finally
         {
-            IsBusy = false;
+            _dispatchToUi(() =>
+            {
+                IsBenchmarkRunning = false;
+                IsBusy = false;
+            });
         }
     }
 
@@ -439,7 +571,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         _liveCts = new CancellationTokenSource();
         IsLiveRunning = true;
-        StatusMessage = "LIVE: автопроверка топ-6 каждые 2.8 сек";
+        StatusMessage = "LIVE: автопроверка топ-6 каждые 3 сек";
         var token = _liveCts.Token;
         _ = Task.Run(async () =>
         {
@@ -448,13 +580,14 @@ public sealed partial class MainViewModel : ObservableObject
                 try
                 {
                     await BenchmarkTopAsync(6, token);
-                    await Task.Delay(2800, token);
+                    await Task.Delay(3000, token);
                 }
                 catch (OperationCanceledException)
                 {
                     break;
                 }
             }
+            _dispatchToUi(() => IsLiveRunning = false);
         }, token);
     }
 
@@ -474,12 +607,23 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
+            _tunnel.SetActiveTargetDomain(TargetDomain);
+            _tunnel.SplitTunnelBypassOnly = SplitTunnelEnabled;
             await _tunnel.StartAsync(server);
+
             if (applySystemAdapter && WindowsNetworkAdapterService.IsElevated())
             {
                 await _adapter.ApplyLocalTunnelAsync("127.0.0.1", _repo.LoadHostsCache());
+                StatusMessage = $"Системный туннель активен: {server.Name} (127.0.0.1:53 · DNS Windows переключён)";
             }
-            StatusMessage = $"Туннель запущен: {server.Name} (127.0.0.1:53)";
+            else if (applySystemAdapter)
+            {
+                StatusMessage = $"Прокси {server.Name} на 127.0.0.1:53 запущен, но НУЖНЫ ПРАВА АДМИНА для переключения DNS Windows";
+            }
+            else
+            {
+                StatusMessage = $"Локальный туннель запущен: {server.Name} (127.0.0.1:53)";
+            }
         }
         catch (Exception ex)
         {
@@ -506,19 +650,19 @@ public sealed partial class MainViewModel : ObservableObject
         var best = PickBestVerified();
         if (best is null)
         {
-            await BenchmarkTopAsync(12, ct);
+            await BenchmarkTopAsync(18, ct);
             best = PickBestVerified();
         }
 
-        if (best is null)
+        if (best is null && !RequiresBypass)
         {
-            best = _filteredServers.FirstOrDefault(s => s.SupportsBypass && !s.IsSubscription)
-                   ?? _allServers.FirstOrDefault(s => s.SupportsBypass && !s.IsSubscription);
+            best = _filteredServers.FirstOrDefault(s => !s.IsSubscription)
+                   ?? _allServers.FirstOrDefault(s => !s.IsSubscription);
         }
 
         if (best is null)
         {
-            StatusMessage = "Не найден подходящий сервер для подключения";
+            StatusMessage = $"Не найдено рабочих Smart-DNS под {TargetDomain} в топ-18 — откройте «Сканер /24 и списки» или отключите «Обход 443»";
             return;
         }
 
@@ -632,6 +776,9 @@ public sealed partial class MainViewModel : ObservableObject
         var (hosts, servers) = await _feedSync.SyncAsync(ct);
         if (hosts.Count > 0)
         {
+            var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DNS-Pulse");
+            DynamicBypassRegistry.ClassifyAndAddDomains(hosts);
+            DynamicBypassRegistry.SaveOfflineCache(appData);
             _repo.SaveHostsCache(hosts);
             _tunnel.UpdateBypassDomains(hosts);
             CachedHostsCount = hosts.Count;
@@ -642,6 +789,74 @@ public sealed partial class MainViewModel : ObservableObject
             ReloadFromDb();
         }
         return (hosts.Count, servers.Count);
+    }
+
+    public async Task EnsureStartupSyncAsync(string[]? startupArgs = null)
+    {
+        if (_startupSyncStarted) return;
+        _startupSyncStarted = true;
+
+        try
+        {
+            if (startupArgs is { Length: > 0 })
+            {
+                for (int i = 0; i < startupArgs.Length; i++)
+                {
+                    if (startupArgs[i] == "--connect-id" && i + 1 < startupArgs.Length)
+                    {
+                        var targetId = startupArgs[i + 1];
+                        var targetSrv = _allServers.FirstOrDefault(s => s.Id == targetId);
+                        if (targetSrv is not null)
+                        {
+                            SelectedServer = targetSrv;
+                            await StartTunnelAsync(targetSrv);
+                        }
+                        break;
+                    }
+                    if (startupArgs[i] == "--apply-tunnel")
+                    {
+                        await ConnectBestAsync(CancellationToken.None);
+                        break;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Non-fatal startup flag handling
+        }
+
+        // Background hosts & community feeds refresh (same behavior as Android app startup)
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+                var (hosts, servers) = await _feedSync.SyncAsync(cts.Token);
+                _dispatchToUi(() =>
+                {
+                    if (hosts.Count > 0)
+                    {
+                        var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DNS-Pulse");
+                        DynamicBypassRegistry.ClassifyAndAddDomains(hosts);
+                        DynamicBypassRegistry.SaveOfflineCache(appData);
+                        var allProtected = DynamicBypassRegistry.GetAllProtectedDomains().ToList();
+                        _repo.SaveHostsCache(allProtected);
+                        _tunnel.UpdateBypassDomains(allProtected);
+                        CachedHostsCount = allProtected.Count;
+                    }
+                    if (servers.Count > 0)
+                    {
+                        _repo.UpsertCustomServers(servers);
+                        ReloadFromDb();
+                    }
+                });
+            }
+            catch
+            {
+                // Keep offline built-in domains on network restriction
+            }
+        });
     }
 
     [RelayCommand]

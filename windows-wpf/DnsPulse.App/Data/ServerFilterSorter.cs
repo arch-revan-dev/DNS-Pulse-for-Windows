@@ -16,6 +16,10 @@ public static class ServerFilterSorter
         bool requiresBypass)
     {
         var q = search.Trim().ToLowerInvariant();
+        var tokens = string.IsNullOrEmpty(q)
+            ? Array.Empty<string>()
+            : q.Split(new[] { ' ', '\t', ',' }, StringSplitOptions.RemoveEmptyEntries);
+
         var filtered = servers.Where(s =>
         {
             if (category != "Все" && s.Category != category) return false;
@@ -27,10 +31,14 @@ public static class ServerFilterSorter
                 bool ok = s.Verdict == BypassVerdict.VERIFIED_PROXY_OK || (s.Verdict == BypassVerdict.UNCHECKED && s.SupportsBypass);
                 if (!ok) return false;
             }
-            if (!string.IsNullOrEmpty(q))
+            if (tokens.Length > 0)
             {
-                var hay = $"{s.Name} {s.Provider} {s.PrimaryIp} {s.DohUrl} {s.DotHost} {string.Join(' ', s.Tags)} {s.Description}".ToLowerInvariant();
-                if (!hay.Contains(q)) return false;
+                var hay = $"{s.Name} {s.Provider} {s.Category} {s.Country} {s.ProtocolBadge} {s.EndpointLabel} {s.PrimaryIp} {s.DohUrl} {s.DotHost} {s.SmartProxyIp} {string.Join(' ', s.Tags)} {s.Description} {s.VerdictReason}".ToLowerInvariant();
+                foreach (var token in tokens)
+                {
+                    if (!hay.Contains(token))
+                        return false;
+                }
             }
             return true;
         });

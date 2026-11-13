@@ -97,11 +97,15 @@
 
                     <Border BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,0,0,1" Margin="0,0,0,14" />
 
-                    <TextBlock Text="Сканер подсетей /24 и открытых SNI-прокси (порт 443)" Style="{StaticResource SectionTitleStyle}" Margin="0,0,0,10" />
+                    <TextBlock Text="Сканер подсетей /24 и открытых SNI-прокси (порт 443)" Style="{StaticResource SectionTitleStyle}" Margin="0,0,0,4" />
+                    <TextBlock Text="AUTO сканирует 12 проверенных Smart-Proxy подсетей (/24), или укажите свой IP / подсеть вида 192.255.159.0/24"
+                               Style="{StaticResource CaptionMutedStyle}"
+                               Margin="0,0,0,10" />
                     <Grid Margin="0,0,0,10">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="10" />
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <TextBox x:Name="SubnetInput"
@@ -115,11 +119,19 @@
                                 Style="{StaticResource PrimaryButtonStyle}"
                                 MinWidth="124"
                                 Click="OnScanClick" />
+                        <Button x:Name="StopScanBtn"
+                                Grid.Column="3"
+                                Content="Стоп"
+                                Style="{StaticResource DangerButtonStyle}"
+                                Margin="8,0,0,0"
+                                Visibility="Collapsed"
+                                Click="OnStopScanClick" />
                     </Grid>
 
                     <StackPanel Orientation="Horizontal">
                         <CheckBox x:Name="ScanUdp53Check" Content="Сканировать UDP 53 (Smart-DNS)" IsChecked="True" Margin="0,0,20,0" />
-                        <CheckBox x:Name="CheckPort443Check" Content="Проверять порт 443 (SNI-прокси)" IsChecked="True" />
+                        <CheckBox x:Name="CheckPort443Check" Content="Проверять порт 443 (SNI-прокси)" IsChecked="True" Margin="0,0,20,0" />
+                        <CheckBox x:Name="RequiresBypassCheck" Content="Строгий обход 443" IsChecked="True" />
                     </StackPanel>
                 </StackPanel>
             </Border>

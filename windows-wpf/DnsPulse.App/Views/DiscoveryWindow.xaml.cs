@@ -17,6 +17,7 @@ public partial class DiscoveryWindow : Window
         InitializeComponent();
         _vm = vm;
         TargetDomainInput.Text = _vm.TargetDomain;
+        RequiresBypassCheck.IsChecked = _vm.RequiresBypass;
     }
 
     private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
@@ -27,28 +28,51 @@ public partial class DiscoveryWindow : Window
             TargetDomainInput.Text = domain;
     }
 
+    private void OnStopScanClick(object sender, RoutedEventArgs e)
+    {
+        _cts?.Cancel();
+        StopScanBtn.IsEnabled = false;
+        StatusLabel.Text = "Останавливаем сканирование...";
+    }
+
     private async void OnScanClick(object sender, RoutedEventArgs e)
     {
         _cts?.Cancel();
         _cts = new CancellationTokenSource();
         ScanBtn.IsEnabled = false;
+        StopScanBtn.Visibility = Visibility.Visible;
+        StopScanBtn.IsEnabled = true;
+
         var domain = string.IsNullOrWhiteSpace(TargetDomainInput.Text) ? _vm.TargetDomain : TargetDomainInput.Text.Trim();
-        StatusLabel.Text = $"Идёт 4-этапная проверка подсети для {domain}...";
+        bool requiresBypass = RequiresBypassCheck.IsChecked == true;
+        StatusLabel.Text = $"Старт 4-этапного сканирования под {domain}...";
 
         try
         {
-            var progress = new Progress<double>(p => ScanProgress.Value = p * 100);
+            var progress = new Progress<double>(p => ScanProgress.Value = p);
+            var detailed = new Progress<(int Done, int Total, int Found, string CurrentIp)>(info =>
+            {
+                StatusLabel.Text = $"Проверено {info.Done}/{info.Total} ({info.CurrentIp}) · Найдено: {info.Found}";
+            });
+
             _found = await _scanner.ScanAsync(
                 SubnetInput.Text,
                 domain,
-                requiresBypass: true,
+                requiresBypass: requiresBypass,
                 scanUdp53: ScanUdp53Check.IsChecked == true,
                 checkPort443: CheckPort443Check.IsChecked == true,
                 progress,
-                _cts.Token);
+                _cts.Token,
+                detailed);
 
             FoundList.ItemsSource = _found;
-            StatusLabel.Text = $"Найдено рабочих узлов: {_found.Count}";
+            StatusLabel.Text = _found.Count > 0
+                ? $"Готово! Найдено рабочих узлов: {_found.Count} (нажмите «Добавить найденные в базу»)"
+                : "Рабочих узлов в указанной подсети не найдено — попробуйте режим AUTO или синхронизацию списков";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusLabel.Text = $"Сканирование остановлено (найдено: {_found.Count})";
         }
         catch (Exception ex)
         {
@@ -57,17 +81,18 @@ public partial class DiscoveryWindow : Window
         finally
         {
             ScanBtn.IsEnabled = true;
+            StopScanBtn.Visibility = Visibility.Collapsed;
         }
     }
 
     private async void OnSyncFeedsClick(object sender, RoutedEventArgs e)
     {
         SyncFeedsBtn.IsEnabled = false;
-        StatusLabel.Text = "Загрузка списков dns.malw.link и QuickDNS...";
+        StatusLabel.Text = "Загрузка списков dns.malw.link и QuickDNS (Bootstrap DNS)...";
         try
         {
             var (hosts, servers) = await _vm.SyncOnlineFeedsAsync(CancellationToken.None);
-            StatusLabel.Text = $"Синхронизировано доменов: {hosts}, узлов: {servers}";
+            StatusLabel.Text = $"Синхронизировано доменов: {hosts}, новых DNS-серверов: {servers}";
         }
         catch (Exception ex)
         {
@@ -82,7 +107,9 @@ public partial class DiscoveryWindow : Window
     private void OnSaveFoundClick(object sender, RoutedEventArgs e)
     {
         if (_found.Count > 0)
+        {
             _vm.AddDiscoveredServers(_found);
+        }
         Close();
     }
 

@@ -3,6 +3,7 @@ using System.Text.Json;
 using DnsPulse.App.Data;
 using DnsPulse.App.Models;
 using DnsPulse.App.NetworkEngine;
+using DnsPulse.App.Services;
 using DnsPulse.App.ViewModels;
 using Xunit;
 
@@ -164,5 +165,48 @@ public class DnsPulseTests
         {
             try { Directory.Delete(tempDir, true); } catch { /* ignore sqlite handle release lag */ }
         }
+    }
+
+    [Fact]
+    public void DynamicBypassRegistry_QuestionParser_MultiTokenSearch_And_DiscoveryTargets_Work()
+    {
+        // Built-in protected bypass registry must NEVER be empty
+        Assert.True(DynamicBypassRegistry.IsBypassTargetDomain("gemini.google.com"));
+        Assert.True(DynamicBypassRegistry.IsBypassTargetDomain("sub.aistudio.google.com"));
+        Assert.True(DynamicBypassRegistry.IsBypassTargetDomain("open.spotify.com"));
+        Assert.False(DynamicBypassRegistry.IsBypassTargetDomain("github.com"));
+        Assert.False(DynamicBypassRegistry.IsValidDomainName("localhost"));
+
+        // Question extraction & empty IPv6 NoError response
+        var aaaaQuery = DnsPacketCodec.EncodeQuery("aistudio.google.com", qtype: 28, transactionId: 0x3355);
+        Assert.True(BootstrapDnsResolver.TryParseQuestion(aaaaQuery, out var parsedHost, out var parsedType));
+        Assert.Equal("aistudio.google.com", parsedHost);
+        Assert.Equal((ushort)28, parsedType);
+
+        var emptyReply = LocalDnsTunnelServer.BuildEmptyNoErrorResponse(aaaaQuery);
+        var decodedEmpty = DnsPacketCodec.DecodeResponse(emptyReply);
+        Assert.Equal((ushort)0x3355, decodedEmpty.TransactionId);
+        Assert.Equal(0, decodedEmpty.Rcode);
+        Assert.Empty(decodedEmpty.Ips);
+
+        // Expanded Android direct CDN detection & geo-block body
+        Assert.True(AntiDirectIpFilter.IsDirectServiceIp("34.117.59.81", "gemini.google.com"));
+        Assert.True(AntiDirectIpFilter.IsDirectServiceIp("104.16.12.34", "chatgpt.com"));
+        Assert.True(AntiDirectIpFilter.IsGeoBlockedBody("See https://ai.google.dev/available-regions for supported countries"));
+
+        // Multi-token search across Country + Protocol + Name
+        var multiItems = new[]
+        {
+            new DnsServerEntry { Id = "x1", Name = "Bezmezhau Node", Protocol = DnsProtocol.DoH, Country = "FI", DohUrl = "https://dns.bezmezhau.com/dns-query" },
+            new DnsServerEntry { Id = "x2", Name = "Cloudflare", Protocol = DnsProtocol.UDP, Country = "GLOBAL", PrimaryIp = "1.1.1.1" }
+        };
+        var found = ServerFilterSorter.FilterAndSort(multiItems, "Все", false, false, false, false, "bez doh fi", SortMode.BEST, true);
+        Assert.Single(found);
+        Assert.Equal("x1", found[0].Id);
+
+        // Discovery AUTO curated /24 subnet candidates
+        var candidates = SubnetScannerService.BuildHunterCandidateIps("AUTO");
+        Assert.True(candidates.Count >= 200);
+        Assert.Contains("192.255.159.240", candidates);
     }
 }
