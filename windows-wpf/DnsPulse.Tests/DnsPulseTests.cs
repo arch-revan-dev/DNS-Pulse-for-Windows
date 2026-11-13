@@ -224,9 +224,9 @@ public class DnsPulseTests
           "html_url": "https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/tag/v1.4.0",
           "body": "Release notes",
           "assets": [
-            { "name": "DNS-Pulse-win-x64-setup.exe", "browser_download_url": "https://example.com/setup.exe" },
-            { "name": "DnsPulse.exe", "browser_download_url": "https://example.com/DnsPulse.exe" },
-            { "name": "SHA256SUMS.txt", "browser_download_url": "https://example.com/SHA256SUMS.txt" }
+            { "name": "DNS-Pulse-win-x64-setup.exe", "url": "https://api.github.com/repos/arch-revan-dev/DNS-Pulse-for-Windows/releases/assets/101", "browser_download_url": "https://example.com/setup.exe" },
+            { "name": "DnsPulse.exe", "url": "https://api.github.com/repos/arch-revan-dev/DNS-Pulse-for-Windows/releases/assets/102", "browser_download_url": "https://example.com/DnsPulse.exe" },
+            { "name": "SHA256SUMS.txt", "url": "https://api.github.com/repos/arch-revan-dev/DNS-Pulse-for-Windows/releases/assets/103", "browser_download_url": "https://example.com/SHA256SUMS.txt" }
           ]
         }
         """;
@@ -235,8 +235,11 @@ public class DnsPulseTests
         Assert.NotNull(rel);
         Assert.Equal("v1.4.0", rel!.VersionText);
         Assert.Equal("https://example.com/setup.exe", rel.SetupExeUrl);
+        Assert.Equal("https://api.github.com/repos/arch-revan-dev/DNS-Pulse-for-Windows/releases/assets/101", rel.SetupApiUrl);
         Assert.Equal("https://example.com/DnsPulse.exe", rel.PortableExeUrl);
+        Assert.Equal("https://api.github.com/repos/arch-revan-dev/DNS-Pulse-for-Windows/releases/assets/102", rel.PortableApiUrl);
         Assert.Equal("https://example.com/SHA256SUMS.txt", rel.Sha256SumsUrl);
+        Assert.Equal("https://api.github.com/repos/arch-revan-dev/DNS-Pulse-for-Windows/releases/assets/103", rel.Sha256ApiUrl);
 
         var sums = AppUpdateService.ParseSha256Sums(
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  DnsPulse.exe\n" +

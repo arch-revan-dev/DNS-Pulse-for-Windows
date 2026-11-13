@@ -1,5 +1,5 @@
 #define MyAppName "DNS Pulse"
-#define MyAppVersion "1.5.0"
+#define MyAppVersion "1.5.1"
 #define MyAppPublisher "DNS Pulse Open Source Contributors"
 #define MyAppURL "https://github.com/arch-revan-dev/DNS-Pulse-for-Windows"
 #define MyAppExeName "DnsPulse.exe"

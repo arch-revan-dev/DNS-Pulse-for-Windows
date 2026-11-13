@@ -18,12 +18,16 @@ public sealed record AppReleaseInfo(
     string? SetupExeUrl,
     string? PortableExeUrl,
     string? Sha256SumsUrl,
-    string HtmlUrl);
+    string HtmlUrl,
+    string? SetupApiUrl = null,
+    string? PortableApiUrl = null,
+    string? Sha256ApiUrl = null);
 
 public sealed record UpdateCheckResult(
     bool UpdateAvailable,
     Version CurrentVersion,
-    AppReleaseInfo? LatestRelease);
+    AppReleaseInfo? LatestRelease,
+    string? ErrorMessage = null);
 
 public sealed class AppUpdateService
 {
@@ -34,6 +38,8 @@ public sealed class AppUpdateService
 
     private readonly HttpClient _checkClient;
     private readonly HttpClient _downloadClient;
+    private readonly HttpClient _systemProxyCheckClient;
+    private readonly HttpClient _systemProxyDownloadClient;
 
     public AppUpdateService()
     {
@@ -41,12 +47,36 @@ public sealed class AppUpdateService
         _checkClient.DefaultRequestVersion = HttpVersion.Version11;
         _checkClient.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
         _checkClient.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/vnd.github+json");
-        _checkClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "DNS-Pulse-Updater/1.3");
+        _checkClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "DNS-Pulse-Updater/1.5");
 
         _downloadClient = BootstrapDnsResolver.CreateBootstrapHttpClient(TimeSpan.FromMinutes(6), allowAutoRedirect: true);
         _downloadClient.DefaultRequestVersion = HttpVersion.Version11;
         _downloadClient.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
-        _downloadClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "DNS-Pulse-Updater/1.3");
+        _downloadClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "DNS-Pulse-Updater/1.5");
+
+        // Fallback clients honoring Windows system proxy / VPN adapter routes if direct UDP bootstrap is blocked
+        _systemProxyCheckClient = new HttpClient(new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
+            ConnectTimeout = TimeSpan.FromSeconds(6)
+        })
+        {
+            Timeout = TimeSpan.FromSeconds(12)
+        };
+        _systemProxyCheckClient.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/vnd.github+json");
+        _systemProxyCheckClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "DNS-Pulse-Updater/1.5");
+
+        _systemProxyDownloadClient = new HttpClient(new SocketsHttpHandler
+        {
+            AllowAutoRedirect = true,
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
+            ConnectTimeout = TimeSpan.FromSeconds(8)
+        })
+        {
+            Timeout = TimeSpan.FromMinutes(6)
+        };
+        _systemProxyDownloadClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "DNS-Pulse-Updater/1.5");
     }
 
     public static Version GetCurrentVersion()
@@ -122,6 +152,9 @@ public sealed class AppUpdateService
         string? setupUrl = null;
         string? portableUrl = null;
         string? shaUrl = null;
+        string? setupApiUrl = null;
+        string? portableApiUrl = null;
+        string? shaApiUrl = null;
 
         if (root.TryGetProperty("assets", out var assetsEl) && assetsEl.ValueKind == JsonValueKind.Array)
         {
@@ -129,14 +162,24 @@ public sealed class AppUpdateService
             {
                 var name = asset.TryGetProperty("name", out var n) ? (n.GetString() ?? string.Empty) : string.Empty;
                 var url = asset.TryGetProperty("browser_download_url", out var u) ? u.GetString() : null;
-                if (string.IsNullOrWhiteSpace(url)) continue;
+                var apiUrl = asset.TryGetProperty("url", out var au) ? au.GetString() : null;
+                if (string.IsNullOrWhiteSpace(url) && string.IsNullOrWhiteSpace(apiUrl)) continue;
 
                 if (name.Equals("DNS-Pulse-win-x64-setup.exe", StringComparison.OrdinalIgnoreCase))
+                {
                     setupUrl = url;
+                    setupApiUrl = apiUrl;
+                }
                 else if (name.Equals("DnsPulse.exe", StringComparison.OrdinalIgnoreCase))
+                {
                     portableUrl = url;
+                    portableApiUrl = apiUrl;
+                }
                 else if (name.Equals("SHA256SUMS.txt", StringComparison.OrdinalIgnoreCase))
+                {
                     shaUrl = url;
+                    shaApiUrl = apiUrl;
+                }
             }
         }
 
@@ -148,7 +191,10 @@ public sealed class AppUpdateService
             SetupExeUrl: setupUrl,
             PortableExeUrl: portableUrl,
             Sha256SumsUrl: shaUrl,
-            HtmlUrl: htmlUrl);
+            HtmlUrl: htmlUrl,
+            SetupApiUrl: setupApiUrl,
+            PortableApiUrl: portableApiUrl,
+            Sha256ApiUrl: shaApiUrl);
     }
 
     public static Dictionary<string, string> ParseSha256Sums(string rawText)
@@ -168,70 +214,105 @@ public sealed class AppUpdateService
         return map;
     }
 
-    public async Task<UpdateCheckResult> CheckForUpdateAsync(CancellationToken ct = default)
+    public async Task<UpdateCheckResult> CheckForUpdateAsync(CancellationToken ct = default, string? githubToken = null)
     {
         var current = GetCurrentVersion();
         AppReleaseInfo? latest = null;
+        int? lastApiStatus = null;
+        string? transportError = null;
+        var token = (githubToken ?? string.Empty).Trim();
 
-        // 1. Try GitHub Releases API directly via Bootstrap DNS
-        try
+        // 1. Try GitHub Releases API (first via Bootstrap DNS, then via Windows System Proxy fallback)
+        foreach (var client in new[] { _checkClient, _systemProxyCheckClient })
         {
-            using var resp = await _checkClient.GetAsync(ApiLatestUrl, ct).ConfigureAwait(false);
-            if (resp.IsSuccessStatusCode)
-            {
-                var json = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                latest = ParseReleaseJson(json);
-            }
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch
-        {
-            // Fallback below handles API rate limits or transient issues
-        }
-
-        // 2. Fallback: HTTP HEAD/GET redirect on github.com/.../releases/latest (no API quota limits)
-        if (latest is null)
-        {
+            if (latest is not null || ct.IsCancellationRequested) break;
             try
             {
-                using var req = new HttpRequestMessage(HttpMethod.Get, WebLatestUrl);
-                using var resp = await _checkClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-                var loc = resp.Headers.Location?.ToString() ?? string.Empty;
-                var marker = "/releases/tag/";
-                var idx = loc.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-                if (idx >= 0)
+                using var req = new HttpRequestMessage(HttpMethod.Get, ApiLatestUrl);
+                if (!string.IsNullOrEmpty(token))
+                    req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {token}");
+
+                using var resp = await client.SendAsync(req, ct).ConfigureAwait(false);
+                lastApiStatus = (int)resp.StatusCode;
+                if (resp.IsSuccessStatusCode)
                 {
-                    var tag = loc[(idx + marker.Length)..].Trim().TrimEnd('/');
-                    if (TryParseVersion(tag, out var ver))
-                    {
-                        var dlBase = $"https://github.com/{RepoOwner}/{RepoName}/releases/download/{tag}";
-                        latest = new AppReleaseInfo(
-                            TagName: tag,
-                            VersionText: tag.StartsWith('v') || tag.StartsWith('V') ? tag : $"v{tag}",
-                            ParsedVersion: ver,
-                            ReleaseNotes: string.Empty,
-                            SetupExeUrl: $"{dlBase}/DNS-Pulse-win-x64-setup.exe",
-                            PortableExeUrl: $"{dlBase}/DnsPulse.exe",
-                            Sha256SumsUrl: $"{dlBase}/SHA256SUMS.txt",
-                            HtmlUrl: $"https://github.com/{RepoOwner}/{RepoName}/releases/tag/{tag}");
-                    }
+                    var json = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                    latest = ParseReleaseJson(json);
+                    break;
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 throw;
             }
-            catch
+            catch (Exception ex)
             {
-                // Network unreachable
+                transportError = ex.Message;
             }
         }
 
+        // 2. Fallback: HTTP GET redirect on github.com/.../releases/latest (no API quota limits)
+        int? webStatus = null;
+        if (latest is null)
+        {
+            foreach (var client in new[] { _checkClient, _systemProxyCheckClient })
+            {
+                if (latest is not null || ct.IsCancellationRequested) break;
+                try
+                {
+                    using var req = new HttpRequestMessage(HttpMethod.Get, WebLatestUrl);
+                    using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                    webStatus = (int)resp.StatusCode;
+                    var loc = resp.Headers.Location?.ToString() ?? string.Empty;
+                    var marker = "/releases/tag/";
+                    var idx = loc.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+                    if (idx >= 0)
+                    {
+                        var tag = loc[(idx + marker.Length)..].Trim().TrimEnd('/');
+                        if (TryParseVersion(tag, out var ver))
+                        {
+                            var dlBase = $"https://github.com/{RepoOwner}/{RepoName}/releases/download/{tag}";
+                            latest = new AppReleaseInfo(
+                                TagName: tag,
+                                VersionText: tag.StartsWith('v') || tag.StartsWith('V') ? tag : $"v{tag}",
+                                ParsedVersion: ver,
+                                ReleaseNotes: string.Empty,
+                                SetupExeUrl: $"{dlBase}/DNS-Pulse-win-x64-setup.exe",
+                                PortableExeUrl: $"{dlBase}/DnsPulse.exe",
+                                Sha256SumsUrl: $"{dlBase}/SHA256SUMS.txt",
+                                HtmlUrl: $"https://github.com/{RepoOwner}/{RepoName}/releases/tag/{tag}");
+                        }
+                    }
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    transportError ??= ex.Message;
+                }
+            }
+        }
+
+        string? errorMsg = null;
+        if (latest is null)
+        {
+            int? code = lastApiStatus ?? webStatus;
+            errorMsg = code switch
+            {
+                404 => "Репозиторий приватный или релиз скрыт (HTTP 404). Сделайте репозиторий Public на GitHub или укажите GitHub Token в Настройках.",
+                401 => "Неверный или просроченный GitHub Token (HTTP 401).",
+                403 or 429 => "Лимит запросов GitHub API исчерпан (HTTP 403/429). Попробуйте позже или укажите токен.",
+                not null => $"GitHub вернул HTTP {code} при проверке обновлений.",
+                null => string.IsNullOrWhiteSpace(transportError)
+                    ? "Не удалось подключиться к GitHub (проверьте интернет или DNS)."
+                    : $"Ошибка сети при подключении к GitHub: {transportError}"
+            };
+        }
+
         bool available = latest is not null && CompareVersions(latest.ParsedVersion, current) > 0;
-        return new UpdateCheckResult(available, current, latest);
+        return new UpdateCheckResult(available, current, latest, errorMsg);
     }
 
     public static int CompareVersions(Version a, Version b)
@@ -245,17 +326,94 @@ public sealed class AppUpdateService
         return Math.Max(0, a.Revision).CompareTo(Math.Max(0, b.Revision));
     }
 
+    private async Task<HttpResponseMessage> SendAssetDownloadAsync(
+        string? browserUrl,
+        string? apiUrl,
+        string? githubToken,
+        CancellationToken ct)
+    {
+        var token = (githubToken ?? string.Empty).Trim();
+        string? targetUrl = browserUrl;
+
+        // For private repos with a token, resolve the short-lived CDN redirect URL via GitHub Release Asset API
+        if (!string.IsNullOrEmpty(token) && !string.IsNullOrWhiteSpace(apiUrl))
+        {
+            foreach (var checkClient in new[] { _checkClient, _systemProxyCheckClient })
+            {
+                try
+                {
+                    using var apiReq = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+                    apiReq.Headers.TryAddWithoutValidation("Authorization", $"Bearer {token}");
+                    apiReq.Headers.TryAddWithoutValidation("Accept", "application/octet-stream");
+                    using var apiResp = await checkClient.SendAsync(apiReq, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                    if (apiResp.Headers.Location is { } redir)
+                    {
+                        targetUrl = redir.ToString();
+                        break;
+                    }
+                    if (apiResp.IsSuccessStatusCode)
+                    {
+                        targetUrl = apiUrl;
+                        break;
+                    }
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // Try fallback client
+                }
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(targetUrl))
+            throw new InvalidOperationException("URL файла релиза отсутствует.");
+
+        Exception? lastErr = null;
+        foreach (var dlClient in new[] { _downloadClient, _systemProxyDownloadClient })
+        {
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, targetUrl);
+                if (!string.IsNullOrEmpty(token) && targetUrl.StartsWith("https://api.github.com/", StringComparison.OrdinalIgnoreCase))
+                {
+                    req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {token}");
+                    req.Headers.TryAddWithoutValidation("Accept", "application/octet-stream");
+                }
+                var resp = await dlClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                if (resp.IsSuccessStatusCode)
+                    return resp;
+                lastErr = new HttpRequestException($"HTTP {(int)resp.StatusCode}");
+                resp.Dispose();
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                lastErr = ex;
+            }
+        }
+
+        throw lastErr ?? new HttpRequestException("Не удалось скачать файл обновления с GitHub.");
+    }
+
     public async Task<(string PreparedFilePath, bool IsInstaller)> DownloadAndVerifyUpdateAsync(
         AppReleaseInfo release,
         IProgress<(double Percent, string Status)>? progress,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? githubToken = null)
     {
-        bool useInstaller = IsInstalledEdition() && !string.IsNullOrWhiteSpace(release.SetupExeUrl);
+        bool useInstaller = IsInstalledEdition() && (!string.IsNullOrWhiteSpace(release.SetupExeUrl) || !string.IsNullOrWhiteSpace(release.SetupApiUrl));
         string? assetUrl = useInstaller ? release.SetupExeUrl : (release.PortableExeUrl ?? release.SetupExeUrl);
-        if (string.IsNullOrWhiteSpace(assetUrl))
+        string? assetApiUrl = useInstaller ? release.SetupApiUrl : (release.PortableApiUrl ?? release.SetupApiUrl);
+        if (string.IsNullOrWhiteSpace(assetUrl) && string.IsNullOrWhiteSpace(assetApiUrl))
             throw new InvalidOperationException("В релизе не найден исполняемый файл для Windows x64.");
 
-        bool actuallyInstaller = assetUrl.EndsWith("setup.exe", StringComparison.OrdinalIgnoreCase);
+        bool actuallyInstaller = (assetUrl ?? string.Empty).EndsWith("setup.exe", StringComparison.OrdinalIgnoreCase) || useInstaller;
         string fileName = actuallyInstaller ? "DNS-Pulse-win-x64-setup.exe" : "DnsPulse.exe";
         string stageDir = Path.Combine(Path.GetTempPath(), "DNS-Pulse-update", release.TagName);
         Directory.CreateDirectory(stageDir);
@@ -263,9 +421,8 @@ public sealed class AppUpdateService
 
         progress?.Report((2, $"Подключение к GitHub для загрузки {release.VersionText}..."));
 
-        using (var resp = await _downloadClient.GetAsync(assetUrl, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false))
+        using (var resp = await SendAssetDownloadAsync(assetUrl, assetApiUrl, githubToken, ct).ConfigureAwait(false))
         {
-            resp.EnsureSuccessStatusCode();
             long? totalBytes = resp.Content.Headers.ContentLength;
             await using var remoteStream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
             await using var localStream = new FileStream(targetPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
@@ -300,12 +457,13 @@ public sealed class AppUpdateService
         }
 
         // Verify SHA256 against SHA256SUMS.txt if present
-        if (!string.IsNullOrWhiteSpace(release.Sha256SumsUrl))
+        if (!string.IsNullOrWhiteSpace(release.Sha256SumsUrl) || !string.IsNullOrWhiteSpace(release.Sha256ApiUrl))
         {
             progress?.Report((97, "Проверка целостности SHA-256..."));
             try
             {
-                var sumsText = await _downloadClient.GetStringAsync(release.Sha256SumsUrl, ct).ConfigureAwait(false);
+                using var sumResp = await SendAssetDownloadAsync(release.Sha256SumsUrl, release.Sha256ApiUrl, githubToken, ct).ConfigureAwait(false);
+                var sumsText = await sumResp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
                 var sums = ParseSha256Sums(sumsText);
                 if (sums.TryGetValue(fileName, out var expectedHash))
                 {

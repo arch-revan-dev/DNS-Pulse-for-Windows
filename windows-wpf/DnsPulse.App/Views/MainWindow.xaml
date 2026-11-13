@@ -1700,6 +1700,16 @@
                                                   IsChecked="{Binding AutoCheckUpdates}"
                                                   Margin="0,0,0,10" />
 
+                                        <StackPanel Margin="0,0,0,10">
+                                            <TextBlock Text="GitHub Token (необязательно — только для приватного репозитория):"
+                                                       Style="{StaticResource CaptionMutedStyle}"
+                                                       Margin="0,0,0,4" />
+                                            <TextBox Text="{Binding GitHubToken, UpdateSourceTrigger=PropertyChanged}"
+                                                     FontFamily="JetBrains Mono, Cascadia Mono, Consolas"
+                                                     FontSize="12"
+                                                     Tag="ghp_... (для public-репо оставьте пустым)" />
+                                        </StackPanel>
+
                                         <TextBlock Text="{Binding UpdateStatusText}"
                                                    Style="{StaticResource CaptionMutedStyle}"
                                                    TextWrapping="Wrap"

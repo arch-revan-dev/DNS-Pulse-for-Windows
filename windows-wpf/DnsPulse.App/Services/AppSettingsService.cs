@@ -17,6 +17,7 @@ public sealed class AppSettings
     public bool AutoFailoverOnDrop { get; set; } = true;
 
     public bool AutoCheckUpdates { get; set; } = true;
+    public string GitHubToken { get; set; } = string.Empty;
     public bool AutoSyncFeedsOnStartup { get; set; } = true;
 
     public bool SplitTunnelEnabled { get; set; } = true;

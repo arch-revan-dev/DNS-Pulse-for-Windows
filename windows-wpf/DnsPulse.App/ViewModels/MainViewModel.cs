@@ -160,6 +160,9 @@ public sealed partial class MainViewModel : ObservableObject
     private bool _autoCheckUpdates = true;
 
     [ObservableProperty]
+    private string _gitHubToken = string.Empty;
+
+    [ObservableProperty]
     private bool _autoSyncFeedsOnStartup = true;
 
     [ObservableProperty]
@@ -322,6 +325,7 @@ public sealed partial class MainViewModel : ObservableObject
             AutoModeEnabled = s.AutoModeEnabled;
             AutoFailoverOnDrop = s.AutoFailoverOnDrop;
             AutoCheckUpdates = s.AutoCheckUpdates;
+            GitHubToken = s.GitHubToken;
             AutoSyncFeedsOnStartup = s.AutoSyncFeedsOnStartup;
             SplitTunnelEnabled = s.SplitTunnelEnabled;
             BlockIpv6OnBypass = s.BlockIpv6OnBypass;
@@ -359,6 +363,7 @@ public sealed partial class MainViewModel : ObservableObject
         _settings.AutoModeEnabled = AutoModeEnabled;
         _settings.AutoFailoverOnDrop = AutoFailoverOnDrop;
         _settings.AutoCheckUpdates = AutoCheckUpdates;
+        _settings.GitHubToken = GitHubToken;
         _settings.AutoSyncFeedsOnStartup = AutoSyncFeedsOnStartup;
         _settings.SplitTunnelEnabled = SplitTunnelEnabled;
         _settings.BlockIpv6OnBypass = BlockIpv6OnBypass;
@@ -422,6 +427,7 @@ public sealed partial class MainViewModel : ObservableObject
     partial void OnMinimizeToTrayOnCloseChanged(bool value) => PersistSettings();
     partial void OnAutoFailoverOnDropChanged(bool value) => PersistSettings();
     partial void OnAutoCheckUpdatesChanged(bool value) => PersistSettings();
+    partial void OnGitHubTokenChanged(string value) => PersistSettings();
     partial void OnAutoSyncFeedsOnStartupChanged(bool value) => PersistSettings();
 
     partial void OnCompactModeChanged(bool value)
@@ -1309,7 +1315,7 @@ public sealed partial class MainViewModel : ObservableObject
                 try
                 {
                     using var updCts = new CancellationTokenSource(TimeSpan.FromSeconds(12));
-                    var check = await _updater.CheckForUpdateAsync(updCts.Token);
+                    var check = await _updater.CheckForUpdateAsync(updCts.Token, GitHubToken);
                     _dispatchToUi(() =>
                     {
                         if (check.UpdateAvailable && check.LatestRelease is { } rel)
@@ -1344,7 +1350,7 @@ public sealed partial class MainViewModel : ObservableObject
         UpdateStatusText = "Проверка новых релизов на GitHub...";
         try
         {
-            var res = await _updater.CheckForUpdateAsync(ct);
+            var res = await _updater.CheckForUpdateAsync(ct, GitHubToken);
             if (res.UpdateAvailable && res.LatestRelease is { } rel)
             {
                 _availableRelease = rel;
@@ -1362,7 +1368,7 @@ public sealed partial class MainViewModel : ObservableObject
             }
             else
             {
-                UpdateStatusText = "Не удалось получить информацию о релизе с GitHub";
+                UpdateStatusText = res.ErrorMessage ?? "Не удалось получить информацию о релизе с GitHub";
                 StatusMessage = UpdateStatusText;
             }
         }
@@ -1402,7 +1408,7 @@ public sealed partial class MainViewModel : ObservableObject
                 StatusMessage = p.Status;
             });
 
-            var (preparedPath, isInstaller) = await _updater.DownloadAndVerifyUpdateAsync(release, progress, ct);
+            var (preparedPath, isInstaller) = await _updater.DownloadAndVerifyUpdateAsync(release, progress, ct, GitHubToken);
 
             // Cleanly stop active tunnel & restore Windows adapter DNS before exiting for self-update
             if (IsTunnelActive)
