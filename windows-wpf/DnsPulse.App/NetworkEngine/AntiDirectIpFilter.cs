@@ -1,4 +1,5 @@
 using System.Net;
+using DnsPulse.App.Models;
 
 namespace DnsPulse.App.NetworkEngine;
 
