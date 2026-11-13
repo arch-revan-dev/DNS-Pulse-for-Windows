@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>DnsPulse.Engine</RootNamespace>
+    <AssemblyName>DnsPulse.Engine</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DnsPulse.Core\DnsPulse.Core.csproj" />
+  </ItemGroup>
+</Project>

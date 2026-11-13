@@ -26,7 +26,10 @@ function addFileIfExists(zip: JSZip, root: string, relPath: string) {
 
 export async function buildWindowsWpfProjectZip(): Promise<Buffer> {
   const zip = new JSZip();
-  const root = process.cwd();
+  const cwd = process.cwd();
+  const root = fs.existsSync(path.join(cwd, 'assets/dns_catalog_1000.tsv'))
+    ? cwd
+    : path.resolve(cwd, '../..');
 
   addDirToZip(zip, path.join(root, 'windows-wpf'), 'windows-wpf');
   addDirToZip(zip, path.join(root, '.github'), '.github');

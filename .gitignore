@@ -17,6 +17,11 @@ logs/
 !.env.example
 
 # .NET / Windows WPF build, test & release artifacts
+src/**/bin/
+src/**/obj/
+src/**/publish/
+tests/**/bin/
+tests/**/obj/
 windows-wpf/**/bin/
 windows-wpf/**/obj/
 windows-wpf/**/publish/

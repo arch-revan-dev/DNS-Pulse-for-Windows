@@ -22,7 +22,9 @@ import {
 import { DOMAIN_PRESETS, getPresetsForGroup } from './presets';
 import { FilterState } from './types';
 
-const tsvPath = path.resolve(process.cwd(), 'assets/dns_catalog_1000.tsv');
+const repoRootTsvPath = path.resolve(process.cwd(), '../../assets/dns_catalog_1000.tsv');
+const localTsvPath = path.resolve(process.cwd(), 'assets/dns_catalog_1000.tsv');
+const tsvPath = fs.existsSync(repoRootTsvPath) ? repoRootTsvPath : localTsvPath;
 const tsvText = fs.readFileSync(tsvPath, 'utf8');
 const allBuiltins = buildFullBuiltinCatalog(tsvText);
 
