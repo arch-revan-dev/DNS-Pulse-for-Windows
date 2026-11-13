@@ -7,7 +7,7 @@ using Serilog;
 
 namespace DnsPulse.App;
 
-public sealed partial class App : Application, IDisposable
+public sealed partial class App : System.Windows.Application, IDisposable
 {
     private ServiceProvider? _serviceProvider;
     private bool _disposed;
