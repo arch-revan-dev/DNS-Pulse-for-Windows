@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\DnsPulse.Core\DnsPulse.Core.csproj" />
     <ProjectReference Include="..\..\src\DnsPulse.Engine\DnsPulse.Engine.csproj" />
     <ProjectReference Include="..\..\src\DnsPulse.Platform.Windows\DnsPulse.Platform.Windows.csproj" />
+    <ProjectReference Include="..\..\src\DnsPulse.Service\DnsPulse.Service.csproj" />
   </ItemGroup>
 
   <ItemGroup>

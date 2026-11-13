@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="9.0.23" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\DnsPulse.Core\DnsPulse.Core.csproj" />
     <ProjectReference Include="..\DnsPulse.Engine\DnsPulse.Engine.csproj" />
   </ItemGroup>
