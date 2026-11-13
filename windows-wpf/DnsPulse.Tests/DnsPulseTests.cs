@@ -363,13 +363,13 @@ public class DnsPulseTests
         var ranked = ServerFilterSorter.FilterAndSort(
             new[] { builtinSmart, autoNode },
             "Smart-DNS",
-            bypassOnly: true,
-            favoritesOnly: false,
-            encryptedOnly: false,
-            freeOnly: false,
-            searchQuery: "",
-            sortMode: SortMode.BEST,
-            hideUnsafeDirectIps: true);
+            true,
+            false,
+            false,
+            false,
+            "",
+            SortMode.BEST,
+            true);
         Assert.Equal(2, ranked.Count);
         Assert.Equal("auto_proxy_185_236_10_37", ranked[0].Id);
 
