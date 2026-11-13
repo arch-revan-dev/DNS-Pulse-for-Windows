@@ -1,0 +1,67 @@
+name: Build & Release DNS Pulse (Windows x64)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore windows-wpf/DnsPulse.sln
+
+      - name: Run xUnit test suite
+        run: dotnet test windows-wpf/DnsPulse.sln --configuration Release --no-restore --verbosity normal
+
+      - name: Publish self-contained Windows x64 portable executable
+        run: |
+          dotnet publish windows-wpf/DnsPulse.App/DnsPulse.App.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -o artifacts/win-x64
+
+      - name: Copy built-in 1000+ DNS catalog asset
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/win-x64/assets | Out-Null
+          Copy-Item assets/dns_catalog_1000.tsv artifacts/win-x64/assets/dns_catalog_1000.tsv -Force
+
+      - name: Package portable ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path artifacts/win-x64/* -DestinationPath artifacts/DNS-Pulse-win-x64-portable.zip -Force
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DNS-Pulse-win-x64
+          path: |
+            artifacts/win-x64/DnsPulse.exe
+            artifacts/DNS-Pulse-win-x64-portable.zip
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/win-x64/DnsPulse.exe
+            artifacts/DNS-Pulse-win-x64-portable.zip
+          generate_release_notes: true

@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.playwright-cli/
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# .NET / Windows WPF build artifacts
+windows-wpf/**/bin/
+windows-wpf/**/obj/
+windows-wpf/**/publish/
+*.exe
+*.dll
+*.pdb
+*.zip
+*.msix
+*.user
+.vs/

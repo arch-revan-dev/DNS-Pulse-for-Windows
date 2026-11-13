@@ -1,0 +1,6 @@
+{
+  "name": "DNS Pulse",
+  "description": "Профессиональный инструмент тестирования, автоподбора и управления базами DNS-серверов (UDP 53, DoH, DoT, SNI-Proxy 443) с 4-этапной проверкой обхода региональных ограничений и готовым проектом Windows 10/11 (.NET 8 WPF).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
