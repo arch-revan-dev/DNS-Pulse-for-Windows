@@ -27,8 +27,8 @@ public sealed class FourStageProber
         if (server.Protocol == DnsProtocol.DoH && !string.IsNullOrWhiteSpace(server.DohUrl))
             return await QueryDoHAsync(server.DohUrl, domain, ct);
 
-        if (server.Protocol == DnsProtocol.DoT && !string.IsNullOrWhiteSpace(server.DotHost))
-            return await QueryDoTAsync(server.DotHost, server.PrimaryIp, domain, ct);
+        if (server.Protocol == DnsProtocol.DoT && (!string.IsNullOrWhiteSpace(server.DotHost) || !string.IsNullOrWhiteSpace(server.PrimaryIp)))
+            return await QueryDoTAsync(server.DotHost ?? server.PrimaryIp, server.PrimaryIp, domain, ct);
 
         if (server.Protocol == DnsProtocol.SNI443)
         {
@@ -97,11 +97,24 @@ public sealed class FourStageProber
         frame[1] = (byte)(query.Length & 0xFF);
         Buffer.BlockCopy(query, 0, frame, 2, query.Length);
 
+        var targetHost = string.IsNullOrWhiteSpace(dotHost) ? fallbackIp : dotHost;
         var sw = Stopwatch.StartNew();
         using var tcp = new TcpClient();
-        await tcp.ConnectAsync(string.IsNullOrWhiteSpace(dotHost) ? fallbackIp : dotHost, 853, ct);
+        try
+        {
+            await tcp.ConnectAsync(targetHost, 853, ct);
+        }
+        catch when (!string.IsNullOrWhiteSpace(fallbackIp) && targetHost != fallbackIp)
+        {
+            await tcp.ConnectAsync(fallbackIp, 853, ct);
+        }
+
         await using var ssl = new SslStream(tcp.GetStream(), false);
-        await ssl.AuthenticateAsClientAsync(dotHost, null, System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13, false);
+        await ssl.AuthenticateAsClientAsync(
+            targetHost,
+            null,
+            System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13,
+            false);
         await ssl.WriteAsync(frame, ct);
         await ssl.FlushAsync(ct);
 
@@ -131,7 +144,8 @@ public sealed class FourStageProber
                 TargetHost = sniDomain
             }, timeoutCts.Token);
 
-            var reqText = $"HEAD / HTTP/1.1\r\nHost: {sniDomain}\r\nUser-Agent: {BrowserUa}\r\nConnection: close\r\n\r\n";
+            // Use GET / instead of HEAD / so CDNs/proxies rejecting HEAD (403/405) aren't falsely flagged
+            var reqText = $"GET / HTTP/1.1\r\nHost: {sniDomain}\r\nUser-Agent: {BrowserUa}\r\nAccept: text/html,*/*\r\nConnection: close\r\n\r\n";
             await ssl.WriteAsync(Encoding.ASCII.GetBytes(reqText), timeoutCts.Token);
             await ssl.FlushAsync(timeoutCts.Token);
 

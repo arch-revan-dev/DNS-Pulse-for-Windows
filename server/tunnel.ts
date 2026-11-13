@@ -1,5 +1,5 @@
 import dgram from 'node:dgram';
-import { decodeDnsResponse, encodeDnsQuery } from '../src/core/dnsPacket';
+import { buildDnsAResponse, decodeDnsResponse } from '../src/core/dnsPacket';
 import { buildRotationQueue, getNextRotationServerId } from '../src/core/filterSort';
 import { DnsServer, TunnelState } from '../src/core/types';
 import { dnsDb } from './db';
@@ -10,7 +10,7 @@ const TUNNEL_PORT = 15353;
 class LocalTunnelManager {
   private socket: dgram.Socket | null = null;
   private activeServer: DnsServer | null = null;
-  private cache = new Map<string, { ips: string[]; expiresAt: number }>();
+  private cache = new Map<string, { ips: string[]; routedVia: 'smart-dns' | 'direct'; expiresAt: number }>();
   private state: TunnelState = {
     active: false,
     serverId: null,
@@ -149,7 +149,7 @@ class LocalTunnelManager {
       this.state.cacheHits += 1;
       return {
         domain: cleanDomain,
-        routedVia: 'smart-dns',
+        routedVia: cached.routedVia,
         ips: cached.ips,
         cacheHit: true,
       };
@@ -171,10 +171,11 @@ class LocalTunnelManager {
       ips = res.ips;
     }
 
-    this.cache.set(cleanDomain, { ips, expiresAt: Date.now() + 60_000 });
+    const routedVia: 'smart-dns' | 'direct' = shouldProxy ? 'smart-dns' : 'direct';
+    this.cache.set(cleanDomain, { ips, routedVia, expiresAt: Date.now() + 60_000 });
     return {
       domain: cleanDomain,
-      routedVia: shouldProxy ? 'smart-dns' : 'direct',
+      routedVia,
       ips,
       cacheHit: false,
     };
@@ -191,16 +192,9 @@ class LocalTunnelManager {
         if (!this.state.active || !this.activeServer) return;
         try {
           const decoded = decodeDnsResponse(new Uint8Array(msg));
-          this.state.queriesHandled += 1;
-          const qname = decoded.answers[0]?.name || this.state.targetDomain;
+          const qname = decoded.questionNames[0] || this.state.targetDomain;
           const res = await this.testForwardQuery(qname);
-          const reply = encodeDnsQuery(qname, 1, decoded.id);
-          // Echo minimal header with QR=1 so UDP probes get a valid response packet
-          reply[2] = 0x81;
-          reply[3] = 0x80;
-          if (res.ips.length === 0) {
-            reply[3] = 0x82; // SERVFAIL
-          }
+          const reply = buildDnsAResponse(decoded.id, qname, res.ips);
           sock.send(reply, rinfo.port, rinfo.address);
         } catch {
           // ignore malformed packet

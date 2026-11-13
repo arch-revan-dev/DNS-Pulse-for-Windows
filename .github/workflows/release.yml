@@ -10,7 +10,21 @@ permissions:
   contents: write
 
 jobs:
-  build-and-test:
+  verify-core-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx tsx --test src/core/dnsEngine.test.ts
+      - run: npm run lint
+      - run: npm run build
+
+  build-and-release-windows:
+    needs: verify-core-tests
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -27,7 +41,7 @@ jobs:
       - name: Run xUnit test suite
         run: dotnet test windows-wpf/DnsPulse.sln --configuration Release --no-restore --verbosity normal
 
-      - name: Publish self-contained Windows x64 portable executable
+      - name: Publish self-contained Windows x64 single-file executable
         run: |
           dotnet publish windows-wpf/DnsPulse.App/DnsPulse.App.csproj `
             -c Release `
@@ -38,16 +52,47 @@ jobs:
             -p:EnableCompressionInSingleFile=true `
             -o artifacts/win-x64
 
-      - name: Copy built-in 1000+ DNS catalog asset
+      - name: Copy assets & license into portable folder
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path artifacts/win-x64/assets | Out-Null
           Copy-Item assets/dns_catalog_1000.tsv artifacts/win-x64/assets/dns_catalog_1000.tsv -Force
+          Copy-Item LICENSE artifacts/win-x64/LICENSE.txt -Force
+          Copy-Item README.md artifacts/win-x64/README.md -Force
 
       - name: Package portable ZIP
         shell: pwsh
         run: |
           Compress-Archive -Path artifacts/win-x64/* -DestinationPath artifacts/DNS-Pulse-win-x64-portable.zip -Force
+
+      - name: Build Windows Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress
+          }
+          $innoPath = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (Test-Path $innoPath) {
+            & $innoPath "windows-wpf\installer\DnsPulse.iss"
+          } else {
+            iscc.exe "windows-wpf\installer\DnsPulse.iss"
+          }
+
+      - name: Generate SHA256 checksums
+        shell: pwsh
+        run: |
+          $files = @(
+            "artifacts/win-x64/DnsPulse.exe",
+            "artifacts/DNS-Pulse-win-x64-portable.zip",
+            "artifacts/DNS-Pulse-win-x64-setup.exe"
+          ) | Where-Object { Test-Path $_ }
+          $lines = foreach ($f in $files) {
+            $hash = (Get-FileHash -Algorithm SHA256 $f).Hash.ToLowerInvariant()
+            $name = Split-Path -Leaf $f
+            "$hash  $name"
+          }
+          $lines | Out-File -FilePath artifacts/SHA256SUMS.txt -Encoding ascii
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -56,6 +101,8 @@ jobs:
           path: |
             artifacts/win-x64/DnsPulse.exe
             artifacts/DNS-Pulse-win-x64-portable.zip
+            artifacts/DNS-Pulse-win-x64-setup.exe
+            artifacts/SHA256SUMS.txt
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -64,4 +111,7 @@ jobs:
           files: |
             artifacts/win-x64/DnsPulse.exe
             artifacts/DNS-Pulse-win-x64-portable.zip
+            artifacts/DNS-Pulse-win-x64-setup.exe
+            artifacts/SHA256SUMS.txt
+          body_path: CHANGELOG.md
           generate_release_notes: true

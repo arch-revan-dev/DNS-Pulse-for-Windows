@@ -11,6 +11,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Version>1.0.0</Version>
     <Authors>DNS Pulse Open Source Contributors</Authors>
+    <Description>Windows 10/11 Smart-DNS, DoH/DoT/SNI-Proxy Diagnostics &amp; Local Tunnel</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,5 +22,6 @@
     <Content Include="..\..\assets\dns_catalog_1000.tsv" Link="assets\dns_catalog_1000.tsv">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <EmbeddedResource Include="..\..\assets\dns_catalog_1000.tsv" LogicalName="DnsPulse.App.assets.dns_catalog_1000.tsv" />
   </ItemGroup>
 </Project>

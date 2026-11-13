@@ -43,6 +43,12 @@ public class DnsPulseTests
         Assert.Contains(catalog, s => s.DohUrl == "https://dns.malw.link/dns-query");
         Assert.Contains(catalog, s => s.DohUrl == "https://dns.comss.one/dns-query");
         Assert.Contains(catalog, s => s.DohUrl == "https://xbox-dns.ru/dns-query");
+        Assert.Contains(catalog, s => s.DohUrl == "https://dns.astracat.ru/dns-query");
+        Assert.Contains(catalog, s => s.DohUrl == "https://dns.zapret.moe/dns-query");
+        Assert.Contains(catalog, s => s.DohUrl == "https://free.shecan.ir/dns-query");
+        Assert.Contains(catalog, s => s.DohUrl == "https://dns.403.online/dns-query");
+        Assert.Contains(catalog, s => s.DohUrl == "https://cloudflare-dns.com/dns-query");
+        Assert.Contains(catalog, s => s.DohUrl == "https://dns.google/dns-query");
         Assert.Contains(catalog, s => s.Provider.Contains("Common Network", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -71,19 +77,22 @@ public class DnsPulseTests
     }
 
     [Fact]
-    public void DnsPacketCodec_And_AntiDirectIp_And_HostsParser_WorkCorrectly()
+    public void DnsPacketCodec_TunnelResponseBuilder_And_ImportSafety_WorkCorrectly()
     {
         var query = DnsPacketCodec.EncodeQuery("gemini.google.com", 1, 0x2244);
         Assert.True(query.Length > 17);
 
-        var resp = new byte[query.Length + 16];
-        Buffer.BlockCopy(query, 0, resp, 0, query.Length);
-        resp[2] = 0x81; resp[3] = 0x80; resp[7] = 1;
-        Buffer.BlockCopy(new byte[] { 0xC0, 0x0C, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3C, 0x00, 0x04, 192, 255, 159, 240 }, 0, resp, query.Length, 16);
+        // Simulate query with trailing EDNS0 OPT record (11 extra bytes) and ensure tunnel response strips it cleanly
+        var queryWithEdns = new byte[query.Length + 11];
+        Buffer.BlockCopy(query, 0, queryWithEdns, 0, query.Length);
+        queryWithEdns[11] = 1; // ARCOUNT=1
 
-        var decoded = DnsPacketCodec.DecodeResponse(resp);
+        var tunnelResp = LocalDnsTunnelServer.BuildResponsePacket(queryWithEdns, ["192.255.159.240"], 60);
+        var decoded = DnsPacketCodec.DecodeResponse(tunnelResp);
         Assert.Equal(0x2244, decoded.TransactionId);
+        Assert.Equal(0, decoded.Rcode);
         Assert.Equal(["192.255.159.240"], decoded.Ips);
+        Assert.Equal(0, tunnelResp[11]); // ARCOUNT must be cleared
 
         Assert.True(AntiDirectIpFilter.IsDirectServiceIp("142.250.185.78", "gemini.google.com"));
         Assert.False(AntiDirectIpFilter.IsDirectServiceIp("192.255.159.240", "gemini.google.com"));
@@ -94,6 +103,11 @@ public class DnsPulseTests
 
         var hosts = ServerFilterSorter.ParseDynamicHosts("0.0.0.0 doubleclick.net\n127.0.0.1 ads.google.com\n179.254.166.171 gemini.google.com");
         Assert.Equal(["gemini.google.com"], hosts);
+
+        // Malformed URL in plain-text import must not crash
+        var imported = ImportExportCodec.ParseImportedServers("https://[bad-url BadNode\nhttps://dns.bezmezhau.com/dns-query ValidNode");
+        Assert.Single(imported);
+        Assert.Equal("ValidNode", imported[0].Name);
 
         var queue = ServerFilterSorter.BuildRotationQueue(
         [

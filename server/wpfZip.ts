@@ -17,26 +17,25 @@ function addDirToZip(zip: JSZip, fsDir: string, zipPrefix: string) {
   }
 }
 
+function addFileIfExists(zip: JSZip, root: string, relPath: string) {
+  const full = path.join(root, relPath);
+  if (fs.existsSync(full)) {
+    zip.file(relPath.replaceAll('\\', '/'), fs.readFileSync(full));
+  }
+}
+
 export async function buildWindowsWpfProjectZip(): Promise<Buffer> {
   const zip = new JSZip();
   const root = process.cwd();
 
   addDirToZip(zip, path.join(root, 'windows-wpf'), 'windows-wpf');
+  addDirToZip(zip, path.join(root, '.github'), '.github');
 
-  const tsvPath = path.join(root, 'assets', 'dns_catalog_1000.tsv');
-  if (fs.existsSync(tsvPath)) {
-    zip.file('assets/dns_catalog_1000.tsv', fs.readFileSync(tsvPath));
-  }
-
-  const workflowPath = path.join(root, '.github', 'workflows', 'release.yml');
-  if (fs.existsSync(workflowPath)) {
-    zip.file('.github/workflows/release.yml', fs.readFileSync(workflowPath));
-  }
-
-  const gitignorePath = path.join(root, '.gitignore');
-  if (fs.existsSync(gitignorePath)) {
-    zip.file('.gitignore', fs.readFileSync(gitignorePath));
-  }
+  addFileIfExists(zip, root, 'assets/dns_catalog_1000.tsv');
+  addFileIfExists(zip, root, 'README.md');
+  addFileIfExists(zip, root, 'LICENSE');
+  addFileIfExists(zip, root, 'CHANGELOG.md');
+  addFileIfExists(zip, root, '.gitignore');
 
   return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }

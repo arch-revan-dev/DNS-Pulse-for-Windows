@@ -416,7 +416,13 @@ export function parseImportedServers(rawText: string): DnsServer[] {
     let smartProxyIp: string | undefined;
 
     if (protocol === 'DoH') {
-      dohUrl = rawEndpoint;
+      try {
+        const parsedUrl = new URL(rawEndpoint);
+        dohUrl = parsedUrl.toString();
+        dotHost = parsedUrl.hostname;
+      } catch {
+        continue;
+      }
     } else if (protocol === 'DoT') {
       const host = rawEndpoint.replace(/^tls:\/\//i, '');
       dotHost = host;
@@ -428,9 +434,18 @@ export function parseImportedServers(rawText: string): DnsServer[] {
       primaryIp = rawEndpoint.split(':')[0];
     }
 
-    const displayName =
-      customName ||
-      (dohUrl ? new URL(dohUrl).hostname : dotHost || primaryIp);
+    let displayName = customName;
+    if (!displayName) {
+      if (dohUrl) {
+        try {
+          displayName = new URL(dohUrl).hostname;
+        } catch {
+          displayName = dohUrl;
+        }
+      } else {
+        displayName = dotHost || primaryIp || rawEndpoint;
+      }
+    }
 
     results.push(
       createDefaultServerTemplate({

@@ -423,7 +423,12 @@ export default function App() {
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  if (tab.id === 'catalog') {
+                    setVisibleLimit((prev) => Math.max(prev, 100));
+                  }
+                }}
                 className={`py-2 md:py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   activeTab === tab.id
                     ? 'border-[#22C55E] text-[#0F172A] dark:text-[#F1F5F9]'
@@ -462,6 +467,7 @@ export default function App() {
               type="button"
               onClick={() => setIsLive((prev) => !prev)}
               aria-pressed={isLive}
+              title="Автопроверка топ-8 серверов каждые 2.8 сек"
               className={`min-h-[36px] px-3 sm:px-3.5 py-1.5 rounded-md border text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                 isLive
                   ? 'bg-[#22C55E] border-[#22C55E] text-[#0B0D10]'

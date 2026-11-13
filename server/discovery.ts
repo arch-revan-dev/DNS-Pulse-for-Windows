@@ -116,7 +116,8 @@ export async function syncOnlineHostsAndCommunityDns(): Promise<{
         }
 
         // Parse JSON profiles if QuickDNS JSON
-        if (src.url.endsWith('.json') && text.trim().startsWith('{') || text.trim().startsWith('[')) {
+        const trimmedText = text.trim();
+        if (src.url.endsWith('.json') && (trimmedText.startsWith('{') || trimmedText.startsWith('['))) {
           try {
             const parsed = JSON.parse(text);
             const items = Array.isArray(parsed) ? parsed : Object.values(parsed).flat();

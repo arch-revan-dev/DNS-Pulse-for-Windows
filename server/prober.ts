@@ -346,7 +346,7 @@ export async function probeTlsHttpSni443(
         },
         () => {
           const req =
-            `HEAD / HTTP/1.1\r\n` +
+            `GET / HTTP/1.1\r\n` +
             `Host: ${sniDomain}\r\n` +
             `User-Agent: ${BROWSER_UA}\r\n` +
             `Accept: text/html,*/*\r\n` +

@@ -1,4 +1,6 @@
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using DnsPulse.App.Models;
@@ -15,9 +17,12 @@ public sealed class LocalDnsTunnelServer : IAsyncDisposable
     private CancellationTokenSource? _cts;
     private DnsServerEntry? _activeServer;
     private long _queriesHandled;
+    private long _cacheHits;
 
     public bool IsRunning => _cts is not null && !_cts.IsCancellationRequested;
     public long QueriesHandled => Interlocked.Read(ref _queriesHandled);
+    public long CacheHits => Interlocked.Read(ref _cacheHits);
+    public DnsServerEntry? ActiveServer => _activeServer;
     public string ListenEndpoint { get; private set; } = "127.0.0.1:53";
 
     public void UpdateBypassDomains(IEnumerable<string> domains)
@@ -25,7 +30,11 @@ public sealed class LocalDnsTunnelServer : IAsyncDisposable
         lock (_bypassDomains)
         {
             _bypassDomains.Clear();
-            foreach (var d in domains) _bypassDomains.Add(d.Trim().ToLowerInvariant());
+            foreach (var d in domains)
+            {
+                var clean = d.Trim().ToLowerInvariant();
+                if (!string.IsNullOrEmpty(clean)) _bypassDomains.Add(clean);
+            }
         }
     }
 
@@ -34,6 +43,8 @@ public sealed class LocalDnsTunnelServer : IAsyncDisposable
         Stop();
         _activeServer = server;
         _cache.Clear();
+        Interlocked.Exchange(ref _queriesHandled, 0);
+        Interlocked.Exchange(ref _cacheHits, 0);
         ListenEndpoint = $"{listenIp}:53";
         _cts = new CancellationTokenSource();
         _udpListener = new UdpClient(new IPEndPoint(IPAddress.Parse(listenIp), 53));
@@ -92,6 +103,7 @@ public sealed class LocalDnsTunnelServer : IAsyncDisposable
             string cacheKey = $"{upstream.Id}:{qname}";
             if (_cache.TryGetValue(cacheKey, out var cached) && cached.Expires > DateTimeOffset.UtcNow)
             {
+                Interlocked.Increment(ref _cacheHits);
                 responseBytes = (byte[])cached.Packet.Clone();
                 responseBytes[0] = requestPacket[0];
                 responseBytes[1] = requestPacket[1];
@@ -106,9 +118,7 @@ public sealed class LocalDnsTunnelServer : IAsyncDisposable
         }
         catch
         {
-            // SERVFAIL fallback
-            var fail = (byte[])requestPacket.Clone();
-            if (fail.Length >= 4) { fail[2] = 0x81; fail[3] = 0x82; }
+            var fail = BuildServfailPacket(requestPacket);
             await _udpListener.SendAsync(fail, client, ct);
         }
     }
@@ -132,30 +142,88 @@ public sealed class LocalDnsTunnelServer : IAsyncDisposable
         {
             byte len = packet[idx++];
             if (len == 0) break;
-            if (idx + len > packet.Length) break;
+            if ((len & 0xC0) == 0xC0 || idx + len > packet.Length) break;
             labels.Add(System.Text.Encoding.UTF8.GetString(packet, idx, len));
             idx += len;
         }
         return string.Join('.', labels);
     }
 
-    private static byte[] BuildResponsePacket(byte[] query, List<string> ips)
+    /// <summary>
+    /// Extracts the end offset of the Question section so trailing EDNS0 OPT records are cleanly stripped.
+    /// </summary>
+    internal static int FindQuestionSectionEnd(ReadOnlySpan<byte> packet)
     {
-        if (ips.Count == 0 || !IPAddress.TryParse(ips[0], out var ip))
+        if (packet.Length < 12) return packet.Length;
+        ushort qdCount = BinaryPrimitives.ReadUInt16BigEndian(packet[4..6]);
+        int offset = 12;
+        for (int q = 0; q < qdCount && offset < packet.Length; q++)
         {
-            var empty = (byte[])query.Clone();
-            empty[2] = 0x81; empty[3] = 0x80;
-            return empty;
+            while (offset < packet.Length)
+            {
+                byte len = packet[offset];
+                if (len == 0)
+                {
+                    offset++;
+                    break;
+                }
+                if ((len & 0xC0) == 0xC0)
+                {
+                    offset += 2;
+                    break;
+                }
+                offset += 1 + len;
+            }
+            offset += 4; // QTYPE (2) + QCLASS (2)
         }
-        var addrBytes = ip.GetAddressBytes();
-        using var ms = new MemoryStream(query.Length + 16);
-        ms.Write(query);
-        var buf = ms.GetBuffer();
-        buf[2] = 0x81; buf[3] = 0x80;
-        buf[6] = 0x00; buf[7] = 0x01; // ANCOUNT=1
-        ms.Write([0xC0, 0x0C, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3C, 0x00, 0x04]);
-        ms.Write(addrBytes);
+        return Math.Min(offset, packet.Length);
+    }
+
+    public static byte[] BuildResponsePacket(byte[] query, IReadOnlyList<string> ips, uint ttlSeconds = 60)
+    {
+        int questionEnd = FindQuestionSectionEnd(query);
+        var ipv4List = new List<byte[]>();
+        foreach (var raw in ips)
+        {
+            if (IPAddress.TryParse(raw, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork)
+                ipv4List.Add(ip.GetAddressBytes());
+        }
+
+        using var ms = new MemoryStream(questionEnd + ipv4List.Count * 16);
+        ms.Write(query, 0, questionEnd);
+
+        var header = ms.GetBuffer();
+        header[2] = 0x81; // QR=1, RD=1
+        header[3] = 0x80; // RA=1, RCODE=0
+        BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(6, 2), (ushort)ipv4List.Count);
+        BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(8, 2), 0);  // NSCOUNT=0
+        BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(10, 2), 0); // ARCOUNT=0 (strip EDNS0)
+
+        Span<byte> ttlBuf = stackalloc byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(ttlBuf, ttlSeconds);
+
+        foreach (var addrBytes in ipv4List)
+        {
+            ms.Write([0xC0, 0x0C, 0x00, 0x01, 0x00, 0x01]);
+            ms.Write(ttlBuf);
+            ms.Write([0x00, 0x04]);
+            ms.Write(addrBytes);
+        }
+
         return ms.ToArray();
+    }
+
+    private static byte[] BuildServfailPacket(byte[] query)
+    {
+        int questionEnd = FindQuestionSectionEnd(query);
+        var fail = new byte[Math.Max(12, questionEnd)];
+        Buffer.BlockCopy(query, 0, fail, 0, Math.Min(query.Length, fail.Length));
+        fail[2] = 0x81;
+        fail[3] = 0x82; // SERVFAIL
+        BinaryPrimitives.WriteUInt16BigEndian(fail.AsSpan(6, 2), 0);
+        BinaryPrimitives.WriteUInt16BigEndian(fail.AsSpan(8, 2), 0);
+        BinaryPrimitives.WriteUInt16BigEndian(fail.AsSpan(10, 2), 0);
+        return fail;
     }
 
     public ValueTask DisposeAsync()

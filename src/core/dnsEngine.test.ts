@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { buildFullBuiltinCatalog } from './catalogSeed';
-import { encodeDnsQuery, decodeDnsResponse } from './dnsPacket';
+import { encodeDnsQuery, decodeDnsResponse, buildDnsAResponse } from './dnsPacket';
 import {
   classifyFourStageVerdict,
   isBogonOrLoopbackIp,
@@ -92,7 +92,15 @@ test('RFC 1035 DNS packet encoder and decoder roundtrip', () => {
   const decoded = decodeDnsResponse(resp);
   assert.equal(decoded.id, 0x1234);
   assert.equal(decoded.rcode, 0);
+  assert.deepEqual(decoded.questionNames, ['gemini.google.com']);
   assert.deepEqual(decoded.ips, ['192.255.159.240']);
+
+  const built = buildDnsAResponse(0x55aa, 'aistudio.google.com', ['179.254.166.171'], 60);
+  const builtDecoded = decodeDnsResponse(built);
+  assert.equal(builtDecoded.id, 0x55aa);
+  assert.equal(builtDecoded.rcode, 0);
+  assert.deepEqual(builtDecoded.questionNames, ['aistudio.google.com']);
+  assert.deepEqual(builtDecoded.ips, ['179.254.166.171']);
 });
 
 test('Anti-Direct-IP and 4-stage geo-redirect classifier rejects direct Google IPs and /docs/available-regions', () => {
@@ -214,4 +222,11 @@ test('Hosts parser, plain-text/CSV/JSON import-export, and rotation queue work r
   assert.equal(queue.length, 5);
   const next1 = getNextRotationServerId(queue, queue[0]);
   assert.equal(next1, queue[1]);
+
+  // Malformed DoH URLs must never crash the plain-text importer
+  const malformed = parseImportedServers(
+    'https://[invalid-url BadNode\nhttps://dns.bezmezhau.com/dns-query ValidNode'
+  );
+  assert.equal(malformed.length, 1);
+  assert.equal(malformed[0].name, 'ValidNode');
 });

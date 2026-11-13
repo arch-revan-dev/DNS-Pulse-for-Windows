@@ -13,6 +13,7 @@ export interface DnsParsedResponse {
   id: number;
   rcode: number;
   questions: number;
+  questionNames: string[];
   answers: DnsParsedRecord[];
   ips: string[];
 }
@@ -96,9 +97,11 @@ export function decodeDnsResponse(buf: Uint8Array): DnsParsedResponse {
   const qdCount = view.getUint16(4, false);
   const anCount = view.getUint16(6, false);
 
+  const questionNames: string[] = [];
   let offset = 12;
   for (let i = 0; i < qdCount && offset < buf.length; i++) {
     const qName = readDnsName(buf, offset);
+    if (qName.name) questionNames.push(qName.name);
     offset = qName.nextOffset + 4; // QTYPE + QCLASS
   }
 
@@ -138,7 +141,54 @@ export function decodeDnsResponse(buf: Uint8Array): DnsParsedResponse {
     answers.push({ name: rrName.name, type: rtype, ttl, data: dataStr });
   }
 
-  return { id, rcode, questions: qdCount, answers, ips };
+  return { id, rcode, questions: qdCount, questionNames, answers, ips };
+}
+
+/**
+ * Builds a clean RFC 1035 A-record DNS response packet without trailing EDNS0 records.
+ */
+export function buildDnsAResponse(
+  txId: number,
+  qname: string,
+  ipv4List: string[],
+  ttl = 60
+): Uint8Array {
+  const base = encodeDnsQuery(qname, 1, txId);
+  const validV4 = ipv4List.filter((ip) => /^\d{1,3}(\.\d{1,3}){3}$/.test(ip.trim()));
+
+  if (validV4.length === 0) {
+    const empty = new Uint8Array(base);
+    empty[2] = 0x81;
+    empty[3] = 0x80; // NOERROR, 0 answers
+    return empty;
+  }
+
+  const rrSize = 16; // 2-byte pointer + 2 type + 2 class + 4 ttl + 2 rdlen + 4 ipv4
+  const out = new Uint8Array(base.length + validV4.length * rrSize);
+  out.set(base, 0);
+
+  const view = new DataView(out.buffer);
+  view.setUint16(2, 0x8180, false); // QR=1, RD=1, RA=1, RCODE=0
+  view.setUint16(6, validV4.length, false); // ANCOUNT
+  view.setUint16(8, 0, false);
+  view.setUint16(10, 0, false);
+
+  let offset = base.length;
+  for (const ip of validV4) {
+    const octets = ip.trim().split('.').map(Number);
+    view.setUint16(offset, 0xc00c, false); // Pointer to QNAME at offset 12
+    view.setUint16(offset + 2, 1, false); // TYPE A
+    view.setUint16(offset + 4, 1, false); // CLASS IN
+    view.setUint32(offset + 6, ttl, false);
+    view.setUint16(offset + 10, 4, false); // RDLENGTH
+    out[offset + 12] = octets[0];
+    out[offset + 13] = octets[1];
+    out[offset + 14] = octets[2];
+    out[offset + 15] = octets[3];
+    offset += rrSize;
+  }
+
+  return out;
 }
 
 export function toBase64Url(bytes: Uint8Array): string {

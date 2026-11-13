@@ -102,6 +102,68 @@ public sealed class DnsDatabaseRepository
         return added;
     }
 
+    public int UpsertCustomServers(IEnumerable<DnsServerEntry> servers)
+    {
+        using var conn = OpenConnection();
+        using var tx = conn.BeginTransaction();
+        int count = 0;
+
+        foreach (var s in servers)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                INSERT INTO dns_servers
+                (id, name, provider, protocol, primaryIp, secondaryIp, dohUrl, dotHost, smartProxyIp, category, country, tagsJson, description, supportsBypass, isBuiltin, isFavorite, isSubscription, isFreeUnlimited, lastLatencyMs, verdict, verdictReason)
+                VALUES ($id, $name, $prov, $proto, $ip1, $ip2, $doh, $dot, $sni, $cat, $cc, $tags, $desc, $bypass, 0, $fav, $sub, $free, $lat, $verdict, $reason)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    provider = excluded.provider,
+                    protocol = excluded.protocol,
+                    primaryIp = excluded.primaryIp,
+                    dohUrl = excluded.dohUrl,
+                    dotHost = excluded.dotHost,
+                    smartProxyIp = excluded.smartProxyIp,
+                    supportsBypass = excluded.supportsBypass;
+                """;
+            cmd.Parameters.AddWithValue("$id", s.Id);
+            cmd.Parameters.AddWithValue("$name", s.Name);
+            cmd.Parameters.AddWithValue("$prov", s.Provider);
+            cmd.Parameters.AddWithValue("$proto", s.Protocol.ToString());
+            cmd.Parameters.AddWithValue("$ip1", s.PrimaryIp);
+            cmd.Parameters.AddWithValue("$ip2", (object?)s.SecondaryIp ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$doh", (object?)s.DohUrl ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$dot", (object?)s.DotHost ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$sni", (object?)s.SmartProxyIp ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$cat", s.Category);
+            cmd.Parameters.AddWithValue("$cc", s.Country);
+            cmd.Parameters.AddWithValue("$tags", JsonSerializer.Serialize(s.Tags));
+            cmd.Parameters.AddWithValue("$desc", s.Description);
+            cmd.Parameters.AddWithValue("$bypass", s.SupportsBypass ? 1 : 0);
+            cmd.Parameters.AddWithValue("$fav", s.IsFavorite ? 1 : 0);
+            cmd.Parameters.AddWithValue("$sub", s.IsSubscription ? 1 : 0);
+            cmd.Parameters.AddWithValue("$free", s.IsFreeUnlimited ? 1 : 0);
+            cmd.Parameters.AddWithValue("$lat", (object?)s.LastLatencyMs ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$verdict", s.Verdict.ToString());
+            cmd.Parameters.AddWithValue("$reason", s.VerdictReason);
+            count += cmd.ExecuteNonQuery();
+        }
+
+        tx.Commit();
+        SaveCustomVault(GetAllServers());
+        return count;
+    }
+
+    public void ToggleFavorite(string serverId)
+    {
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE dns_servers SET isFavorite = CASE WHEN isFavorite = 1 THEN 0 ELSE 1 END WHERE id = $id;";
+        cmd.Parameters.AddWithValue("$id", serverId);
+        cmd.ExecuteNonQuery();
+        SaveCustomVault(GetAllServers());
+    }
+
     /// <summary>
     /// Intentionally does NOT apply ORDER BY isFavorite DESC so user sorting always works cleanly.
     /// </summary>
@@ -182,5 +244,18 @@ public sealed class DnsDatabaseRepository
     public void SaveHostsCache(IEnumerable<string> hosts)
     {
         File.WriteAllText(_hostsCachePath, JsonSerializer.Serialize(hosts.Distinct().ToList()));
+    }
+
+    public List<string> LoadHostsCache()
+    {
+        if (!File.Exists(_hostsCachePath)) return [];
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(File.ReadAllText(_hostsCachePath)) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
     }
 }
