@@ -1,8 +1,8 @@
 using System.IO;
+using System.Text.Json;
 using System.Windows;
-using System.Windows.Controls;
+using System.Windows.Threading;
 using DnsPulse.App.Data;
-using DnsPulse.App.Models;
 using DnsPulse.App.NetworkEngine;
 using DnsPulse.App.Services;
 using DnsPulse.App.ViewModels;
@@ -13,24 +13,31 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel _vm;
     private readonly TrayNotificationService _tray = new();
-    private bool _isDarkTheme = true;
+    private readonly DispatcherTimer _tunnelTimer;
 
     public MainWindow()
     {
         InitializeComponent();
-        _vm = new MainViewModel(new DnsDatabaseRepository());
+        _vm = new MainViewModel(new DnsDatabaseRepository(), action => Dispatcher.Invoke(action));
         DataContext = _vm;
 
-        _tray.OnRotateRequested += () => Dispatcher.Invoke(async () =>
+        _tunnelTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.2) };
+        _tunnelTimer.Tick += (_, _) =>
         {
-            await _vm.RotateTunnelAsync();
-            RefreshTunnelBanner();
-        });
-        _tray.OnDisconnectRequested += () => Dispatcher.Invoke(async () =>
-        {
-            await _vm.StopTunnelAsync();
-            RefreshTunnelBanner();
-        });
+            if (_vm.IsTunnelActive && _vm.ActiveTunnelServer is { } srv)
+            {
+                _vm.RefreshTunnelCounters();
+                _tray.UpdateActiveState(true, srv.Name, srv.EndpointLabel, _vm.TargetDomain, _vm.TunnelQueries);
+            }
+            else
+            {
+                _tray.UpdateActiveState(false, null, null, _vm.TargetDomain, 0);
+            }
+        };
+        _tunnelTimer.Start();
+
+        _tray.OnRotateRequested += () => Dispatcher.Invoke(async () => await _vm.RotateTunnelAsync());
+        _tray.OnDisconnectRequested += () => Dispatcher.Invoke(async () => await _vm.StopTunnelAsync());
         _tray.OnShowWindowRequested += () => Dispatcher.Invoke(() =>
         {
             Show();
@@ -39,16 +46,29 @@ public partial class MainWindow : Window
         });
     }
 
+    private void OnMinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void OnMaximizeRestoreClick(object sender, RoutedEventArgs e) =>
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+
+    private void OnCloseWindowClick(object sender, RoutedEventArgs e) => Close();
+
     private void OnToggleThemeClick(object sender, RoutedEventArgs e)
     {
-        _isDarkTheme = !_isDarkTheme;
-        var dictUri = _isDarkTheme
+        _vm.IsDarkTheme = !_vm.IsDarkTheme;
+        var dictUri = _vm.IsDarkTheme
             ? new Uri("Themes/RestrainedGraphiteDark.xaml", UriKind.Relative)
             : new Uri("Themes/RestrainedGraphiteLight.xaml", UriKind.Relative);
 
         var dicts = System.Windows.Application.Current.Resources.MergedDictionaries;
-        dicts.Clear();
-        dicts.Add(new ResourceDictionary { Source = dictUri });
+        if (dicts.Count > 0)
+        {
+            dicts[0] = new ResourceDictionary { Source = dictUri };
+        }
+        else
+        {
+            dicts.Add(new ResourceDictionary { Source = dictUri });
+        }
     }
 
     private void OnOpenDiscoveryClick(object sender, RoutedEventArgs e)
@@ -57,107 +77,32 @@ public partial class MainWindow : Window
         dialog.ShowDialog();
     }
 
-    private void OnToggleLiveClick(object sender, RoutedEventArgs e)
+    private void OnOpenManualAddClick(object sender, RoutedEventArgs e)
     {
-        _vm.ToggleLive();
-        LiveBtn.Content = _vm.IsLiveRunning ? "LIVE ●" : "LIVE";
+        var dialog = new ManualAddWindow(_vm) { Owner = this };
+        dialog.ShowDialog();
     }
 
-    private async void OnBenchmarkClick(object sender, RoutedEventArgs e)
+    private void OnCopyTagClick(object sender, RoutedEventArgs e)
     {
-        await _vm.BenchmarkTopAsync(18, CancellationToken.None);
-    }
-
-    private void OnPresetClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is System.Windows.Controls.Button { Tag: string tag })
+        if (sender is FrameworkElement { Tag: string text } && !string.IsNullOrWhiteSpace(text))
         {
-            var parts = tag.Split('|');
-            if (parts.Length >= 3)
-            {
-                _vm.TargetDomain = parts[0];
-                _vm.RequiresBypass = parts[1] == "true";
-                ModeLabel.Text = $"Режим: {parts[2]}";
-            }
+            System.Windows.Clipboard.SetText(text);
+            _vm.StatusMessage = "Скопировано в буфер обмена";
         }
     }
 
-    private void OnCategoryChanged(object sender, SelectionChangedEventArgs e)
+    private void OnLoadConfigFileClick(object sender, RoutedEventArgs e)
     {
-        if (_vm is null) return;
-        if (CategoryCombo.SelectedItem is ComboBoxItem { Content: string cat })
-            _vm.SelectedCategory = cat;
-    }
-
-    private void OnSortChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_vm is null) return;
-        if (SortCombo.SelectedItem is ComboBoxItem { Tag: string tag } && Enum.TryParse<SortMode>(tag, out var mode))
-            _vm.SelectedSortMode = mode;
-    }
-
-    private void OnMainTabChanged(object sender, SelectionChangedEventArgs e)
-    {
-        // Keep visible servers synced across tabs
-        if (e.Source is System.Windows.Controls.TabControl)
-            _vm?.ApplyFilterAndSort();
-    }
-
-    private async void OnTestSingleClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: DnsServerEntry entry })
-            await _vm.TestSingleAsync(entry, CancellationToken.None);
-    }
-
-    private void OnFavoriteClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: DnsServerEntry entry })
-            _vm.ToggleFavorite(entry);
-    }
-
-    private async void OnStartTunnelClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: DnsServerEntry entry })
+        var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            await _vm.StartTunnelAsync(entry);
-            RefreshTunnelBanner();
-        }
-    }
-
-    private async void OnRotateTunnelClick(object sender, RoutedEventArgs e)
-    {
-        await _vm.RotateTunnelAsync();
-        RefreshTunnelBanner();
-    }
-
-    private async void OnStopTunnelClick(object sender, RoutedEventArgs e)
-    {
-        await _vm.StopTunnelAsync();
-        RefreshTunnelBanner();
-    }
-
-    private void RefreshTunnelBanner()
-    {
-        if (_vm.IsTunnelActive && _vm.ActiveTunnelServer is { } srv)
+            Filter = "DNS configs (*.txt;*.json;*.csv)|*.txt;*.json;*.csv|All files (*.*)|*.*"
+        };
+        if (dialog.ShowDialog() == true)
         {
-            TunnelBanner.Visibility = Visibility.Visible;
-            TunnelBannerTitle.Text = $"Активен туннель: {srv.Name}";
-            TunnelBannerSubtitle.Text = $"{srv.DohUrl ?? srv.DotHost ?? srv.PrimaryIp}  •  127.0.0.1:53  •  Запросов: {_vm.TunnelQueries}";
-            _tray.UpdateActiveState(true, srv.Name, srv.DohUrl ?? srv.PrimaryIp, _vm.TargetDomain, _vm.TunnelQueries);
+            _vm.ImportEditorText = File.ReadAllText(dialog.FileName);
+            _vm.ImportFromEditorCommand.Execute(null);
         }
-        else
-        {
-            TunnelBanner.Visibility = Visibility.Collapsed;
-            _tray.UpdateActiveState(false, null, null, _vm.TargetDomain, 0);
-        }
-    }
-
-    private void OnImportConfigsClick(object sender, RoutedEventArgs e)
-    {
-        int count = _vm.ImportRawConfigs(ImportEditor.Text);
-        ConfigFeedbackText.Text = count > 0
-            ? $"Импортировано в SQLite + JSON-сейф: {count}"
-            : "Не найдено корректных адресов DNS";
     }
 
     private void OnExportCsvClick(object sender, RoutedEventArgs e)
@@ -170,29 +115,30 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog() == true)
         {
             File.WriteAllText(dialog.FileName, ImportExportCodec.ExportToCsv(_vm.VisibleServers));
-            ConfigFeedbackText.Text = $"Экспортировано: {dialog.FileName}";
+            _vm.ConfigFeedback = $"Экспортировано в CSV: {dialog.FileName}";
         }
     }
 
-    private async void OnSyncFeedsFromConfigsClick(object sender, RoutedEventArgs e)
+    private void OnExportJsonClick(object sender, RoutedEventArgs e)
     {
-        var (hosts, servers) = await _vm.SyncOnlineFeedsAsync(CancellationToken.None);
-        ConfigFeedbackText.Text = $"Синхронизировано: {hosts} доменов, {servers} DNS";
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            FileName = "dns-pulse-export.json",
+            Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+        };
+        if (dialog.ShowDialog() == true)
+        {
+            File.WriteAllText(dialog.FileName, JsonSerializer.Serialize(_vm.VisibleServers, new JsonSerializerOptions { WriteIndented = true }));
+            _vm.ConfigFeedback = $"Экспортировано в JSON: {dialog.FileName}";
+        }
     }
 
-    private void OnRestoreBuiltinsClick(object sender, RoutedEventArgs e)
-    {
-        int added = _vm.RestoreBuiltins();
-        ConfigFeedbackText.Text = $"Встроенная база проверена (добавлено: {added})";
-    }
-
-    private void OnOpenWinSettingsClick(object sender, RoutedEventArgs e)
-    {
+    private void OnOpenWinSettingsClick(object sender, RoutedEventArgs e) =>
         WindowsNetworkAdapterService.OpenWindowsNetworkSettings();
-    }
 
     protected override async void OnClosed(EventArgs e)
     {
+        _tunnelTimer.Stop();
         await _vm.StopTunnelAsync();
         _tray.Dispose();
         base.OnClosed(e);

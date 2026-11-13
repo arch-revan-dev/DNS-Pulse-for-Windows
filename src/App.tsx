@@ -1,9 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
+  AlertTriangle,
+  CheckCircle2,
+  CircleDashed,
   Gauge,
   Moon,
   Pencil,
+  Play,
+  Plus,
   Radar,
   RefreshCw,
   RotateCcw,
@@ -11,12 +16,14 @@ import {
   Square,
   Sun,
   X,
+  XCircle,
 } from 'lucide-react';
 import { ConfigsTab } from './components/ConfigsTab';
 import { DiscoveryModal } from './components/DiscoveryModal';
 import { ManualAddModal } from './components/ManualAddModal';
-import { ServerCard } from './components/ServerCard';
+import { getEndpointLabel, ServerCard } from './components/ServerCard';
 import { ServerDetailsDrawer } from './components/ServerDetailsDrawer';
+import { ServerInspectorPanel } from './components/ServerInspectorPanel';
 import {
   CATEGORY_LIST,
   filterServers,
@@ -101,6 +108,7 @@ export default function App() {
 
   const [discoveryOpen, setDiscoveryOpen] = useState(false);
   const [manualAddOpen, setManualAddOpen] = useState(false);
+  const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
   const [detailsServerId, setDetailsServerId] = useState<string | null>(null);
   const [tunnelTestFeedback, setTunnelTestFeedback] = useState<string | null>(null);
 
@@ -162,6 +170,11 @@ export default function App() {
     );
     return verified[0]?.id ?? null;
   }, [servers]);
+
+  const selectedServer = useMemo(
+    () => (selectedServerId ? servers.find((s) => s.id === selectedServerId) ?? null : null),
+    [selectedServerId, servers]
+  );
 
   const detailsServer = useMemo(
     () => (detailsServerId ? servers.find((s) => s.id === detailsServerId) ?? null : null),
@@ -555,15 +568,34 @@ export default function App() {
           />
         ) : (
           <>
-            {/* Mode & Domain Preset Panel */}
+            {/* Unified Target Service + Search & Filter Card */}
             <section
-              aria-label="Режим проверки и выбор домена"
+              aria-label="Режим проверки, поиск и фильтры"
               className="rounded-lg bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] p-4 space-y-3"
             >
-              {/* Compact header: "Режим: ИИ" on left, clickable domain badge "gemini.google.com ✎" on right */}
-              <div className="flex items-center justify-between gap-4">
-                <div className="text-sm font-semibold text-[#0F172A] dark:text-[#F1F5F9] whitespace-nowrap shrink-0">
-                  Режим: {activeGroupLabel}
+              {/* Top Row: Mode & Editable Target Domain */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className="text-sm font-semibold text-[#0F172A] dark:text-[#F1F5F9] whitespace-nowrap">
+                    Режим: {activeGroupLabel}
+                  </span>
+
+                  <div className="inline-flex items-center gap-1 p-1 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028]">
+                    {PRESET_GROUPS.map((g) => (
+                      <button
+                        key={g.id}
+                        type="button"
+                        onClick={() => handleSelectGroup(g.id)}
+                        className={`min-h-[28px] px-2.5 py-1 rounded text-xs font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
+                          presetGroup === g.id
+                            ? 'bg-[#FFFFFF] dark:bg-[#13161B] text-[#0F172A] dark:text-[#F1F5F9]'
+                            : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F1F5F9]'
+                        }`}
+                      >
+                        {g.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {editingCustomDomain ? (
@@ -602,209 +634,200 @@ export default function App() {
                 )}
               </div>
 
-              {/* Preset Groups + Sub-pills */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
-                <div className="inline-flex items-center gap-1 p-1 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] shrink-0 self-start">
-                  {PRESET_GROUPS.map((g) => (
+              {/* Presets Strip */}
+              {groupPresets.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {groupPresets.map((preset) => (
                     <button
-                      key={g.id}
+                      key={preset.id}
                       type="button"
-                      onClick={() => handleSelectGroup(g.id)}
-                      className={`min-h-[30px] px-3 py-1 rounded text-xs font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
-                        presetGroup === g.id
-                          ? 'bg-[#FFFFFF] dark:bg-[#13161B] text-[#0F172A] dark:text-[#F1F5F9] shadow-xs'
-                          : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F1F5F9]'
+                      onClick={() => handleSelectPreset(preset.domain, preset.requiresBypass)}
+                      className={`min-h-[30px] px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer border ${
+                        targetDomain === preset.domain
+                          ? 'bg-[#22C55E]/15 border-[#22C55E] text-[#16A34A] dark:text-[#22C55E]'
+                          : 'bg-[#F7F8FA] dark:bg-[#0B0D10] text-[#0F172A] dark:text-[#F1F5F9] border-[#DCE1E8] dark:border-[#262C36] hover:border-[#94A3B8]'
                       }`}
                     >
-                      {g.label}
+                      {preset.label}
                     </button>
                   ))}
                 </div>
+              ) : (
+                <label className="inline-flex items-center gap-2 text-xs text-[#64748B] dark:text-[#94A3B8] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={requiresBypass}
+                    onChange={(e) => setRequiresBypass(e.target.checked)}
+                    className="accent-[#22C55E]"
+                  />
+                  <span>Проверять обход (Anti-Direct-IP + 443)</span>
+                </label>
+              )}
 
-                {groupPresets.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {groupPresets.map((preset) => (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => handleSelectPreset(preset.domain, preset.requiresBypass)}
-                        className={`min-h-[32px] px-3 py-1 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer border ${
-                          targetDomain === preset.domain
-                            ? 'bg-[#0F172A] dark:bg-[#F1F5F9] text-[#FFFFFF] dark:text-[#0B0D10] border-transparent'
-                            : 'bg-[#F7F8FA] dark:bg-[#0B0D10] text-[#0F172A] dark:text-[#F1F5F9] border-[#DCE1E8] dark:border-[#262C36] hover:border-[#94A3B8]'
-                        }`}
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
+              {/* Subtle Hairline Divider */}
+              <div className="border-t border-[#DCE1E8] dark:border-[#262C36] pt-3 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
+                <div className="relative flex-1 min-w-[220px]">
+                  <Search className="w-3.5 h-3.5 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={filter.search}
+                    onChange={(e) => setFilter((prev) => ({ ...prev, search: e.target.value }))}
+                    aria-label="Поиск DNS-серверов"
+                    placeholder="Поиск по имени, провайдеру, IP, DoH URL, DoT, тегам..."
+                    className="w-full min-h-[36px] pl-9 pr-8 py-1.5 rounded-md text-xs bg-[#F7F8FA] dark:bg-[#0B0D10] border border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9] focus:outline-none focus:border-[#22C55E]"
+                  />
+                  {filter.search && (
+                    <button
+                      type="button"
+                      onClick={() => setFilter((prev) => ({ ...prev, search: '' }))}
+                      aria-label="Очистить поиск"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#F1F5F9] cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
 
-                {presetGroup === 'custom' && (
-                  <label className="inline-flex items-center gap-2 text-xs text-[#64748B] dark:text-[#94A3B8] cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={requiresBypass}
-                      onChange={(e) => setRequiresBypass(e.target.checked)}
-                      className="accent-[#22C55E]"
-                    />
-                    <span>Проверять обход (Anti-Direct-IP + 443)</span>
-                  </label>
-                )}
-              </div>
-            </section>
-
-            {/* Categories with live counters */}
-            <section aria-label="Категории серверов" className="flex flex-wrap items-center gap-1.5">
-              {CATEGORY_LIST.map((cat) => {
-                const count = categoryCounts[cat] ?? 0;
-                const active = filter.category === cat;
-                return (
+                <div className="flex flex-wrap items-center gap-1.5">
                   <button
-                    key={cat}
                     type="button"
-                    onClick={() => {
-                      setFilter((prev) => ({ ...prev, category: cat }));
-                      setVisibleLimit(activeTab === 'catalog' ? 100 : 40);
-                    }}
-                    className={`min-h-[34px] px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 border transition-colors cursor-pointer ${
-                      active
-                        ? 'bg-[#0F172A] dark:bg-[#F1F5F9] text-[#FFFFFF] dark:text-[#0B0D10] border-transparent'
-                        : 'bg-[#FFFFFF] dark:bg-[#13161B] text-[#0F172A] dark:text-[#F1F5F9] border-[#DCE1E8] dark:border-[#262C36] hover:border-[#94A3B8]'
+                    onClick={() => setFilter((prev) => ({ ...prev, bypassOnly: !prev.bypassOnly }))}
+                    aria-pressed={filter.bypassOnly}
+                    className={`min-h-[36px] px-2.5 py-1.5 rounded-md border text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      filter.bypassOnly
+                        ? 'bg-[#22C55E]/15 border-[#22C55E] text-[#16A34A] dark:text-[#22C55E]'
+                        : 'bg-[#F7F8FA] dark:bg-[#0B0D10] border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9]'
                     }`}
                   >
-                    <span>{cat}</span>
-                    <span
-                      className={`font-mono text-[11px] tabular-nums ${
-                        active ? 'opacity-80' : 'text-[#64748B] dark:text-[#94A3B8]'
+                    ✓ Обход 443
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFilter((prev) => ({ ...prev, favoritesOnly: !prev.favoritesOnly }))}
+                    aria-pressed={filter.favoritesOnly}
+                    className={`min-h-[36px] px-2.5 py-1.5 rounded-md border text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      filter.favoritesOnly
+                        ? 'bg-[#F59E0B]/15 border-[#F59E0B] text-[#D97706] dark:text-[#F59E0B]'
+                        : 'bg-[#F7F8FA] dark:bg-[#0B0D10] border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9]'
+                    }`}
+                  >
+                    ★ Избранные
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFilter((prev) => ({ ...prev, encryptedOnly: !prev.encryptedOnly }))}
+                    aria-pressed={filter.encryptedOnly}
+                    className={`min-h-[36px] px-2.5 py-1.5 rounded-md border text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      filter.encryptedOnly
+                        ? 'bg-[#0F172A] dark:bg-[#F1F5F9] border-transparent text-[#FFFFFF] dark:text-[#0B0D10]'
+                        : 'bg-[#F7F8FA] dark:bg-[#0B0D10] border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9]'
+                    }`}
+                  >
+                    DoH / DoT
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateSettings({ freeOnly: !filter.freeOnly })}
+                    aria-pressed={filter.freeOnly}
+                    className={`min-h-[36px] px-2.5 py-1.5 rounded-md border text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      filter.freeOnly
+                        ? 'bg-[#0F172A] dark:bg-[#F1F5F9] border-transparent text-[#FFFFFF] dark:text-[#0B0D10]'
+                        : 'bg-[#F7F8FA] dark:bg-[#0B0D10] border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9]'
+                    }`}
+                  >
+                    Бесплатные
+                  </button>
+
+                  <select
+                    value={filter.sortMode}
+                    onChange={(e) =>
+                      setFilter((prev) => ({ ...prev, sortMode: e.target.value as SortMode }))
+                    }
+                    aria-label="Сортировка серверов"
+                    className="min-h-[36px] px-2.5 py-1.5 rounded-md text-xs font-medium bg-[#F7F8FA] dark:bg-[#0B0D10] border border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9] cursor-pointer"
+                  >
+                    <option value="BEST">Сорт: Обход + Пинг</option>
+                    <option value="LOWEST_PING">Сорт: Пинг (мс)</option>
+                    <option value="HIGHEST_TPS">Сорт: Скорость TPS</option>
+                    <option value="FAVORITES_FIRST">Сорт: Избранные</option>
+                    <option value="ALPHABETICAL">Сорт: По алфавиту</option>
+                  </select>
+
+                  {activeFiltersPresent && (
+                    <button
+                      type="button"
+                      onClick={() => setFilter({ ...DEFAULT_FILTER, sortMode: filter.sortMode })}
+                      className="min-h-[36px] px-2.5 py-1.5 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-medium text-[#0F172A] dark:text-[#F1F5F9] inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span className="tabular-nums">Сброс</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {/* Category Strip + Counter */}
+            <section
+              aria-label="Категории серверов"
+              className="flex flex-wrap xl:flex-nowrap items-center justify-between gap-2"
+            >
+              <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                {CATEGORY_LIST.filter((cat) => cat !== 'Личные токены' || (categoryCounts[cat] ?? 0) > 0).map((cat) => {
+                  const count = categoryCounts[cat] ?? 0;
+                  const active = filter.category === cat;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => {
+                        setFilter((prev) => ({ ...prev, category: cat }));
+                        setVisibleLimit(activeTab === 'catalog' ? 100 : 40);
+                      }}
+                      className={`min-h-[32px] px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 border transition-colors cursor-pointer ${
+                        active
+                          ? 'bg-[#0F172A] dark:bg-[#F1F5F9] text-[#FFFFFF] dark:text-[#0B0D10] border-transparent'
+                          : 'bg-[#FFFFFF] dark:bg-[#13161B] text-[#0F172A] dark:text-[#F1F5F9] border-[#DCE1E8] dark:border-[#262C36] hover:border-[#94A3B8]'
                       }`}
                     >
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
-            </section>
-
-            {/* Quick Filters, Live Search & Sort Bar */}
-            <section
-              aria-label="Фильтры и сортировка"
-              className="rounded-lg bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] p-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3"
-            >
-              <div className="relative flex-1 min-w-[220px]">
-                <Search className="w-3.5 h-3.5 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={filter.search}
-                  onChange={(e) => setFilter((prev) => ({ ...prev, search: e.target.value }))}
-                  aria-label="Поиск DNS-серверов"
-                  placeholder="Поиск по имени, провайдеру, IP, DoH URL, DoT, тегам..."
-                  className="w-full min-h-[36px] pl-9 pr-8 py-1.5 rounded-md text-xs bg-[#F7F8FA] dark:bg-[#0B0D10] border border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9] focus:outline-none focus:border-[#22C55E]"
-                />
-                {filter.search && (
-                  <button
-                    type="button"
-                    onClick={() => setFilter((prev) => ({ ...prev, search: '' }))}
-                    aria-label="Очистить поиск"
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#F1F5F9] cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
+                      <span>{cat}</span>
+                      <span
+                        className={`font-mono text-[11px] tabular-nums ${
+                          active ? 'opacity-80' : 'text-[#64748B] dark:text-[#94A3B8]'
+                        }`}
+                      >
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-3 text-xs text-[#64748B] dark:text-[#94A3B8] shrink-0 whitespace-nowrap">
+                <span className="tabular-nums font-mono">
+                  {visibleServers.length} / {filteredAndSorted.length} (база: {servers.length})
+                </span>
                 <button
                   type="button"
-                  onClick={() => setFilter((prev) => ({ ...prev, bypassOnly: !prev.bypassOnly }))}
-                  aria-pressed={filter.bypassOnly}
-                  className={`min-h-[36px] px-3 py-1.5 rounded-md border text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                    filter.bypassOnly
-                      ? 'bg-[#22C55E]/15 border-[#22C55E] text-[#16A34A] dark:text-[#22C55E]'
-                      : 'bg-[#F7F8FA] dark:bg-[#0B0D10] border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9]'
-                  }`}
+                  onClick={() => setManualAddOpen(true)}
+                  className="min-h-[30px] px-2.5 py-1 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-medium text-[#0F172A] dark:text-[#F1F5F9] inline-flex items-center gap-1 whitespace-nowrap cursor-pointer hover:border-[#94A3B8]"
                 >
-                  ✓ Обход 443
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Добавить DNS</span>
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => setFilter((prev) => ({ ...prev, favoritesOnly: !prev.favoritesOnly }))}
-                  aria-pressed={filter.favoritesOnly}
-                  className={`min-h-[36px] px-3 py-1.5 rounded-md border text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                    filter.favoritesOnly
-                      ? 'bg-[#F59E0B]/15 border-[#F59E0B] text-[#D97706] dark:text-[#F59E0B]'
-                      : 'bg-[#F7F8FA] dark:bg-[#0B0D10] border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9]'
-                  }`}
-                >
-                  ★ Избранные
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setFilter((prev) => ({ ...prev, encryptedOnly: !prev.encryptedOnly }))}
-                  aria-pressed={filter.encryptedOnly}
-                  className={`min-h-[36px] px-3 py-1.5 rounded-md border text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                    filter.encryptedOnly
-                      ? 'bg-[#0F172A] dark:bg-[#F1F5F9] border-transparent text-[#FFFFFF] dark:text-[#0B0D10]'
-                      : 'bg-[#F7F8FA] dark:bg-[#0B0D10] border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9]'
-                  }`}
-                >
-                  DoH / DoT
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleUpdateSettings({ freeOnly: !filter.freeOnly })
-                  }
-                  aria-pressed={filter.freeOnly}
-                  className={`min-h-[36px] px-3 py-1.5 rounded-md border text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                    filter.freeOnly
-                      ? 'bg-[#0F172A] dark:bg-[#F1F5F9] border-transparent text-[#FFFFFF] dark:text-[#0B0D10]'
-                      : 'bg-[#F7F8FA] dark:bg-[#0B0D10] border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9]'
-                  }`}
-                >
-                  Только бесплатные
-                </button>
-
-                <select
-                  value={filter.sortMode}
-                  onChange={(e) =>
-                    setFilter((prev) => ({ ...prev, sortMode: e.target.value as SortMode }))
-                  }
-                  aria-label="Сортировка серверов"
-                  className="min-h-[36px] px-3 py-1.5 rounded-md text-xs font-medium bg-[#F7F8FA] dark:bg-[#0B0D10] border border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9] cursor-pointer"
-                >
-                  <option value="BEST">Сорт: Обход + Пинг</option>
-                  <option value="LOWEST_PING">Сорт: Пинг (мс)</option>
-                  <option value="HIGHEST_TPS">Сорт: Скорость TPS</option>
-                  <option value="FAVORITES_FIRST">Сорт: Избранные</option>
-                  <option value="ALPHABETICAL">Сорт: По алфавиту</option>
-                </select>
-
-                {activeFiltersPresent && (
-                  <button
-                    type="button"
-                    onClick={() => setFilter({ ...DEFAULT_FILTER, sortMode: filter.sortMode })}
-                    className="min-h-[36px] px-3 py-1.5 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-medium text-[#0F172A] dark:text-[#F1F5F9] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span className="tabular-nums">
-                      Сброс ({filteredAndSorted.length}/{servers.length})
-                    </span>
-                  </button>
-                )}
               </div>
             </section>
 
-            {/* Server List */}
+            {/* Content View: Loading / Empty / Catalog DataTable / Tester Master-Detail */}
             {loading ? (
-              <div className="space-y-3" aria-busy="true">
-                {[1, 2, 3, 4].map((n) => (
+              <div className="space-y-2.5" aria-busy="true">
+                {[1, 2, 3, 4, 5].map((n) => (
                   <div
                     key={n}
-                    className="h-[88px] rounded-lg bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] animate-pulse"
+                    className="h-[72px] rounded-lg bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] animate-pulse"
                   />
                 ))}
               </div>
@@ -833,51 +856,150 @@ export default function App() {
                   </button>
                 </div>
               </div>
-            ) : (
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between text-xs text-[#64748B] dark:text-[#94A3B8] px-1">
-                  <span className="tabular-nums">
-                    Показано {visibleServers.length} из {filteredAndSorted.length} (всего в базе:{' '}
-                    {servers.length})
-                  </span>
-                  {activeTab === 'catalog' && (
-                    <button
-                      type="button"
-                      onClick={() => setManualAddOpen(true)}
-                      className="text-xs font-medium text-[#0F172A] dark:text-[#F1F5F9] hover:underline cursor-pointer"
-                    >
-                      + Добавить свой DNS
-                    </button>
-                  )}
+            ) : activeTab === 'catalog' ? (
+              /* High-Density Catalog Table */
+              <div className="space-y-3">
+                <div className="rounded-lg bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-[#DCE1E8] dark:border-[#262C36] bg-[#F7F8FA] dark:bg-[#1B2028] text-[11px] font-semibold text-[#64748B] dark:text-[#94A3B8]">
+                        <th className="py-2.5 px-3">Статус</th>
+                        <th className="py-2.5 px-3">Название</th>
+                        <th className="py-2.5 px-3">Протокол</th>
+                        <th className="py-2.5 px-3">Страна</th>
+                        <th className="py-2.5 px-3">Адрес / Endpoint</th>
+                        <th className="py-2.5 px-3 text-right">Пинг</th>
+                        <th className="py-2.5 px-3 text-right">TPS</th>
+                        <th className="py-2.5 px-3 text-right">Действия</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#DCE1E8] dark:divide-[#262C36] text-xs">
+                      {visibleServers.map((srv) => {
+                        const isActive = tunnel.active && tunnel.serverId === srv.id;
+                        const probing = probingIds.has(srv.id);
+                        return (
+                          <tr
+                            key={srv.id}
+                            onClick={() => setDetailsServerId(srv.id)}
+                            className="hover:bg-[#F7F8FA] dark:hover:bg-[#1B2028]/70 cursor-pointer transition-colors"
+                          >
+                            <td className="py-2 px-3 whitespace-nowrap">
+                              {srv.verdict === 'VERIFIED_PROXY_OK' ? (
+                                <CheckCircle2 className="w-4 h-4 text-[#16A34A] dark:text-[#22C55E]" />
+                              ) : srv.verdict === 'DIRECT_NO_PROXY' ? (
+                                <AlertTriangle className="w-4 h-4 text-[#D97706] dark:text-[#F59E0B]" />
+                              ) : srv.verdict === 'UNCHECKED' ? (
+                                <CircleDashed className="w-4 h-4 text-[#64748B]" />
+                              ) : (
+                                <XCircle className="w-4 h-4 text-[#DC2626] dark:text-[#EF4444]" />
+                              )}
+                            </td>
+                            <td className="py-2 px-3 font-semibold text-[#0F172A] dark:text-[#F1F5F9] max-w-[200px] truncate">
+                              {srv.name}
+                            </td>
+                            <td className="py-2 px-3 font-mono text-[#64748B] dark:text-[#94A3B8] whitespace-nowrap">
+                              {srv.protocol === 'SNI443' ? 'SNI 443' : srv.protocol}
+                            </td>
+                            <td className="py-2 px-3 font-mono text-[#64748B] dark:text-[#94A3B8] whitespace-nowrap">
+                              {srv.country}
+                            </td>
+                            <td className="py-2 px-3 font-mono text-[#64748B] dark:text-[#94A3B8] max-w-[280px] truncate">
+                              {getEndpointLabel(srv)}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono tabular-nums whitespace-nowrap text-[#0F172A] dark:text-[#F1F5F9]">
+                              {srv.lastLatencyMs !== null ? `${Math.round(srv.lastLatencyMs)} мс` : '—'}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono tabular-nums whitespace-nowrap text-[#64748B] dark:text-[#94A3B8]">
+                              {srv.lastTps !== null ? srv.lastTps : '—'}
+                            </td>
+                            <td
+                              className="py-2 px-3 text-right whitespace-nowrap"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="inline-flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleProbeSingle(srv)}
+                                  disabled={probing}
+                                  className="min-h-[28px] px-2.5 py-1 rounded bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] text-[11px] font-medium cursor-pointer disabled:opacity-50"
+                                >
+                                  {probing ? '...' : 'Тест'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleStart(srv)}
+                                  className={`min-h-[28px] px-2.5 py-1 rounded text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer ${
+                                    isActive
+                                      ? 'bg-[#22C55E] text-[#0B0D10]'
+                                      : 'bg-[#0F172A] dark:bg-[#F1F5F9] text-[#FFFFFF] dark:text-[#0B0D10]'
+                                  }`}
+                                >
+                                  {isActive ? <Square className="w-2.5 h-2.5 fill-current" /> : <Play className="w-2.5 h-2.5 fill-current" />}
+                                  <span>{isActive ? 'Стоп' : 'Старт'}</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
 
-                <div className="grid grid-cols-1 gap-2.5">
+                {visibleServers.length < filteredAndSorted.length && (
+                  <div className="pt-1 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setVisibleLimit((prev) => prev + 100)}
+                      className="min-h-[38px] px-5 py-2 rounded-md bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-semibold text-[#0F172A] dark:text-[#F1F5F9] hover:border-[#94A3B8] cursor-pointer"
+                    >
+                      Показать ещё (+{Math.min(100, filteredAndSorted.length - visibleServers.length)})
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Tester Tab: Master-Detail Split Grid */
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_350px] gap-4 items-start">
+                <div className="space-y-2">
                   {visibleServers.map((srv) => (
                     <ServerCard
                       key={srv.id}
                       server={srv}
                       isActive={tunnel.active && tunnel.serverId === srv.id}
+                      isSelected={selectedServerId === srv.id}
                       isBest={srv.id === bestVerifiedId}
                       isProbing={probingIds.has(srv.id)}
+                      onSelect={(s) => setSelectedServerId(s.id)}
                       onProbeSingle={handleProbeSingle}
                       onToggleStart={handleToggleStart}
                       onToggleFavorite={handleToggleFavorite}
                       onOpenDetails={(s) => setDetailsServerId(s.id)}
                     />
                   ))}
+
+                  {visibleServers.length < filteredAndSorted.length && (
+                    <div className="pt-2 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => setVisibleLimit((prev) => prev + 60)}
+                        className="min-h-[38px] px-5 py-2 rounded-md bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-semibold text-[#0F172A] dark:text-[#F1F5F9] hover:border-[#94A3B8] cursor-pointer"
+                      >
+                        Показать ещё (+{Math.min(60, filteredAndSorted.length - visibleServers.length)})
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                {visibleServers.length < filteredAndSorted.length && (
-                  <div className="pt-2 flex justify-center">
-                    <button
-                      type="button"
-                      onClick={() => setVisibleLimit((prev) => prev + 60)}
-                      className="min-h-[40px] px-6 py-2 rounded-md bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-semibold text-[#0F172A] dark:text-[#F1F5F9] hover:border-[#94A3B8] cursor-pointer"
-                    >
-                      Показать ещё (+{Math.min(60, filteredAndSorted.length - visibleServers.length)})
-                    </button>
-                  </div>
-                )}
+                <ServerInspectorPanel
+                  server={selectedServer}
+                  isActive={Boolean(selectedServer && tunnel.active && tunnel.serverId === selectedServer.id)}
+                  isProbing={Boolean(selectedServer && probingIds.has(selectedServer.id))}
+                  onProbe={handleProbeSingle}
+                  onToggleStart={handleToggleStart}
+                  onDeleteCustom={handleDeleteCustom}
+                  onClose={() => setSelectedServerId(null)}
+                />
               </div>
             )}
           </>

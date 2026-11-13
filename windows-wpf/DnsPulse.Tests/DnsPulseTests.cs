@@ -3,6 +3,7 @@ using System.Text.Json;
 using DnsPulse.App.Data;
 using DnsPulse.App.Models;
 using DnsPulse.App.NetworkEngine;
+using DnsPulse.App.ViewModels;
 using Xunit;
 
 namespace DnsPulse.Tests;
@@ -115,5 +116,53 @@ public class DnsPulseTests
             new DnsServerEntry { Id = "s2", Verdict = BypassVerdict.VERIFIED_PROXY_OK, LastLatencyMs = 35 }
         ], null);
         Assert.Equal("s2", ServerFilterSorter.NextRotationId(queue, "s1"));
+    }
+
+    [Fact]
+    public void MainViewModel_MvvmCommandsAndFilters_WorkWithoutWindow()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"dnspulse-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var repo = new DnsDatabaseRepository(tempDir);
+            var vm = new MainViewModel(repo);
+
+            Assert.True(vm.TotalCatalogCount >= 1050);
+            Assert.NotEmpty(vm.Categories);
+            Assert.NotEmpty(vm.PresetGroups);
+            Assert.NotEmpty(vm.ActivePresets);
+            Assert.False(vm.IsInspectorOpen);
+
+            vm.SelectPresetGroupCommand.Execute("streaming");
+            Assert.Equal("Стриминг", vm.ActiveGroupLabel);
+            Assert.Equal("open.spotify.com", vm.TargetDomain);
+
+            var custom = new DnsServerEntry
+            {
+                Id = "custom_test_node",
+                Name = "Custom Test Node",
+                Provider = "Test",
+                Protocol = DnsProtocol.DoH,
+                DohUrl = "https://dns.bezmezhau.com/dns-query",
+                Category = "Свои / Найденные",
+                IsBuiltin = false
+            };
+            vm.AddCustomServer(custom);
+            Assert.True(vm.IsInspectorOpen);
+            Assert.Equal("custom_test_node", vm.SelectedServer?.Id);
+
+            vm.DeleteCustomServerCommand.Execute(custom);
+            Assert.False(vm.IsInspectorOpen);
+            Assert.Null(vm.SelectedServer);
+
+            vm.CloseInspectorCommand.Execute(null);
+            vm.ResetFiltersCommand.Execute(null);
+            Assert.Equal("Все", vm.SelectedCategory);
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, true); } catch { /* ignore sqlite handle release lag */ }
+        }
     }
 }

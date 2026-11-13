@@ -4,13 +4,14 @@ import { BypassVerdict } from '../core/types';
 interface SparklineProps {
   values: number[];
   verdict: BypassVerdict;
+  compact?: boolean;
 }
 
-export const Sparkline: React.FC<SparklineProps> = ({ values, verdict }) => {
+export const Sparkline: React.FC<SparklineProps> = ({ values, verdict, compact = true }) => {
   if (!values || values.length === 0) return null;
 
-  const width = 220;
-  const height = 22;
+  const width = compact ? 68 : 220;
+  const height = compact ? 20 : 28;
   const pad = 2;
 
   const pts = values.length === 1 ? [values[0], values[0]] : values;
@@ -33,19 +34,39 @@ export const Sparkline: React.FC<SparklineProps> = ({ values, verdict }) => {
           ? '#EF4444'
           : '#64748B';
 
-  return (
-    <div className="mt-2.5 pt-2 border-t border-[#DCE1E8] dark:border-[#262C36] flex items-center justify-between gap-3">
+  if (compact) {
+    return (
       <svg
         width={width}
         height={height}
         viewBox={`0 0 ${width} ${height}`}
-        className="w-full max-w-[260px] h-[22px] overflow-visible"
+        className="shrink-0 overflow-visible"
         aria-label={`История задержек: ${values.join(', ')} мс`}
       >
         <polyline
           fill="none"
           stroke={strokeColor}
           strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          points={coords.join(' ')}
+        />
+      </svg>
+    );
+  }
+
+  return (
+    <div className="pt-2 border-t border-[#DCE1E8] dark:border-[#262C36] flex items-center justify-between gap-3">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        className="flex-1 min-w-0 h-[28px] overflow-visible"
+        aria-label={`История задержек: ${values.join(', ')} мс`}
+      >
+        <polyline
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth="1.75"
           strokeLinecap="round"
           strokeLinejoin="round"
           points={coords.join(' ')}

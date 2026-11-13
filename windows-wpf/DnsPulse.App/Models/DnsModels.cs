@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace DnsPulse.App.Models;
 
 public enum DnsProtocol
@@ -63,6 +65,49 @@ public sealed class DnsServerEntry
     public string? LastCheckedDomain { get; set; }
     public DateTimeOffset? LastCheckedAt { get; set; }
     public List<int> HistoryMs { get; set; } = new();
+
+    [JsonIgnore]
+    public string ProtocolBadge => Protocol == DnsProtocol.SNI443 ? "443" : Protocol.ToString();
+
+    [JsonIgnore]
+    public string EndpointLabel => Protocol switch
+    {
+        DnsProtocol.DoH when !string.IsNullOrWhiteSpace(DohUrl) => DohUrl!,
+        DnsProtocol.DoT when !string.IsNullOrWhiteSpace(DotHost) => $"tls://{DotHost}:853",
+        DnsProtocol.SNI443 => $"smartproxy://{SmartProxyIp ?? PrimaryIp}:443",
+        _ => !string.IsNullOrWhiteSpace(PrimaryIp) ? PrimaryIp : (DotHost ?? DohUrl ?? "—")
+    };
+
+    [JsonIgnore]
+    public string MetaLine => $"{Category} · {Country} · {EndpointLabel}";
+
+    [JsonIgnore]
+    public string LatencyDisplay => LastLatencyMs.HasValue ? $"{Math.Round(LastLatencyMs.Value)} мс" : "Тест";
+
+    [JsonIgnore]
+    public string TpsDisplay => LastTps.HasValue ? $"{LastTps.Value:0.#} TPS" : "4 этапа";
+
+    [JsonIgnore]
+    public string JitterDisplay => JitterMs.HasValue ? $"±{Math.Round(JitterMs.Value)} мс" : "—";
+
+    [JsonIgnore]
+    public string Port443Display => Port443Ok switch
+    {
+        true => $"OK ({HttpStatus?.ToString() ?? "200"})",
+        false => HttpStatus.HasValue ? $"FAIL ({HttpStatus})" : "FAIL",
+        null => "—"
+    };
+
+    [JsonIgnore]
+    public string ResolvedIpsDisplay => ResolvedIps.Count > 0 ? string.Join(", ", ResolvedIps) : "—";
+
+    [JsonIgnore]
+    public bool IsCustom => !IsBuiltin;
+
+    [JsonIgnore]
+    public string Win11PowerShellCommand => !string.IsNullOrWhiteSpace(DohUrl)
+        ? $"Add-DnsClientDohServerAddress -ServerAddress \"{(!string.IsNullOrWhiteSpace(PrimaryIp) ? PrimaryIp : "1.1.1.1")}\" -DohTemplate \"{DohUrl}\" -AllowFallbackToUdp $True -AutoUpgrade $True"
+        : $"Set-DnsClientServerAddress -InterfaceAlias \"Wi-Fi\" -ServerAddresses \"{(!string.IsNullOrWhiteSpace(PrimaryIp) ? PrimaryIp : SmartProxyIp ?? "1.1.1.1")}\"";
 }
 
 public sealed class ProbeResult

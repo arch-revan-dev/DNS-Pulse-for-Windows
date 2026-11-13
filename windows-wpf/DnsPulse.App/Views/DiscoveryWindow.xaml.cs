@@ -16,6 +16,15 @@ public partial class DiscoveryWindow : Window
     {
         InitializeComponent();
         _vm = vm;
+        TargetDomainInput.Text = _vm.TargetDomain;
+    }
+
+    private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
+
+    private void OnPresetDomainClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string domain })
+            TargetDomainInput.Text = domain;
     }
 
     private async void OnScanClick(object sender, RoutedEventArgs e)
@@ -23,17 +32,18 @@ public partial class DiscoveryWindow : Window
         _cts?.Cancel();
         _cts = new CancellationTokenSource();
         ScanBtn.IsEnabled = false;
-        StatusLabel.Text = "Идёт 4-этапная проверка подсети...";
+        var domain = string.IsNullOrWhiteSpace(TargetDomainInput.Text) ? _vm.TargetDomain : TargetDomainInput.Text.Trim();
+        StatusLabel.Text = $"Идёт 4-этапная проверка подсети для {domain}...";
 
         try
         {
             var progress = new Progress<double>(p => ScanProgress.Value = p * 100);
             _found = await _scanner.ScanAsync(
                 SubnetInput.Text,
-                _vm.TargetDomain,
-                _vm.RequiresBypass,
-                scanUdp53: true,
-                checkPort443: true,
+                domain,
+                requiresBypass: true,
+                scanUdp53: ScanUdp53Check.IsChecked == true,
+                checkPort443: CheckPort443Check.IsChecked == true,
                 progress,
                 _cts.Token);
 
@@ -72,9 +82,7 @@ public partial class DiscoveryWindow : Window
     private void OnSaveFoundClick(object sender, RoutedEventArgs e)
     {
         if (_found.Count > 0)
-        {
             _vm.AddDiscoveredServers(_found);
-        }
         Close();
     }
 

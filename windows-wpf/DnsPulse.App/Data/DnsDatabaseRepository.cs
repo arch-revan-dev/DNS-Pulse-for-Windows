@@ -235,6 +235,21 @@ public sealed class DnsDatabaseRepository
         cmd.ExecuteNonQuery();
     }
 
+    public bool DeleteCustomServer(string id)
+    {
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM dns_servers WHERE id = $id AND isBuiltin = 0;";
+        cmd.Parameters.AddWithValue("$id", id);
+        int affected = cmd.ExecuteNonQuery();
+        if (affected > 0)
+        {
+            SaveCustomVault(GetAllServers());
+            return true;
+        }
+        return false;
+    }
+
     public void SaveCustomVault(IEnumerable<DnsServerEntry> servers)
     {
         var custom = servers.Where(s => !s.IsBuiltin || s.IsFavorite).ToList();

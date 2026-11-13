@@ -1,0 +1,68 @@
+<Window x:Class="DnsPulse.App.Views.ManualAddWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Добавить свой DNS — DNS Pulse"
+        Height="500"
+        Width="520"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource AppBackgroundBrush}"
+        Foreground="{DynamicResource PrimaryTextBrush}"
+        FontFamily="Segoe UI Variable Text, Segoe UI">
+
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="42"
+                      CornerRadius="0"
+                      GlassFrameThickness="0"
+                      UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="42" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="{DynamicResource WindowCaptionBgBrush}"
+                BorderBrush="{DynamicResource BorderHairlineBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="16,0,0,0">
+            <DockPanel LastChildFill="False">
+                <TextBlock DockPanel.Dock="Left" Text="Добавить собственный DNS-сервер" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource CaptionCloseButtonStyle}" Height="42" Click="OnCancelClick" />
+            </DockPanel>
+        </Border>
+
+        <StackPanel Grid.Row="1" Margin="20">
+            <TextBlock Text="Название сервера" Style="{StaticResource CaptionMutedStyle}" Margin="0,0,0,6" />
+            <TextBox x:Name="NameInput" Tag="Например: Мой Smart-DNS узел" Margin="0,0,0,12" />
+
+            <TextBlock Text="Протокол" Style="{StaticResource CaptionMutedStyle}" Margin="0,0,0,6" />
+            <ComboBox x:Name="ProtocolCombo" SelectedIndex="0" Margin="0,0,0,12">
+                <ComboBoxItem Content="DoH (HTTPS /dns-query)" Tag="DoH" />
+                <ComboBoxItem Content="DoT (DNS-over-TLS 853)" Tag="DoT" />
+                <ComboBoxItem Content="UDP 53 (IPv4)" Tag="UDP" />
+                <ComboBoxItem Content="SNI-Proxy 443 (smartproxy://)" Tag="SNI443" />
+            </ComboBox>
+
+            <TextBlock Text="Адрес (DoH URL, DoT Host или IPv4)" Style="{StaticResource CaptionMutedStyle}" Margin="0,0,0,6" />
+            <TextBox x:Name="EndpointInput"
+                     FontFamily="JetBrains Mono, Cascadia Mono, Consolas"
+                     Tag="https://dns.bezmezhau.com/dns-query или 176.99.11.77"
+                     Margin="0,0,0,12" />
+
+            <TextBlock Text="Провайдер / заметка (необязательно)" Style="{StaticResource CaptionMutedStyle}" Margin="0,0,0,6" />
+            <TextBox x:Name="ProviderInput" Tag="Пользовательский" Margin="0,0,0,14" />
+
+            <CheckBox x:Name="BypassCheck" Content="Предназначен для обхода (Smart-DNS / 443)" IsChecked="True" Margin="0,0,0,10" />
+
+            <TextBlock x:Name="ErrorText" Foreground="{DynamicResource StatusErrorBrush}" FontSize="12" Margin="0,0,0,10" Visibility="Collapsed" />
+
+            <DockPanel LastChildFill="False" Margin="0,6,0,0">
+                <Button DockPanel.Dock="Left" Content="Отмена" Click="OnCancelClick" />
+                <Button DockPanel.Dock="Right" Content="Сохранить в базу" Style="{StaticResource AccentButtonStyle}" Click="OnSaveClick" />
+            </DockPanel>
+        </StackPanel>
+    </Grid>
+</Window>
