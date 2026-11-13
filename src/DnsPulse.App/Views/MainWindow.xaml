@@ -1,0 +1,173 @@
+<ui:FluentWindow x:Class="DnsPulse.App.Views.MainWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 xmlns:views="clr-namespace:DnsPulse.App.Views"
+                 xmlns:conv="clr-namespace:DnsPulse.App.Converters"
+                 Title="{Binding WindowTitle}"
+                 FlowDirection="{Binding Localization.FlowDirection}"
+                 Width="1200"
+                 Height="780"
+                 MinWidth="880"
+                 MinHeight="620"
+                 WindowStartupLocation="CenterScreen"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <ui:TitleBar Grid.Row="0"
+                 Title="{Binding WindowTitle}">
+      <ui:TitleBar.Icon>
+        <ui:ImageIcon Source="pack://application:,,,/Assets/app.ico" />
+      </ui:TitleBar.Icon>
+    </ui:TitleBar>
+
+    <!-- Proactive Advisory Banners -->
+    <StackPanel Grid.Row="1" Margin="12,4,12,0">
+      <ui:InfoBar Margin="0,0,0,6"
+                  Severity="Warning"
+                  IsClosable="True"
+                  IsOpen="{Binding ShowDirtyRecoveryBanner, Mode=TwoWay}"
+                  Title="{conv:Localization Banner_DirtyRecovery_Title}"
+                  Message="{Binding DirtyRecoverySummary}"
+                  AutomationProperties.LiveSetting="Polite"
+                  AutomationProperties.Name="{conv:Localization Banner_DirtyRecovery_Title}"
+                  AutomationProperties.HelpText="{Binding DirtyRecoverySummary}" />
+
+      <ui:InfoBar Margin="0,0,0,6"
+                  Severity="Warning"
+                  IsClosable="False"
+                  IsOpen="{Binding ShowBrowserDohBanner, Mode=TwoWay}"
+                  Title="{conv:Localization Banner_BrowserDoh_Title}"
+                  Message="{Binding BrowserDohBannerMessage}"
+                  AutomationProperties.LiveSetting="Polite"
+                  AutomationProperties.Name="{conv:Localization Banner_BrowserDoh_Title}"
+                  AutomationProperties.HelpText="{Binding BrowserDohBannerMessage}">
+        <ui:Button Margin="0,6,0,0"
+                   Appearance="Primary"
+                   Content="{conv:Localization Banner_BrowserDoh_Fix}"
+                   Command="{Binding FixBrowserDohCommand}"
+                   AutomationProperties.Name="{conv:Localization Banner_BrowserDoh_Fix}"
+                   AutomationProperties.HelpText="{Binding BrowserDohBannerMessage}" />
+      </ui:InfoBar>
+
+      <ui:InfoBar Margin="0,0,0,6"
+                  Severity="Warning"
+                  IsClosable="False"
+                  IsOpen="{Binding ShowPort53ConflictBanner, Mode=TwoWay}"
+                  Title="{conv:Localization Banner_Port53_Title}"
+                  Message="{Binding Port53ConflictBannerMessage}"
+                  AutomationProperties.LiveSetting="Polite"
+                  AutomationProperties.Name="{conv:Localization Banner_Port53_Title}"
+                  AutomationProperties.HelpText="{Binding Port53ConflictBannerMessage}">
+        <ui:Button Margin="0,6,0,0"
+                   Appearance="Primary"
+                   Content="{conv:Localization Banner_Port53_Fix}"
+                   Command="{Binding FixPort53ConflictCommand}"
+                   AutomationProperties.Name="{conv:Localization Banner_Port53_Fix}"
+                   AutomationProperties.HelpText="{Binding Port53ConflictBannerMessage}" />
+      </ui:InfoBar>
+
+      <ui:InfoBar Margin="0,0,0,6"
+                  Severity="Informational"
+                  IsClosable="False"
+                  IsOpen="{Binding ShowVpnAdvisoryBanner, Mode=TwoWay}"
+                  Title="{conv:Localization Banner_VpnAdvisory_Title}"
+                  Message="{conv:Localization Banner_VpnAdvisory_Desc}"
+                  AutomationProperties.LiveSetting="Polite"
+                  AutomationProperties.Name="{conv:Localization Banner_VpnAdvisory_Title}"
+                  AutomationProperties.HelpText="{conv:Localization Banner_VpnAdvisory_Desc}">
+        <ui:Button Margin="0,6,0,0"
+                   Content="{conv:Localization Banner_Dismiss}"
+                   Command="{Binding DismissVpnAdvisoryCommand}"
+                   AutomationProperties.Name="{conv:Localization Banner_Dismiss}"
+                   AutomationProperties.HelpText="{conv:Localization Banner_VpnAdvisory_Title}" />
+      </ui:InfoBar>
+
+      <ui:InfoBar Margin="0,0,0,6"
+                  Severity="Error"
+                  IsClosable="False"
+                  IsOpen="{Binding ShowAntiCheatBanner, Mode=TwoWay}"
+                  Title="{conv:Localization Banner_AntiCheat_Title}"
+                  Message="{Binding AntiCheatBannerMessage}"
+                  AutomationProperties.LiveSetting="Polite"
+                  AutomationProperties.Name="{conv:Localization Banner_AntiCheat_Title}"
+                  AutomationProperties.HelpText="{Binding AntiCheatBannerMessage}">
+        <ui:Button Margin="0,6,0,0"
+                   Content="{conv:Localization Banner_Dismiss}"
+                   Command="{Binding DismissAntiCheatBannerCommand}"
+                   AutomationProperties.Name="{conv:Localization Banner_Dismiss}"
+                   AutomationProperties.HelpText="{conv:Localization Banner_AntiCheat_Title}" />
+      </ui:InfoBar>
+    </StackPanel>
+
+    <!-- 5-Page Fluent 2 Navigation Shell -->
+    <ui:NavigationView x:Name="RootNavigation"
+                       Grid.Row="2"
+                       PaneDisplayMode="Left"
+                       IsBackButtonVisible="Collapsed"
+                       IsPaneToggleVisible="True"
+                       OpenPaneLength="236"
+                       CompactPaneLength="52"
+                       Navigated="OnNavigationNavigated">
+      <ui:NavigationView.MenuItems>
+        <ui:NavigationViewItem Content="{Binding NavigationItems[0].Title}"
+                               TargetPageTag="Overview"
+                               TargetPageType="{x:Type views:OverviewPage}"
+                               AutomationProperties.Name="{Binding NavigationItems[0].AutomationName}"
+                               AutomationProperties.HelpText="{Binding NavigationItems[0].AutomationName}">
+          <ui:NavigationViewItem.Icon>
+            <ui:SymbolIcon Symbol="ShieldCheckmark24" />
+          </ui:NavigationViewItem.Icon>
+        </ui:NavigationViewItem>
+
+        <ui:NavigationViewItem Content="{Binding NavigationItems[1].Title}"
+                               TargetPageTag="Routing"
+                               TargetPageType="{x:Type views:RoutingInspectorPage}"
+                               AutomationProperties.Name="{Binding NavigationItems[1].AutomationName}"
+                               AutomationProperties.HelpText="{Binding NavigationItems[1].AutomationName}">
+          <ui:NavigationViewItem.Icon>
+            <ui:SymbolIcon Symbol="BranchFork24" />
+          </ui:NavigationViewItem.Icon>
+        </ui:NavigationViewItem>
+
+        <ui:NavigationViewItem Content="{Binding NavigationItems[2].Title}"
+                               TargetPageTag="Servers"
+                               TargetPageType="{x:Type views:ServersCatalogPage}"
+                               AutomationProperties.Name="{Binding NavigationItems[2].AutomationName}"
+                               AutomationProperties.HelpText="{Binding NavigationItems[2].AutomationName}">
+          <ui:NavigationViewItem.Icon>
+            <ui:SymbolIcon Symbol="Server24" />
+          </ui:NavigationViewItem.Icon>
+        </ui:NavigationViewItem>
+
+        <ui:NavigationViewItem Content="{Binding NavigationItems[3].Title}"
+                               TargetPageTag="Diagnostics"
+                               TargetPageType="{x:Type views:DiagnosticsDoctorPage}"
+                               AutomationProperties.Name="{Binding NavigationItems[3].AutomationName}"
+                               AutomationProperties.HelpText="{Binding NavigationItems[3].AutomationName}">
+          <ui:NavigationViewItem.Icon>
+            <ui:SymbolIcon Symbol="Stethoscope24" />
+          </ui:NavigationViewItem.Icon>
+        </ui:NavigationViewItem>
+      </ui:NavigationView.MenuItems>
+
+      <ui:NavigationView.FooterMenuItems>
+        <ui:NavigationViewItem Content="{Binding NavigationItems[4].Title}"
+                               TargetPageTag="Settings"
+                               TargetPageType="{x:Type views:SettingsSafetyPage}"
+                               AutomationProperties.Name="{Binding NavigationItems[4].AutomationName}"
+                               AutomationProperties.HelpText="{Binding NavigationItems[4].AutomationName}">
+          <ui:NavigationViewItem.Icon>
+            <ui:SymbolIcon Symbol="Settings24" />
+          </ui:NavigationViewItem.Icon>
+        </ui:NavigationViewItem>
+      </ui:NavigationView.FooterMenuItems>
+    </ui:NavigationView>
+  </Grid>
+</ui:FluentWindow>

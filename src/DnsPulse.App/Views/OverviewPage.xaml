@@ -1,0 +1,254 @@
+<UserControl x:Class="DnsPulse.App.Views.OverviewPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:conv="clr-namespace:DnsPulse.App.Converters">
+  <ScrollViewer VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled"
+                Padding="24,16,24,24">
+    <StackPanel MaxWidth="1280">
+      <!-- Hero Connection Card -->
+      <ui:Card Padding="24"
+               Margin="0,0,0,16"
+               AutomationProperties.LiveSetting="Polite"
+               AutomationProperties.Name="{Binding HeroStatusTitle}"
+               AutomationProperties.HelpText="{Binding HeroStatusSubtitle}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+
+          <!-- Status Indicator Pill -->
+          <Border Grid.Column="0"
+                  Width="56"
+                  Height="56"
+                  CornerRadius="28"
+                  Margin="0,0,20,0"
+                  VerticalAlignment="Center"
+                  Background="{Binding HeroState, Converter={StaticResource VerdictToBrushConverter}}">
+            <ui:SymbolIcon Symbol="ShieldCheckmark24"
+                           FontSize="28"
+                           Foreground="White"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center" />
+          </Border>
+
+          <!-- Status Title & Subtitle -->
+          <StackPanel Grid.Column="1"
+                      VerticalAlignment="Center"
+                      Margin="0,0,16,0">
+            <ui:TextBlock FontTypography="TitleLarge"
+                          Text="{Binding HeroStatusTitle}"
+                          TextWrapping="Wrap" />
+            <ui:TextBlock Margin="0,4,0,0"
+                          Appearance="Secondary"
+                          FontTypography="Body"
+                          Text="{Binding HeroStatusSubtitle}"
+                          TextWrapping="Wrap" />
+            <ui:TextBlock Margin="0,8,0,0"
+                          Foreground="{StaticResource PulseDangerBrush}"
+                          Text="{Binding LastErrorMessage}"
+                          TextWrapping="Wrap"
+                          Visibility="{Binding LastErrorMessage, Converter={StaticResource NullToVisibilityConverter}}" />
+          </StackPanel>
+
+          <!-- Primary Connect / Disconnect CTA -->
+          <ui:Button Grid.Column="2"
+                     MinWidth="160"
+                     Height="44"
+                     Padding="24,8"
+                     Appearance="Primary"
+                     VerticalAlignment="Center"
+                     TabIndex="1"
+                     Content="{Binding ConnectButtonText}"
+                     Command="{Binding ToggleConnectionCommand}"
+                     IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}"
+                     AutomationProperties.Name="{conv:Localization Auto_HeroConnectButton}"
+                     AutomationProperties.HelpText="{conv:Localization Auto_HeroConnectButton}">
+            <ui:Button.Icon>
+              <ui:SymbolIcon Symbol="Power24" />
+            </ui:Button.Icon>
+          </ui:Button>
+        </Grid>
+      </ui:Card>
+
+      <!-- Strategy Profile Selector -->
+      <ui:TextBlock FontTypography="Subtitle"
+                    Margin="0,4,0,12"
+                    Text="{conv:Localization Overview_Profile_Label}" />
+
+      <ItemsControl ItemsSource="{Binding StrategyProfiles}"
+                    Margin="0,0,0,16">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <UniformGrid Columns="2" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <RadioButton GroupName="OverviewStrategyProfiles"
+                         Style="{StaticResource PulseSelectableCardRadioStyle}"
+                         Command="{Binding DataContext.SelectStrategyProfileCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                         CommandParameter="{Binding Profile}"
+                         AutomationProperties.Name="{Binding Title}"
+                         AutomationProperties.HelpText="{Binding Description}">
+              <RadioButton.IsChecked>
+                <MultiBinding Converter="{StaticResource EqualityToBoolConverter}" Mode="OneWay">
+                  <Binding Path="Profile" />
+                  <Binding Path="DataContext.SelectedStrategyProfile" RelativeSource="{RelativeSource AncestorType=UserControl}" />
+                </MultiBinding>
+              </RadioButton.IsChecked>
+              <StackPanel>
+                <ui:TextBlock FontTypography="BodyStrong"
+                              Text="{Binding Title}"
+                              TextWrapping="Wrap" />
+                <ui:TextBlock Margin="0,4,0,0"
+                              Appearance="Secondary"
+                              FontTypography="Caption"
+                              Text="{Binding Description}"
+                              TextWrapping="Wrap" />
+              </StackPanel>
+            </RadioButton>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <!-- Live Telemetry Strip -->
+      <WrapPanel Orientation="Horizontal"
+                 Margin="0,0,0,8">
+        <!-- Trusted Upstream & Geo-Unlock Card -->
+        <ui:Card MinWidth="300"
+                 Padding="16"
+                 Margin="0,0,12,12">
+          <StackPanel>
+            <StackPanel Orientation="Horizontal">
+              <ui:TextBlock Appearance="Secondary"
+                            FontTypography="Caption"
+                            Text="{conv:Localization Overview_Metric_TrustedUpstream}"
+                            VerticalAlignment="Center" />
+              <ui:Badge Margin="8,0,0,0"
+                        Appearance="Success"
+                        Content="{Binding TrustedUpstreamBadge}" />
+            </StackPanel>
+            <ui:TextBlock Margin="0,4,0,0"
+                          FontTypography="BodyStrong"
+                          Text="{Binding TrustedUpstreamName}"
+                          TextTrimming="CharacterEllipsis" />
+
+            <ui:TextBlock Margin="0,12,0,0"
+                          Appearance="Secondary"
+                          FontTypography="Caption"
+                          Text="{conv:Localization Overview_Metric_GeoUpstream}" />
+            <ui:TextBlock Margin="0,2,0,12"
+                          FontTypography="Body"
+                          Text="{Binding ActiveGeoUnlockName}"
+                          TextTrimming="CharacterEllipsis" />
+
+            <StackPanel Orientation="Horizontal">
+              <ui:Button Margin="0,0,8,0"
+                         Padding="12,6"
+                         TabIndex="2"
+                         Content="{conv:Localization Overview_Action_Rotate}"
+                         Command="{Binding RotateUpstreamCommand}"
+                         AutomationProperties.Name="{conv:Localization Overview_Action_Rotate}"
+                         AutomationProperties.HelpText="{conv:Localization Overview_Metric_TrustedUpstream}">
+                <ui:Button.Icon>
+                  <ui:SymbolIcon Symbol="ArrowSync24" />
+                </ui:Button.Icon>
+              </ui:Button>
+              <ui:Button Padding="12,6"
+                         TabIndex="3"
+                         Content="{conv:Localization Overview_Action_Refresh}"
+                         Command="{Binding RefreshTelemetryCommand}"
+                         AutomationProperties.Name="{conv:Localization Overview_Action_Refresh}"
+                         AutomationProperties.HelpText="{conv:Localization Overview_Metric_LatencyP50}">
+                <ui:Button.Icon>
+                  <ui:SymbolIcon Symbol="ArrowClockwise24" />
+                </ui:Button.Icon>
+              </ui:Button>
+            </StackPanel>
+          </StackPanel>
+        </ui:Card>
+
+        <!-- Latency p50 & Sparkline Card -->
+        <ui:Card MinWidth="260"
+                 Padding="16"
+                 Margin="0,0,12,12">
+          <StackPanel>
+            <ui:TextBlock Appearance="Secondary"
+                          FontTypography="Caption"
+                          Text="{conv:Localization Overview_Metric_LatencyP50}" />
+            <ui:TextBlock Margin="0,4,0,8"
+                          FontTypography="Title"
+                          Text="{Binding LatencyP50Ms, Converter={StaticResource LatencyFormatConverter}}" />
+            <Border Padding="4"
+                    CornerRadius="4"
+                    Background="{DynamicResource ControlFillColorDefaultBrush}">
+              <Polyline Width="220"
+                        Height="44"
+                        Stroke="{DynamicResource AccentTextFillColorPrimaryBrush}"
+                        StrokeThickness="2"
+                        StrokeLineJoin="Round"
+                        StrokeStartLineCap="Round"
+                        StrokeEndLineCap="Round">
+                <Polyline.Points>
+                  <MultiBinding Converter="{StaticResource SparklinePointsConverter}">
+                    <Binding Path="P50SparklineSamples" />
+                    <Binding Path="P50SparklineSamples.Count" />
+                    <Binding Path="LatencyP50Ms" />
+                  </MultiBinding>
+                </Polyline.Points>
+              </Polyline>
+            </Border>
+          </StackPanel>
+        </ui:Card>
+
+        <!-- Cache Hit % & Queries / min Card -->
+        <ui:Card MinWidth="210"
+                 Padding="16"
+                 Margin="0,0,12,12">
+          <StackPanel>
+            <ui:TextBlock Appearance="Secondary"
+                          FontTypography="Caption"
+                          Text="{conv:Localization Overview_Metric_CacheHit}" />
+            <ui:TextBlock Margin="0,4,0,12"
+                          FontTypography="Title"
+                          Text="{Binding CacheHitRatePercent, StringFormat={}{0:F1}%}" />
+
+            <ui:TextBlock Appearance="Secondary"
+                          FontTypography="Caption"
+                          Text="{conv:Localization Overview_Metric_QueriesPerMin}" />
+            <ui:TextBlock Margin="0,4,0,0"
+                          FontTypography="Title"
+                          Text="{Binding QueriesPerMinute, StringFormat={}{0:F1}}" />
+          </StackPanel>
+        </ui:Card>
+
+        <!-- Interception Mode & Runtime Mode Card -->
+        <ui:Card MinWidth="250"
+                 Padding="16"
+                 Margin="0,0,0,12">
+          <StackPanel>
+            <ui:TextBlock Appearance="Secondary"
+                          FontTypography="Caption"
+                          Text="{conv:Localization Overview_Metric_InterceptionMode}" />
+            <ui:TextBlock Margin="0,4,0,12"
+                          FontTypography="BodyStrong"
+                          Text="{Binding ActiveInterceptionModeLabel}"
+                          TextWrapping="Wrap" />
+
+            <ui:TextBlock Appearance="Secondary"
+                          FontTypography="Caption"
+                          Text="{conv:Localization Overview_Metric_RuntimeMode}" />
+            <ui:TextBlock Margin="0,4,0,0"
+                          FontTypography="BodyStrong"
+                          Text="{Binding RuntimeModeLabel}"
+                          TextWrapping="Wrap" />
+          </StackPanel>
+        </ui:Card>
+      </WrapPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

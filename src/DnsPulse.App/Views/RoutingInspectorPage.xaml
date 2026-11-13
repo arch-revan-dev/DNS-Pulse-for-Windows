@@ -1,0 +1,246 @@
+<UserControl x:Class="DnsPulse.App.Views.RoutingInspectorPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:vm="clr-namespace:DnsPulse.App.ViewModels"
+             xmlns:conv="clr-namespace:DnsPulse.App.Converters">
+  <Grid Margin="20,16,20,20">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="380" MinWidth="320" />
+      <ColumnDefinition Width="16" />
+      <ColumnDefinition Width="*" MinWidth="420" />
+    </Grid.ColumnDefinitions>
+
+    <!-- Left Column: Service Preset Toggles & Rule Import/Export -->
+    <ScrollViewer Grid.Column="0"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+      <StackPanel>
+        <ui:Card Padding="16" Margin="0,0,0,12">
+          <StackPanel>
+            <ui:TextBlock FontTypography="Subtitle"
+                          Margin="0,0,0,12"
+                          Text="{conv:Localization Routing_Presets_Title}" />
+            <ItemsControl ItemsSource="{Binding ServicePresets}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Padding="0,6"
+                          BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                          BorderThickness="0,0,0,1">
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <ui:TextBlock Grid.Column="0"
+                                    VerticalAlignment="Center"
+                                    Text="{Binding DisplayName}"
+                                    TextWrapping="Wrap" />
+                      <ui:Badge Grid.Column="1"
+                                Margin="8,0"
+                                VerticalAlignment="Center"
+                                Appearance="Secondary"
+                                Content="{Binding DomainCount}" />
+                      <ui:ToggleSwitch Grid.Column="2"
+                                       VerticalAlignment="Center"
+                                       IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                       AutomationProperties.Name="{Binding DisplayName}"
+                                       AutomationProperties.HelpText="{conv:Localization Routing_Presets_Title}" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ui:Card>
+
+        <ui:Card Padding="16">
+          <StackPanel>
+            <ui:TextBlock FontTypography="Subtitle"
+                          Margin="0,0,0,12"
+                          Text="{conv:Localization Routing_Rules_Title}" />
+
+            <ui:TextBlock Appearance="Secondary"
+                          FontTypography="Caption"
+                          Margin="0,0,0,4"
+                          Text="{conv:Localization Routing_Rules_Format}" />
+            <ComboBox ItemsSource="{Binding AvailableRuleFormats}"
+                      SelectedItem="{Binding SelectedRuleFormat, Mode=TwoWay}"
+                      Margin="0,0,0,8"
+                      AutomationProperties.Name="{conv:Localization Routing_Rules_Format}"
+                      AutomationProperties.HelpText="{conv:Localization Routing_Rules_Title}" />
+
+            <ui:TextBox MinHeight="110"
+                        MaxHeight="200"
+                        AcceptsReturn="True"
+                        TextWrapping="Wrap"
+                        VerticalScrollBarVisibility="Auto"
+                        Text="{Binding CustomRulesInputText, UpdateSourceTrigger=PropertyChanged}"
+                        Margin="0,0,0,12"
+                        AutomationProperties.Name="{conv:Localization Routing_Rules_Title}"
+                        AutomationProperties.HelpText="{conv:Localization Routing_Rules_Format}" />
+
+            <WrapPanel Orientation="Horizontal">
+              <ui:Button Margin="0,0,8,8"
+                         Appearance="Primary"
+                         Content="{conv:Localization Routing_Rules_Import}"
+                         Command="{Binding ImportRulesCommand}"
+                         AutomationProperties.Name="{conv:Localization Routing_Rules_Import}"
+                         AutomationProperties.HelpText="{conv:Localization Routing_Rules_Title}">
+                <ui:Button.Icon>
+                  <ui:SymbolIcon Symbol="ArrowDownload24" />
+                </ui:Button.Icon>
+              </ui:Button>
+              <ui:Button Margin="0,0,0,8"
+                         Content="{conv:Localization Routing_Rules_Export}"
+                         Command="{Binding ExportRulesCommand}"
+                         AutomationProperties.Name="{conv:Localization Routing_Rules_Export}"
+                         AutomationProperties.HelpText="{conv:Localization Routing_Rules_Title}">
+                <ui:Button.Icon>
+                  <ui:SymbolIcon Symbol="ArrowUpload24" />
+                </ui:Button.Icon>
+              </ui:Button>
+            </WrapPanel>
+
+            <ui:TextBlock Margin="0,4,0,0"
+                          Appearance="Secondary"
+                          FontTypography="Caption"
+                          Text="{Binding RuleImportStatusMessage}"
+                          TextWrapping="Wrap"
+                          Visibility="{Binding RuleImportStatusMessage, Converter={StaticResource NullToVisibilityConverter}}" />
+          </StackPanel>
+        </ui:Card>
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- Right Column: Virtualized Live Query Telemetry Inspector -->
+    <ui:Card Grid.Column="2" Padding="16">
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <ui:TextBlock Grid.Row="0"
+                      FontTypography="Subtitle"
+                      Margin="0,0,0,12"
+                      Text="{conv:Localization Routing_Telemetry_Title}" />
+
+        <Grid Grid.Row="1" Margin="0,0,0,8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <ui:TextBox Grid.Column="0"
+                      Margin="0,0,8,0"
+                      PlaceholderText="{conv:Localization Routing_Search_Placeholder}"
+                      Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                      AutomationProperties.Name="{conv:Localization Auto_SearchInput}"
+                      AutomationProperties.HelpText="{conv:Localization Routing_Search_Placeholder}">
+            <ui:TextBox.Icon>
+              <ui:SymbolIcon Symbol="Search24" />
+            </ui:TextBox.Icon>
+          </ui:TextBox>
+          <ui:Button Grid.Column="1"
+                     Content="{conv:Localization Routing_Telemetry_Clear}"
+                     Command="{Binding ClearTelemetryCommand}"
+                     AutomationProperties.Name="{conv:Localization Routing_Telemetry_Clear}"
+                     AutomationProperties.HelpText="{conv:Localization Routing_Telemetry_Title}">
+            <ui:Button.Icon>
+              <ui:SymbolIcon Symbol="Delete24" />
+            </ui:Button.Icon>
+          </ui:Button>
+        </Grid>
+
+        <!-- Filter Chips -->
+        <WrapPanel Grid.Row="2"
+                   Orientation="Horizontal"
+                   Margin="0,0,0,4">
+          <RadioButton GroupName="RoutingFilterChips"
+                       Style="{StaticResource PulseFilterChipStyle}"
+                       Content="{conv:Localization Routing_Chip_All}"
+                       Command="{Binding SelectFilterChipCommand}"
+                       CommandParameter="{x:Static vm:TelemetryFilterChip.All}"
+                       IsChecked="{Binding SelectedFilterChip, Converter={StaticResource EqualityToBoolConverter}, ConverterParameter={x:Static vm:TelemetryFilterChip.All}, Mode=OneWay}"
+                       AutomationProperties.Name="{conv:Localization Routing_Chip_All}"
+                       AutomationProperties.HelpText="{conv:Localization Routing_Telemetry_Title}" />
+          <RadioButton GroupName="RoutingFilterChips"
+                       Style="{StaticResource PulseFilterChipStyle}"
+                       Content="{conv:Localization Routing_Chip_GeoUnlocked}"
+                       Command="{Binding SelectFilterChipCommand}"
+                       CommandParameter="{x:Static vm:TelemetryFilterChip.GeoUnlocked}"
+                       IsChecked="{Binding SelectedFilterChip, Converter={StaticResource EqualityToBoolConverter}, ConverterParameter={x:Static vm:TelemetryFilterChip.GeoUnlocked}, Mode=OneWay}"
+                       AutomationProperties.Name="{conv:Localization Routing_Chip_GeoUnlocked}"
+                       AutomationProperties.HelpText="{conv:Localization Routing_Telemetry_Title}" />
+          <RadioButton GroupName="RoutingFilterChips"
+                       Style="{StaticResource PulseFilterChipStyle}"
+                       Content="{conv:Localization Routing_Chip_DpiSplit}"
+                       Command="{Binding SelectFilterChipCommand}"
+                       CommandParameter="{x:Static vm:TelemetryFilterChip.DpiSplit}"
+                       IsChecked="{Binding SelectedFilterChip, Converter={StaticResource EqualityToBoolConverter}, ConverterParameter={x:Static vm:TelemetryFilterChip.DpiSplit}, Mode=OneWay}"
+                       AutomationProperties.Name="{conv:Localization Routing_Chip_DpiSplit}"
+                       AutomationProperties.HelpText="{conv:Localization Routing_Telemetry_Title}" />
+          <RadioButton GroupName="RoutingFilterChips"
+                       Style="{StaticResource PulseFilterChipStyle}"
+                       Content="{conv:Localization Routing_Chip_Blocked}"
+                       Command="{Binding SelectFilterChipCommand}"
+                       CommandParameter="{x:Static vm:TelemetryFilterChip.Blocked}"
+                       IsChecked="{Binding SelectedFilterChip, Converter={StaticResource EqualityToBoolConverter}, ConverterParameter={x:Static vm:TelemetryFilterChip.Blocked}, Mode=OneWay}"
+                       AutomationProperties.Name="{conv:Localization Routing_Chip_Blocked}"
+                       AutomationProperties.HelpText="{conv:Localization Routing_Telemetry_Title}" />
+          <RadioButton GroupName="RoutingFilterChips"
+                       Style="{StaticResource PulseFilterChipStyle}"
+                       Content="{conv:Localization Routing_Chip_Errors}"
+                       Command="{Binding SelectFilterChipCommand}"
+                       CommandParameter="{x:Static vm:TelemetryFilterChip.Errors}"
+                       IsChecked="{Binding SelectedFilterChip, Converter={StaticResource EqualityToBoolConverter}, ConverterParameter={x:Static vm:TelemetryFilterChip.Errors}, Mode=OneWay}"
+                       AutomationProperties.Name="{conv:Localization Routing_Chip_Errors}"
+                       AutomationProperties.HelpText="{conv:Localization Routing_Telemetry_Title}" />
+        </WrapPanel>
+
+        <!-- Virtualized Telemetry ListView -->
+        <ListView Grid.Row="3"
+                  ItemsSource="{Binding FilteredTelemetryEvents}"
+                  VirtualizingPanel.IsVirtualizing="True"
+                  VirtualizingPanel.VirtualizationMode="Recycling"
+                  ScrollViewer.CanContentScroll="True"
+                  AutomationProperties.Name="{conv:Localization Routing_Telemetry_Title}">
+          <ListView.View>
+            <GridView>
+              <GridViewColumn Width="76"
+                              Header="{conv:Localization Routing_Col_Time}"
+                              DisplayMemberBinding="{Binding TimestampUtc, StringFormat={}{0:HH:mm:ss}}" />
+              <GridViewColumn Width="180"
+                              Header="{conv:Localization Routing_Col_Domain}"
+                              DisplayMemberBinding="{Binding Domain}" />
+              <GridViewColumn Width="56"
+                              Header="{conv:Localization Routing_Col_Type}"
+                              DisplayMemberBinding="{Binding RecordType}" />
+              <GridViewColumn Width="120"
+                              Header="{conv:Localization Routing_Col_Zone}"
+                              DisplayMemberBinding="{Binding Zone}" />
+              <GridViewColumn Width="120"
+                              Header="{conv:Localization Routing_Col_Upstream}"
+                              DisplayMemberBinding="{Binding UpstreamName}" />
+              <GridViewColumn Width="72"
+                              Header="{conv:Localization Routing_Col_Protocol}"
+                              DisplayMemberBinding="{Binding Protocol}" />
+              <GridViewColumn Width="76"
+                              Header="{conv:Localization Routing_Col_Latency}"
+                              DisplayMemberBinding="{Binding LatencyMs, StringFormat={}{0:F1}}" />
+              <GridViewColumn Width="82"
+                              Header="{conv:Localization Routing_Col_Result}"
+                              DisplayMemberBinding="{Binding ResponseCode}" />
+              <GridViewColumn Width="180"
+                              Header="{conv:Localization Routing_Col_Note}"
+                              DisplayMemberBinding="{Binding DecisionNote}" />
+            </GridView>
+          </ListView.View>
+        </ListView>
+      </Grid>
+    </ui:Card>
+  </Grid>
+</UserControl>

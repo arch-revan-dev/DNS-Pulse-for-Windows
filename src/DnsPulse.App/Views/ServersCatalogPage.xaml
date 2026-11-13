@@ -1,0 +1,552 @@
+<UserControl x:Class="DnsPulse.App.Views.ServersCatalogPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:core="clr-namespace:DnsPulse.Core.Models;assembly=DnsPulse.Core"
+             xmlns:conv="clr-namespace:DnsPulse.App.Converters">
+  <UserControl.Resources>
+    <DataTemplate x:Key="ServerRowTemplate">
+      <Border Padding="12,8"
+              Margin="0,0,0,4"
+              CornerRadius="6"
+              Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+              BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+              BorderThickness="1">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+
+          <!-- Favorite Toggle -->
+          <ui:Button Grid.Column="0"
+                     Padding="6"
+                     Margin="0,0,10,0"
+                     VerticalAlignment="Center"
+                     Appearance="Secondary"
+                     Command="{Binding DataContext.ToggleFavoriteCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                     CommandParameter="{Binding}"
+                     ToolTip="{conv:Localization Servers_Favorite_Tooltip}"
+                     AutomationProperties.Name="{conv:Localization Servers_Favorite_Tooltip}"
+                     AutomationProperties.HelpText="{Binding Name}">
+            <ui:SymbolIcon Symbol="Star24"
+                           Filled="{Binding IsFavorite}" />
+          </ui:Button>
+
+          <!-- Server Name, Provider, Country, Endpoint -->
+          <StackPanel Grid.Column="1"
+                      VerticalAlignment="Center"
+                      Margin="0,0,12,0">
+            <StackPanel Orientation="Horizontal">
+              <ui:TextBlock FontTypography="BodyStrong"
+                            Text="{Binding Name}" />
+              <ui:Badge Margin="8,0,0,0"
+                        Appearance="Secondary"
+                        Content="{Binding Country}" />
+              <ui:Badge Margin="6,0,0,0"
+                        Appearance="Info"
+                        Content="{Binding ProtocolBadge}" />
+            </StackPanel>
+            <ui:TextBlock Margin="0,2,0,0"
+                          Appearance="Secondary"
+                          FontTypography="Caption"
+                          Text="{Binding EndpointLabel}"
+                          TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+
+          <!-- Trust Tier Pill -->
+          <Border Grid.Column="2"
+                  Margin="0,0,12,0"
+                  Padding="8,4"
+                  CornerRadius="12"
+                  VerticalAlignment="Center"
+                  Background="{Binding TrustTier, Converter={StaticResource TrustTierToBadgeBrushConverter}}">
+            <TextBlock FontSize="11"
+                       FontWeight="SemiBold"
+                       Foreground="White"
+                       Text="{Binding TrustTier, Converter={StaticResource TrustTierToBadgeBrushConverter}, ConverterParameter=Label}" />
+          </Border>
+
+          <!-- p50 RTT & Success -->
+          <StackPanel Grid.Column="3"
+                      MinWidth="88"
+                      Margin="0,0,12,0"
+                      VerticalAlignment="Center"
+                      HorizontalAlignment="Right">
+            <ui:TextBlock HorizontalAlignment="Right"
+                          FontTypography="BodyStrong"
+                          Text="{Binding LatencyP50Ms, Converter={StaticResource LatencyFormatConverter}}" />
+            <ui:TextBlock HorizontalAlignment="Right"
+                          Appearance="Secondary"
+                          FontTypography="Caption"
+                          Text="{Binding VerdictReason}"
+                          TextTrimming="CharacterEllipsis"
+                          MaxWidth="130" />
+          </StackPanel>
+
+          <!-- Verdict Dot -->
+          <Ellipse Grid.Column="4"
+                   Width="10"
+                   Height="10"
+                   Margin="0,0,12,0"
+                   VerticalAlignment="Center"
+                   Fill="{Binding Verdict, Converter={StaticResource VerdictToBrushConverter}}"
+                   ToolTip="{Binding Verdict}" />
+
+          <!-- Use Upstream Action -->
+          <ui:Button Grid.Column="5"
+                     Padding="12,6"
+                     Appearance="Primary"
+                     VerticalAlignment="Center"
+                     Content="{conv:Localization Servers_Select_Button}"
+                     Command="{Binding DataContext.SelectActiveServerCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                     CommandParameter="{Binding}"
+                     AutomationProperties.Name="{conv:Localization Servers_Select_Button}"
+                     AutomationProperties.HelpText="{Binding Name}" />
+        </Grid>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <ScrollViewer VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled"
+                Padding="20,16,20,24">
+    <StackPanel MaxWidth="1320">
+      <!-- Top Filter, Search, Sort & Benchmark Bar -->
+      <ui:Card Padding="16" Margin="0,0,0,12">
+        <StackPanel>
+          <WrapPanel Orientation="Horizontal" Margin="0,0,0,8">
+            <RadioButton GroupName="CatalogTierChips"
+                         Style="{StaticResource PulseFilterChipStyle}"
+                         Content="{conv:Localization Servers_Filter_AllTiers}"
+                         Command="{Binding SelectTrustTierFilterCommand}"
+                         CommandParameter="{x:Null}"
+                         IsChecked="{Binding SelectedTrustTierFilter, Converter={StaticResource EqualityToBoolConverter}, ConverterParameter={x:Null}, Mode=OneWay}"
+                         AutomationProperties.Name="{conv:Localization Servers_Filter_AllTiers}"
+                         AutomationProperties.HelpText="{conv:Localization Servers_Filter_AllTiers}" />
+            <RadioButton GroupName="CatalogTierChips"
+                         Style="{StaticResource PulseFilterChipStyle}"
+                         Content="{conv:Localization Servers_Tier1_Title}"
+                         Command="{Binding SelectTrustTierFilterCommand}"
+                         CommandParameter="{x:Static core:TrustTier.Tier1EncryptedTrusted}"
+                         IsChecked="{Binding SelectedTrustTierFilter, Converter={StaticResource EqualityToBoolConverter}, ConverterParameter={x:Static core:TrustTier.Tier1EncryptedTrusted}, Mode=OneWay}"
+                         AutomationProperties.Name="{conv:Localization Servers_Tier1_Title}"
+                         AutomationProperties.HelpText="{conv:Localization Servers_Tier1_Desc}" />
+            <RadioButton GroupName="CatalogTierChips"
+                         Style="{StaticResource PulseFilterChipStyle}"
+                         Content="{conv:Localization Servers_Tier2_Title}"
+                         Command="{Binding SelectTrustTierFilterCommand}"
+                         CommandParameter="{x:Static core:TrustTier.Tier2VerifiedGeoUnlock}"
+                         IsChecked="{Binding SelectedTrustTierFilter, Converter={StaticResource EqualityToBoolConverter}, ConverterParameter={x:Static core:TrustTier.Tier2VerifiedGeoUnlock}, Mode=OneWay}"
+                         AutomationProperties.Name="{conv:Localization Servers_Tier2_Title}"
+                         AutomationProperties.HelpText="{conv:Localization Servers_Tier2_Desc}" />
+            <RadioButton GroupName="CatalogTierChips"
+                         Style="{StaticResource PulseFilterChipStyle}"
+                         Content="{conv:Localization Servers_Tier3_Title}"
+                         Command="{Binding SelectTrustTierFilterCommand}"
+                         CommandParameter="{x:Static core:TrustTier.Tier3CustomOrSelfHosted}"
+                         IsChecked="{Binding SelectedTrustTierFilter, Converter={StaticResource EqualityToBoolConverter}, ConverterParameter={x:Static core:TrustTier.Tier3CustomOrSelfHosted}, Mode=OneWay}"
+                         AutomationProperties.Name="{conv:Localization Servers_Tier3_Title}"
+                         AutomationProperties.HelpText="{conv:Localization Servers_Tier3_Desc}" />
+            <RadioButton GroupName="CatalogTierChips"
+                         Style="{StaticResource PulseFilterChipStyle}"
+                         Content="{conv:Localization Servers_Tier4_Title}"
+                         Command="{Binding SelectTrustTierFilterCommand}"
+                         CommandParameter="{x:Static core:TrustTier.Tier4ExperimentalLab}"
+                         IsChecked="{Binding SelectedTrustTierFilter, Converter={StaticResource EqualityToBoolConverter}, ConverterParameter={x:Static core:TrustTier.Tier4ExperimentalLab}, Mode=OneWay}"
+                         AutomationProperties.Name="{conv:Localization Servers_Tier4_Title}"
+                         AutomationProperties.HelpText="{conv:Localization Servers_Tier4_Desc}" />
+          </WrapPanel>
+
+          <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <ui:TextBox Width="260"
+                        Margin="0,0,12,8"
+                        PlaceholderText="{conv:Localization Auto_SearchInput}"
+                        Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                        AutomationProperties.Name="{conv:Localization Auto_SearchInput}"
+                        AutomationProperties.HelpText="{conv:Localization Auto_SearchInput}">
+              <ui:TextBox.Icon>
+                <ui:SymbolIcon Symbol="Search24" />
+              </ui:TextBox.Icon>
+            </ui:TextBox>
+
+            <ComboBox Width="170"
+                      Margin="0,0,12,8"
+                      ItemsSource="{Binding AvailableSortOrders}"
+                      SelectedItem="{Binding SelectedSortOrder, Mode=TwoWay}"
+                      AutomationProperties.Name="{conv:Localization Servers_Sort_P50}"
+                      AutomationProperties.HelpText="{conv:Localization Servers_Sort_P50}" />
+
+            <CheckBox Margin="0,0,16,8"
+                      VerticalAlignment="Center"
+                      IsChecked="{Binding ShowFavoritesOnly, Mode=TwoWay}"
+                      Content="{conv:Localization Servers_Filter_FavoritesOnly}"
+                      AutomationProperties.Name="{conv:Localization Servers_Filter_FavoritesOnly}"
+                      AutomationProperties.HelpText="{conv:Localization Servers_Filter_FavoritesOnly}" />
+
+            <ui:TextBox Width="190"
+                        Margin="0,0,8,8"
+                        PlaceholderText="{conv:Localization Servers_Benchmark_Target}"
+                        Text="{Binding BenchmarkTargetDomain, UpdateSourceTrigger=PropertyChanged}"
+                        AutomationProperties.Name="{conv:Localization Servers_Benchmark_Target}"
+                        AutomationProperties.HelpText="{conv:Localization Servers_Benchmark_Run}" />
+
+            <ui:Button Margin="0,0,8,8"
+                       Appearance="Primary"
+                       Content="{conv:Localization Servers_Benchmark_Run}"
+                       Command="{Binding RunSectionBenchmarkCommand}"
+                       IsEnabled="{Binding IsBenchmarkRunning, Converter={StaticResource InverseBoolConverter}}"
+                       AutomationProperties.Name="{conv:Localization Servers_Benchmark_Run}"
+                       AutomationProperties.HelpText="{conv:Localization Servers_Benchmark_Target}">
+              <ui:Button.Icon>
+                <ui:SymbolIcon Symbol="Play24" />
+              </ui:Button.Icon>
+            </ui:Button>
+
+            <ui:Button Margin="0,0,8,8"
+                       Appearance="Caution"
+                       Content="{conv:Localization Servers_Benchmark_Cancel}"
+                       Command="{Binding CancelBenchmarkCommand}"
+                       Visibility="{Binding IsBenchmarkRunning, Converter={StaticResource BooleanToVisibilityConverter}}"
+                       AutomationProperties.Name="{conv:Localization Servers_Benchmark_Cancel}"
+                       AutomationProperties.HelpText="{conv:Localization Servers_Benchmark_Cancel}">
+              <ui:Button.Icon>
+                <ui:SymbolIcon Symbol="Stop24" />
+              </ui:Button.Icon>
+            </ui:Button>
+          </WrapPanel>
+
+          <StackPanel Visibility="{Binding IsBenchmarkRunning, Converter={StaticResource BooleanToVisibilityConverter}}"
+                      Margin="0,4,0,0">
+            <ProgressBar Height="6"
+                         Minimum="0"
+                         Maximum="100"
+                         Value="{Binding BenchmarkProgressPercent}" />
+            <ui:TextBlock Margin="0,4,0,0"
+                          Appearance="Secondary"
+                          FontTypography="Caption">
+              <Run Text="{Binding BenchmarkCompletedCount, Mode=OneWay}" />
+              <Run Text=" / " />
+              <Run Text="{Binding BenchmarkTotalCount, Mode=OneWay}" />
+              <Run Text=" (" />
+              <Run Text="{Binding BenchmarkProgressPercent, Mode=OneWay, StringFormat={}{0:F1}%}" />
+              <Run Text=")" />
+            </ui:TextBlock>
+          </StackPanel>
+        </StackPanel>
+      </ui:Card>
+
+      <!-- Categorized Trust Tier Tabs + Virtualized ListViews -->
+      <TabControl Height="380" Margin="0,0,0,12">
+        <TabItem Header="{conv:Localization Servers_Filter_AllTiers}">
+          <ListView ItemsSource="{Binding FilteredServers}"
+                    SelectedItem="{Binding SelectedServer, Mode=TwoWay}"
+                    ItemTemplate="{StaticResource ServerRowTemplate}"
+                    VirtualizingPanel.IsVirtualizing="True"
+                    VirtualizingPanel.VirtualizationMode="Recycling"
+                    ScrollViewer.CanContentScroll="True"
+                    HorizontalContentAlignment="Stretch" />
+        </TabItem>
+
+        <TabItem Header="{conv:Localization Servers_Tier1_Title}">
+          <DockPanel>
+            <ui:TextBlock DockPanel.Dock="Top"
+                          Margin="8,8,8,4"
+                          Appearance="Secondary"
+                          FontTypography="Caption"
+                          Text="{conv:Localization Servers_Tier1_Desc}"
+                          TextWrapping="Wrap" />
+            <ListView ItemsSource="{Binding Tier1Servers}"
+                      SelectedItem="{Binding SelectedServer, Mode=TwoWay}"
+                      ItemTemplate="{StaticResource ServerRowTemplate}"
+                      VirtualizingPanel.IsVirtualizing="True"
+                      VirtualizingPanel.VirtualizationMode="Recycling"
+                      ScrollViewer.CanContentScroll="True"
+                      HorizontalContentAlignment="Stretch" />
+          </DockPanel>
+        </TabItem>
+
+        <TabItem Header="{conv:Localization Servers_Tier2_Title}">
+          <DockPanel>
+            <ui:TextBlock DockPanel.Dock="Top"
+                          Margin="8,8,8,4"
+                          Appearance="Secondary"
+                          FontTypography="Caption"
+                          Text="{conv:Localization Servers_Tier2_Desc}"
+                          TextWrapping="Wrap" />
+            <ListView ItemsSource="{Binding Tier2Servers}"
+                      SelectedItem="{Binding SelectedServer, Mode=TwoWay}"
+                      ItemTemplate="{StaticResource ServerRowTemplate}"
+                      VirtualizingPanel.IsVirtualizing="True"
+                      VirtualizingPanel.VirtualizationMode="Recycling"
+                      ScrollViewer.CanContentScroll="True"
+                      HorizontalContentAlignment="Stretch" />
+          </DockPanel>
+        </TabItem>
+
+        <TabItem Header="{conv:Localization Servers_Tier3_Title}">
+          <DockPanel>
+            <ui:TextBlock DockPanel.Dock="Top"
+                          Margin="8,8,8,4"
+                          Appearance="Secondary"
+                          FontTypography="Caption"
+                          Text="{conv:Localization Servers_Tier3_Desc}"
+                          TextWrapping="Wrap" />
+            <ListView ItemsSource="{Binding Tier3Servers}"
+                      SelectedItem="{Binding SelectedServer, Mode=TwoWay}"
+                      ItemTemplate="{StaticResource ServerRowTemplate}"
+                      VirtualizingPanel.IsVirtualizing="True"
+                      VirtualizingPanel.VirtualizationMode="Recycling"
+                      ScrollViewer.CanContentScroll="True"
+                      HorizontalContentAlignment="Stretch" />
+          </DockPanel>
+        </TabItem>
+
+        <TabItem Header="{conv:Localization Servers_Tier4_Title}">
+          <DockPanel>
+            <ui:TextBlock DockPanel.Dock="Top"
+                          Margin="8,8,8,4"
+                          Appearance="Secondary"
+                          FontTypography="Caption"
+                          Text="{conv:Localization Servers_Tier4_Desc}"
+                          TextWrapping="Wrap" />
+            <ListView ItemsSource="{Binding Tier4Servers}"
+                      SelectedItem="{Binding SelectedServer, Mode=TwoWay}"
+                      ItemTemplate="{StaticResource ServerRowTemplate}"
+                      VirtualizingPanel.IsVirtualizing="True"
+                      VirtualizingPanel.VirtualizationMode="Recycling"
+                      ScrollViewer.CanContentScroll="True"
+                      HorizontalContentAlignment="Stretch" />
+          </DockPanel>
+        </TabItem>
+      </TabControl>
+
+      <!-- Import sdns:// / Endpoint & Signed Feed Sync -->
+      <ui:CardExpander Header="{conv:Localization Servers_Import_Title}"
+                       Margin="0,0,0,12">
+        <ui:CardExpander.Icon>
+          <ui:SymbolIcon Symbol="Add24" />
+        </ui:CardExpander.Icon>
+        <StackPanel>
+          <WrapPanel Orientation="Horizontal">
+            <ui:TextBox Width="380"
+                        Margin="0,0,8,8"
+                        PlaceholderText="{conv:Localization Servers_Import_Placeholder}"
+                        Text="{Binding ImportInputText, UpdateSourceTrigger=PropertyChanged}"
+                        AutomationProperties.Name="{conv:Localization Servers_Import_Title}"
+                        AutomationProperties.HelpText="{conv:Localization Servers_Import_Placeholder}" />
+            <ui:TextBox Width="200"
+                        Margin="0,0,8,8"
+                        PlaceholderText="{conv:Localization Servers_Vps_HostName}"
+                        Text="{Binding ImportCustomName, UpdateSourceTrigger=PropertyChanged}"
+                        AutomationProperties.Name="{conv:Localization Servers_Import_Title}"
+                        AutomationProperties.HelpText="{conv:Localization Servers_Import_Placeholder}" />
+            <ui:Button Margin="0,0,8,8"
+                       Appearance="Primary"
+                       Content="{conv:Localization Servers_Import_Button}"
+                       Command="{Binding ImportEndpointCommand}"
+                       AutomationProperties.Name="{conv:Localization Servers_Import_Button}"
+                       AutomationProperties.HelpText="{conv:Localization Servers_Import_Title}" />
+          </WrapPanel>
+          <ui:TextBlock Appearance="Secondary"
+                        FontTypography="Caption"
+                        Text="{Binding ImportStatusMessage}"
+                        Visibility="{Binding ImportStatusMessage, Converter={StaticResource NullToVisibilityConverter}}" />
+        </StackPanel>
+      </ui:CardExpander>
+
+      <ui:CardExpander Header="{conv:Localization Servers_Feeds_Title}"
+                       Margin="0,0,0,12">
+        <ui:CardExpander.Icon>
+          <ui:SymbolIcon Symbol="ArrowSync24" />
+        </ui:CardExpander.Icon>
+        <StackPanel>
+          <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <CheckBox Margin="0,0,16,8"
+                      VerticalAlignment="Center"
+                      IsChecked="{Binding AllowUnsignedFeeds, Mode=TwoWay}"
+                      Content="{conv:Localization Servers_Feeds_AllowUnsigned}"
+                      AutomationProperties.Name="{conv:Localization Servers_Feeds_AllowUnsigned}"
+                      AutomationProperties.HelpText="{conv:Localization Servers_Feeds_Title}" />
+            <ui:Button Margin="0,0,12,8"
+                       Appearance="Primary"
+                       Content="{conv:Localization Servers_Feeds_Sync}"
+                       Command="{Binding SyncFeedsCommand}"
+                       IsEnabled="{Binding IsSyncingFeeds, Converter={StaticResource InverseBoolConverter}}"
+                       AutomationProperties.Name="{conv:Localization Servers_Feeds_Sync}"
+                       AutomationProperties.HelpText="{conv:Localization Servers_Feeds_Title}">
+              <ui:Button.Icon>
+                <ui:SymbolIcon Symbol="ArrowSync24" />
+              </ui:Button.Icon>
+            </ui:Button>
+          </WrapPanel>
+          <ui:TextBlock Appearance="Secondary"
+                        FontTypography="Caption"
+                        Text="{Binding FeedSyncStatusMessage}"
+                        Visibility="{Binding FeedSyncStatusMessage, Converter={StaticResource NullToVisibilityConverter}}" />
+        </StackPanel>
+      </ui:CardExpander>
+
+      <!-- Self-Hosted VPS Wizard -->
+      <ui:CardExpander Header="{conv:Localization Servers_Vps_Title}">
+        <ui:CardExpander.Icon>
+          <ui:SymbolIcon Symbol="Server24" />
+        </ui:CardExpander.Icon>
+        <StackPanel>
+          <ui:TextBlock Margin="0,0,0,12"
+                        Appearance="Secondary"
+                        Text="{conv:Localization Servers_Vps_Desc}"
+                        TextWrapping="Wrap" />
+
+          <UniformGrid Columns="2" Margin="0,0,0,8">
+            <StackPanel Margin="0,0,8,8">
+              <ui:TextBlock FontTypography="Caption"
+                            Appearance="Secondary"
+                            Text="{conv:Localization Servers_Vps_HostName}" />
+              <ui:TextBox Margin="0,4,0,0"
+                          PlaceholderText="dns.example.com"
+                          Text="{Binding VpsHostName, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.Name="{conv:Localization Servers_Vps_HostName}"
+                          AutomationProperties.HelpText="{conv:Localization Servers_Vps_Desc}" />
+            </StackPanel>
+
+            <StackPanel Margin="8,0,0,8">
+              <ui:TextBlock FontTypography="Caption"
+                            Appearance="Secondary"
+                            Text="{conv:Localization Servers_Vps_ServerIp}" />
+              <ui:TextBox Margin="0,4,0,0"
+                          PlaceholderText="203.0.113.10"
+                          Text="{Binding VpsServerIp, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.Name="{conv:Localization Servers_Vps_ServerIp}"
+                          AutomationProperties.HelpText="{conv:Localization Servers_Vps_Desc}" />
+            </StackPanel>
+
+            <StackPanel Margin="0,0,8,8">
+              <ui:TextBlock FontTypography="Caption"
+                            Appearance="Secondary"
+                            Text="{conv:Localization Servers_Vps_AllowedCidrs}" />
+              <ui:TextBox Margin="0,4,0,0"
+                          PlaceholderText="198.51.100.10/32"
+                          Text="{Binding VpsAllowedCidrs, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.Name="{conv:Localization Servers_Vps_AllowedCidrs}"
+                          AutomationProperties.HelpText="{conv:Localization Servers_Vps_Desc}" />
+            </StackPanel>
+
+            <StackPanel Margin="8,0,0,8">
+              <ui:TextBlock FontTypography="Caption"
+                            Appearance="Secondary"
+                            Text="{conv:Localization Servers_Vps_GeoDomains}" />
+              <ui:TextBox Margin="0,4,0,0"
+                          Text="{Binding VpsGeoDomains, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.Name="{conv:Localization Servers_Vps_GeoDomains}"
+                          AutomationProperties.HelpText="{conv:Localization Servers_Vps_Desc}" />
+            </StackPanel>
+          </UniformGrid>
+
+          <ui:TextBlock Margin="0,0,0,8"
+                        Foreground="{StaticResource PulseDangerBrush}"
+                        Text="{Binding VpsValidationError}"
+                        TextWrapping="Wrap"
+                        Visibility="{Binding VpsValidationError, Converter={StaticResource NullToVisibilityConverter}}" />
+
+          <WrapPanel Orientation="Horizontal" Margin="0,0,0,12">
+            <ui:Button Margin="0,0,8,8"
+                       Appearance="Primary"
+                       Content="{conv:Localization Servers_Vps_Generate}"
+                       Command="{Binding GenerateVpsBundleCommand}"
+                       AutomationProperties.Name="{conv:Localization Servers_Vps_Generate}"
+                       AutomationProperties.HelpText="{conv:Localization Servers_Vps_Desc}">
+              <ui:Button.Icon>
+                <ui:SymbolIcon Symbol="Wrench24" />
+              </ui:Button.Icon>
+            </ui:Button>
+            <ui:Button Margin="0,0,8,8"
+                       Content="{conv:Localization Servers_Vps_AddToCatalog}"
+                       Command="{Binding AddGeneratedVpsToCatalogCommand}"
+                       Visibility="{Binding GeneratedVpsBundle, Converter={StaticResource NullToVisibilityConverter}}"
+                       AutomationProperties.Name="{conv:Localization Servers_Vps_AddToCatalog}"
+                       AutomationProperties.HelpText="{conv:Localization Servers_Vps_Title}">
+              <ui:Button.Icon>
+                <ui:SymbolIcon Symbol="Add24" />
+              </ui:Button.Icon>
+            </ui:Button>
+          </WrapPanel>
+
+          <!-- Generated Bundle Tabbed Preview -->
+          <TabControl Visibility="{Binding GeneratedVpsBundle, Converter={StaticResource NullToVisibilityConverter}}"
+                      MinHeight="240">
+            <TabItem Header="docker-compose.yml">
+              <DockPanel Margin="8">
+                <ui:Button DockPanel.Dock="Top"
+                           HorizontalAlignment="Right"
+                           Margin="0,0,0,8"
+                           Content="Copy docker-compose.yml"
+                           Tag="{Binding GeneratedVpsBundle.DockerComposeYaml}"
+                           Click="OnCopyTextClick"
+                           AutomationProperties.Name="Copy docker-compose.yml"
+                           AutomationProperties.HelpText="{conv:Localization Servers_Vps_Title}">
+                  <ui:Button.Icon>
+                    <ui:SymbolIcon Symbol="Copy24" />
+                  </ui:Button.Icon>
+                </ui:Button>
+                <TextBox IsReadOnly="True"
+                         FontFamily="Consolas"
+                         AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto"
+                         HorizontalScrollBarVisibility="Auto"
+                         Text="{Binding GeneratedVpsBundle.DockerComposeYaml, Mode=OneWay}" />
+              </DockPanel>
+            </TabItem>
+
+            <TabItem Header="nginx.conf">
+              <DockPanel Margin="8">
+                <ui:Button DockPanel.Dock="Top"
+                           HorizontalAlignment="Right"
+                           Margin="0,0,0,8"
+                           Content="Copy nginx.conf"
+                           Tag="{Binding GeneratedVpsBundle.NginxConf}"
+                           Click="OnCopyTextClick"
+                           AutomationProperties.Name="Copy nginx.conf"
+                           AutomationProperties.HelpText="{conv:Localization Servers_Vps_Title}">
+                  <ui:Button.Icon>
+                    <ui:SymbolIcon Symbol="Copy24" />
+                  </ui:Button.Icon>
+                </ui:Button>
+                <TextBox IsReadOnly="True"
+                         FontFamily="Consolas"
+                         AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto"
+                         HorizontalScrollBarVisibility="Auto"
+                         Text="{Binding GeneratedVpsBundle.NginxConf, Mode=OneWay}" />
+              </DockPanel>
+            </TabItem>
+
+            <TabItem Header="sdns://">
+              <StackPanel Margin="8">
+                <ui:Button HorizontalAlignment="Right"
+                           Margin="0,0,0,8"
+                           Content="Copy sdns:// Stamp"
+                           Tag="{Binding GeneratedVpsBundle.DnsStampUri}"
+                           Click="OnCopyTextClick"
+                           AutomationProperties.Name="Copy sdns stamp"
+                           AutomationProperties.HelpText="{conv:Localization Servers_Vps_Title}">
+                  <ui:Button.Icon>
+                    <ui:SymbolIcon Symbol="Copy24" />
+                  </ui:Button.Icon>
+                </ui:Button>
+                <TextBox IsReadOnly="True"
+                         FontFamily="Consolas"
+                         TextWrapping="Wrap"
+                         Text="{Binding GeneratedVpsBundle.DnsStampUri, Mode=OneWay}" />
+              </StackPanel>
+            </TabItem>
+          </TabControl>
+        </StackPanel>
+      </ui:CardExpander>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

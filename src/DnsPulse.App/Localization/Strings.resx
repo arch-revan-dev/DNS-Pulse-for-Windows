@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="App_Title" xml:space="preserve"><value>DNS Pulse — PulseCore</value></data>
+  <data name="App_Subtitle" xml:space="preserve"><value>Split-DNS, Geo-Unlock &amp; Anti-DPI Engine</value></data>
+  <data name="Nav_Overview" xml:space="preserve"><value>Overview</value></data>
+  <data name="Nav_Routing" xml:space="preserve"><value>Routing &amp; Inspector</value></data>
+  <data name="Nav_Servers" xml:space="preserve"><value>Servers &amp; Catalog</value></data>
+  <data name="Nav_Diagnostics" xml:space="preserve"><value>Diagnostics Doctor</value></data>
+  <data name="Nav_Settings" xml:space="preserve"><value>Settings &amp; Safety</value></data>
+  <data name="Auto_Nav_Overview" xml:space="preserve"><value>Navigate to Overview dashboard</value></data>
+  <data name="Auto_Nav_Routing" xml:space="preserve"><value>Navigate to Routing rules and live DNS query inspector</value></data>
+  <data name="Auto_Nav_Servers" xml:space="preserve"><value>Navigate to DNS servers catalog and self-hosted VPS wizard</value></data>
+  <data name="Auto_Nav_Diagnostics" xml:space="preserve"><value>Navigate to 6-layer diagnostics doctor and LAN gateway</value></data>
+  <data name="Auto_Nav_Settings" xml:space="preserve"><value>Navigate to settings, privacy guards, and emergency recovery</value></data>
+  <data name="Auto_HeroConnectButton" xml:space="preserve"><value>Toggle DNS Pulse connection</value></data>
+  <data name="Auto_EmergencyRestoreButton" xml:space="preserve"><value>Execute emergency Windows network restore</value></data>
+  <data name="Auto_ExportBundleButton" xml:space="preserve"><value>Export redacted diagnostic ZIP bundle</value></data>
+  <data name="Auto_RunDiagnosticsButton" xml:space="preserve"><value>Run 6-layer network and TLS diagnostics</value></data>
+  <data name="Auto_ApplyRemediationButton" xml:space="preserve"><value>Apply recommended 1-click diagnostic fix</value></data>
+  <data name="Auto_SearchInput" xml:space="preserve"><value>Search domains or servers</value></data>
+  <data name="Banner_DirtyRecovery_Title" xml:space="preserve"><value>Previous session exited unexpectedly — network state restored</value></data>
+  <data name="Banner_DirtyRecovery_Desc" xml:space="preserve"><value>Crash-safe journal detected an uncleaned DNS snapshot and automatically restored your Windows adapters.</value></data>
+  <data name="Banner_BrowserDoh_Title" xml:space="preserve"><value>Browser Built-in DoH Bypass Detected</value></data>
+  <data name="Banner_BrowserDoh_Desc" xml:space="preserve"><value>Browsers ({0}) may bypass PulseCore split-DNS via built-in encrypted DNS.</value></data>
+  <data name="Banner_BrowserDoh_Fix" xml:space="preserve"><value>Disable Browser DoH Override</value></data>
+  <data name="Banner_Port53_Title" xml:space="preserve"><value>Local Port 53 Conflict Detected</value></data>
+  <data name="Banner_Port53_Desc" xml:space="preserve"><value>Process '{0}' (PID {1}) is occupying port 53. PulseCore will use alternate loopback or PAC mode.</value></data>
+  <data name="Banner_Port53_Fix" xml:space="preserve"><value>Switch to Safe Loopback / PAC</value></data>
+  <data name="Banner_VpnAdvisory_Title" xml:space="preserve"><value>Windows Multi-Homed DNS / VPN Posture Notice</value></data>
+  <data name="Banner_VpnAdvisory_Desc" xml:space="preserve"><value>Smart Multi-Homed Name Resolution (SMHNR) is active; enable Adapter or NRPT protection to prevent DNS leaks.</value></data>
+  <data name="Banner_AntiCheat_Title" xml:space="preserve"><value>Kernel Anti-Cheat Detected</value></data>
+  <data name="Banner_AntiCheat_Desc" xml:space="preserve"><value>Active anti-cheat ({0}) prevents WFP/WinDivert packet capture. Use Adapter DNS, NRPT, or PAC mode.</value></data>
+  <data name="Banner_Dismiss" xml:space="preserve"><value>Dismiss</value></data>
+  <data name="Overview_State_Protected" xml:space="preserve"><value>Protected</value></data>
+  <data name="Overview_State_Protected_Sub" xml:space="preserve"><value>Encrypted trusted DNS is active for all default internet traffic.</value></data>
+  <data name="Overview_State_SmartBypass" xml:space="preserve"><value>Smart Bypass Active</value></data>
+  <data name="Overview_State_SmartBypass_Sub" xml:space="preserve"><value>Split-DNS and Geo-Unlock routing active with security pinning enforced.</value></data>
+  <data name="Overview_State_Degraded" xml:space="preserve"><value>Degraded</value></data>
+  <data name="Overview_State_Degraded_Sub" xml:space="preserve"><value>Tunnel active with warnings or fallback interception; inspect diagnostics.</value></data>
+  <data name="Overview_State_Disconnected" xml:space="preserve"><value>Disconnected</value></data>
+  <data name="Overview_State_Disconnected_Sub" xml:space="preserve"><value>System uses standard ISP or router DNS without PulseCore protection.</value></data>
+  <data name="Overview_CTA_Connect" xml:space="preserve"><value>Connect</value></data>
+  <data name="Overview_CTA_Disconnect" xml:space="preserve"><value>Disconnect</value></data>
+  <data name="Overview_CTA_Connecting" xml:space="preserve"><value>Connecting...</value></data>
+  <data name="Overview_CTA_Disconnecting" xml:space="preserve"><value>Disconnecting...</value></data>
+  <data name="Overview_Profile_Label" xml:space="preserve"><value>Strategy Profile</value></data>
+  <data name="Overview_Profile_EncryptedOnly" xml:space="preserve"><value>Encrypted DNS Only</value></data>
+  <data name="Overview_Profile_EncryptedOnly_Desc" xml:space="preserve"><value>Routes all queries through Tier 1 audited encrypted resolvers with zero Geo-Unlock bypass.</value></data>
+  <data name="Overview_Profile_SmartSplitGeo" xml:space="preserve"><value>Smart Split-DNS + Geo</value></data>
+  <data name="Overview_Profile_SmartSplitGeo_Desc" xml:space="preserve"><value>Keeps banking/OS domains on Tier 1 encrypted DNS while routing opted-in services through Geo-Unlock.</value></data>
+  <data name="Overview_Profile_AntiDpiHybrid" xml:space="preserve"><value>Anti-DPI Hybrid</value></data>
+  <data name="Overview_Profile_AntiDpiHybrid_Desc" xml:space="preserve"><value>Combines Smart Split-DNS with TLS ClientHello SNI fragmentation and per-route SVCB/HTTPS rewriting.</value></data>
+  <data name="Overview_Profile_Custom" xml:space="preserve"><value>Custom</value></data>
+  <data name="Overview_Profile_Custom_Desc" xml:space="preserve"><value>Uses your manual preset toggles, custom rules, and selected upstream pools.</value></data>
+  <data name="Overview_Metric_TrustedUpstream" xml:space="preserve"><value>Trusted Upstream</value></data>
+  <data name="Overview_Metric_GeoUpstream" xml:space="preserve"><value>Geo-Unlock Upstream</value></data>
+  <data name="Overview_Metric_LatencyP50" xml:space="preserve"><value>Latency p50</value></data>
+  <data name="Overview_Metric_CacheHit" xml:space="preserve"><value>Cache Hit %</value></data>
+  <data name="Overview_Metric_QueriesPerMin" xml:space="preserve"><value>Queries / min</value></data>
+  <data name="Overview_Metric_InterceptionMode" xml:space="preserve"><value>Interception Mode</value></data>
+  <data name="Overview_Metric_RuntimeMode" xml:space="preserve"><value>Runtime Mode</value></data>
+  <data name="Overview_Runtime_Service" xml:space="preserve"><value>Windows Service (IPC)</value></data>
+  <data name="Overview_Runtime_Portable" xml:space="preserve"><value>Portable In-Process</value></data>
+  <data name="Overview_Action_Rotate" xml:space="preserve"><value>Rotate Upstream</value></data>
+  <data name="Overview_Action_Refresh" xml:space="preserve"><value>Refresh</value></data>
+  <data name="Overview_NoneSelected" xml:space="preserve"><value>None selected</value></data>
+  <data name="Routing_Presets_Title" xml:space="preserve"><value>Service Geo-Unlock Presets</value></data>
+  <data name="Routing_Preset_GoogleAiStudio" xml:space="preserve"><value>Google AI Studio &amp; Gemini</value></data>
+  <data name="Routing_Preset_OpenAi" xml:space="preserve"><value>OpenAI / ChatGPT</value></data>
+  <data name="Routing_Preset_Claude" xml:space="preserve"><value>Anthropic Claude</value></data>
+  <data name="Routing_Preset_Copilot" xml:space="preserve"><value>GitHub Copilot</value></data>
+  <data name="Routing_Preset_Spotify" xml:space="preserve"><value>Spotify</value></data>
+  <data name="Routing_Preset_YouTube" xml:space="preserve"><value>YouTube</value></data>
+  <data name="Routing_Preset_Twitch" xml:space="preserve"><value>Twitch</value></data>
+  <data name="Routing_Preset_Gaming" xml:space="preserve"><value>Xbox / PSN / Brawl Stars</value></data>
+  <data name="Routing_Preset_Discord" xml:space="preserve"><value>Discord</value></data>
+  <data name="Routing_Preset_Custom" xml:space="preserve"><value>Custom Rules</value></data>
+  <data name="Routing_Rules_Title" xml:space="preserve"><value>Custom Rules Import / Export</value></data>
+  <data name="Routing_Rules_Format" xml:space="preserve"><value>Rule Format</value></data>
+  <data name="Routing_Format_Json" xml:space="preserve"><value>JSON</value></data>
+  <data name="Routing_Format_AdGuard" xml:space="preserve"><value>AdGuard Filter</value></data>
+  <data name="Routing_Format_Hosts" xml:space="preserve"><value>HOSTS File</value></data>
+  <data name="Routing_Rules_Import" xml:space="preserve"><value>Import Rules</value></data>
+  <data name="Routing_Rules_Export" xml:space="preserve"><value>Export Rules</value></data>
+  <data name="Routing_Rules_ImportSuccess" xml:space="preserve"><value>Imported {0} rules ({1} format).</value></data>
+  <data name="Routing_Rules_ImportError" xml:space="preserve"><value>Failed to parse rules: {0}</value></data>
+  <data name="Routing_Telemetry_Title" xml:space="preserve"><value>Live Query Inspector (In-Memory, Max 2000)</value></data>
+  <data name="Routing_Chip_All" xml:space="preserve"><value>All</value></data>
+  <data name="Routing_Chip_GeoUnlocked" xml:space="preserve"><value>GeoUnlocked</value></data>
+  <data name="Routing_Chip_DpiSplit" xml:space="preserve"><value>DPI-Split</value></data>
+  <data name="Routing_Chip_Blocked" xml:space="preserve"><value>Blocked</value></data>
+  <data name="Routing_Chip_Errors" xml:space="preserve"><value>Errors</value></data>
+  <data name="Routing_Search_Placeholder" xml:space="preserve"><value>Filter by domain, upstream, or note...</value></data>
+  <data name="Routing_Telemetry_Clear" xml:space="preserve"><value>Clear</value></data>
+  <data name="Routing_Col_Time" xml:space="preserve"><value>Time (UTC)</value></data>
+  <data name="Routing_Col_Domain" xml:space="preserve"><value>Domain</value></data>
+  <data name="Routing_Col_Type" xml:space="preserve"><value>Type</value></data>
+  <data name="Routing_Col_Zone" xml:space="preserve"><value>Zone</value></data>
+  <data name="Routing_Col_Upstream" xml:space="preserve"><value>Upstream</value></data>
+  <data name="Routing_Col_Protocol" xml:space="preserve"><value>Protocol</value></data>
+  <data name="Routing_Col_Latency" xml:space="preserve"><value>RTT (ms)</value></data>
+  <data name="Routing_Col_Result" xml:space="preserve"><value>Result</value></data>
+  <data name="Routing_Col_Note" xml:space="preserve"><value>Decision Note</value></data>
+  <data name="Servers_Tier1_Title" xml:space="preserve"><value>Tier 1: Audited Encrypted Resolvers</value></data>
+  <data name="Servers_Tier1_Desc" xml:space="preserve"><value>Trusted zero-spoofing DoH/DoT/DoQ/DNSCrypt/ODoH resolvers eligible for all default internet traffic.</value></data>
+  <data name="Servers_Tier2_Title" xml:space="preserve"><value>Tier 2: Verified Smart-DNS / Geo-Unlock</value></data>
+  <data name="Servers_Tier2_Desc" xml:space="preserve"><value>Regional unlock resolvers strictly scoped to opted-in Zone 3 Geo-Unlock domains.</value></data>
+  <data name="Servers_Tier3_Title" xml:space="preserve"><value>Tier 3: Custom &amp; Self-Hosted VPS</value></data>
+  <data name="Servers_Tier3_Desc" xml:space="preserve"><value>User-imported resolvers, sdns:// stamps, and private self-hosted VPS nodes.</value></data>
+  <data name="Servers_Tier4_Title" xml:space="preserve"><value>Tier 4: Experimental Lab</value></data>
+  <data name="Servers_Tier4_Desc" xml:space="preserve"><value>SNI-443 relays and experimental subnet discoveries; never used for default internet DNS.</value></data>
+  <data name="Servers_Filter_AllTiers" xml:space="preserve"><value>All Trust Tiers</value></data>
+  <data name="Servers_Filter_FavoritesOnly" xml:space="preserve"><value>Favorites Only</value></data>
+  <data name="Servers_Sort_P50" xml:space="preserve"><value>Sort: p50 RTT</value></data>
+  <data name="Servers_Sort_Protocol" xml:space="preserve"><value>Sort: Protocol</value></data>
+  <data name="Servers_Sort_Trust" xml:space="preserve"><value>Sort: Trust Tier</value></data>
+  <data name="Servers_Sort_Name" xml:space="preserve"><value>Sort: Name</value></data>
+  <data name="Servers_Benchmark_Run" xml:space="preserve"><value>Run Section Benchmark</value></data>
+  <data name="Servers_Benchmark_Cancel" xml:space="preserve"><value>Cancel Benchmark</value></data>
+  <data name="Servers_Benchmark_Target" xml:space="preserve"><value>Probe Domain</value></data>
+  <data name="Servers_Import_Title" xml:space="preserve"><value>Import sdns:// Stamp or Endpoint</value></data>
+  <data name="Servers_Import_Placeholder" xml:space="preserve"><value>sdns://..., https://.../dns-query, tls://..., or IP</value></data>
+  <data name="Servers_Import_Button" xml:space="preserve"><value>Add / Import</value></data>
+  <data name="Servers_Select_Button" xml:space="preserve"><value>Use Upstream</value></data>
+  <data name="Servers_Favorite_Tooltip" xml:space="preserve"><value>Toggle favorite server</value></data>
+  <data name="Servers_Vps_Title" xml:space="preserve"><value>Self-Hosted VPS Wizard</value></data>
+  <data name="Servers_Vps_Desc" xml:space="preserve"><value>Generates an authenticated, IP-allowlisted Docker + Nginx + CoreDNS/AdGuard + UFW bundle with a 256-bit bearer token.</value></data>
+  <data name="Servers_Vps_HostName" xml:space="preserve"><value>VPS Hostname (FQDN)</value></data>
+  <data name="Servers_Vps_ServerIp" xml:space="preserve"><value>VPS Public IP</value></data>
+  <data name="Servers_Vps_AllowedCidrs" xml:space="preserve"><value>Allowed Client CIDRs (comma-separated, never 0.0.0.0/0)</value></data>
+  <data name="Servers_Vps_GeoDomains" xml:space="preserve"><value>Target Geo-Unlock Domains (comma-separated)</value></data>
+  <data name="Servers_Vps_Generate" xml:space="preserve"><value>Generate Hardened Bundle</value></data>
+  <data name="Servers_Vps_AddToCatalog" xml:space="preserve"><value>Add Generated VPS to Catalog</value></data>
+  <data name="Servers_Feeds_Title" xml:space="preserve"><value>Signed Feed Synchronization</value></data>
+  <data name="Servers_Feeds_Sync" xml:space="preserve"><value>Sync Community Feeds</value></data>
+  <data name="Servers_Feeds_AllowUnsigned" xml:space="preserve"><value>Allow unsigned community feeds (opt-in)</value></data>
+  <data name="Diag_Title" xml:space="preserve"><value>6-Layer Diagnostics Doctor</value></data>
+  <data name="Diag_Run" xml:space="preserve"><value>Run 6-Layer Diagnosis</value></data>
+  <data name="Diag_Cancel" xml:space="preserve"><value>Cancel</value></data>
+  <data name="Diag_TargetDomain" xml:space="preserve"><value>Target Domain</value></data>
+  <data name="Diag_ApplyFix" xml:space="preserve"><value>Apply Recommended Fix</value></data>
+  <data name="Diag_Layer1" xml:space="preserve"><value>Layer 1: Host Posture</value></data>
+  <data name="Diag_Layer2" xml:space="preserve"><value>Layer 2: Transport &amp; RTT</value></data>
+  <data name="Diag_Layer3" xml:space="preserve"><value>Layer 3: DNS Integrity &amp; ECH</value></data>
+  <data name="Diag_Layer4" xml:space="preserve"><value>Layer 4: TLS Cert &amp; SAN</value></data>
+  <data name="Diag_Layer5" xml:space="preserve"><value>Layer 5: HTTP &amp; Companion API</value></data>
+  <data name="Diag_Layer6" xml:space="preserve"><value>Layer 6: Verdict &amp; Remediation</value></data>
+  <data name="Diag_Verdict_Unknown" xml:space="preserve"><value>Not Checked</value></data>
+  <data name="Diag_Verdict_Healthy" xml:space="preserve"><value>Healthy — All 6 Layers Passed</value></data>
+  <data name="Diag_Verdict_LocalPort53Conflict" xml:space="preserve"><value>Local Port 53 Conflict</value></data>
+  <data name="Diag_Verdict_DnsPoisoned" xml:space="preserve"><value>DNS Poisoned or Bogon Sinkhole</value></data>
+  <data name="Diag_Verdict_EncryptedDnsDpiBlocked" xml:space="preserve"><value>Encrypted DNS Blocked by DPI</value></data>
+  <data name="Diag_Verdict_TlsSniDpiReset" xml:space="preserve"><value>TLS SNI Reset / DPI Interference</value></data>
+  <data name="Diag_Verdict_IpBlockedByIsp" xml:space="preserve"><value>Target IP Blocked by ISP</value></data>
+  <data name="Diag_Verdict_GeoBlockedByService" xml:space="preserve"><value>Service Geo-Blocked (HTTP 403/451)</value></data>
+  <data name="Diag_Verdict_TlsMitmRejected" xml:space="preserve"><value>TLS Certificate / MITM Rejected</value></data>
+  <data name="Diag_Verdict_BrowserDohBypass" xml:space="preserve"><value>Browser Built-in DoH Bypass</value></data>
+  <data name="Diag_Rem_None" xml:space="preserve"><value>No remediation required</value></data>
+  <data name="Diag_Rem_SwitchToDoQOrFragmentedDoh" xml:space="preserve"><value>Switch to DoQ or TLS-Fragmented DoH</value></data>
+  <data name="Diag_Rem_EnableTlsSplitPacForDomain" xml:space="preserve"><value>Enable TLS ClientHello Split PAC for this domain</value></data>
+  <data name="Diag_Rem_RouteViaVerifiedGeoUnlock" xml:space="preserve"><value>Route domain via Tier 2 Verified Geo-Unlock</value></data>
+  <data name="Diag_Rem_FixLocalPort53Conflict" xml:space="preserve"><value>Resolve Port 53 conflict using 127.0.53.x / PAC mode</value></data>
+  <data name="Diag_Rem_DisableBrowserDohOverride" xml:space="preserve"><value>Disable browser built-in DoH override</value></data>
+  <data name="Diag_Rem_DeploySelfHostedVps" xml:space="preserve"><value>Deploy private Self-Hosted VPS via Wizard</value></data>
+  <data name="Diag_Lab_Title" xml:space="preserve"><value>Advanced Network Lab (Opt-In Only)</value></data>
+  <data name="Diag_Lab_Disclaimer" xml:space="preserve"><value>Warning: Subnet scanning sends rate-limited TLS probes to public IPv4 ranges and is disabled by default. Only scan ranges you are authorized to test. Discovered nodes remain in Tier 4 Experimental Lab.</value></data>
+  <data name="Diag_Lab_Accept" xml:space="preserve"><value>I understand and opt in to manual subnet probing</value></data>
+  <data name="Diag_Lab_Start" xml:space="preserve"><value>Start Manual Scan</value></data>
+  <data name="Diag_Lab_Stop" xml:space="preserve"><value>Stop Scan</value></data>
+  <data name="Diag_Lan_Title" xml:space="preserve"><value>LAN Gateway Mode (Mobile / Console)</value></data>
+  <data name="Diag_Lan_Enable" xml:space="preserve"><value>Enable LAN Gateway Descriptor</value></data>
+  <data name="Diag_Lan_Refresh" xml:space="preserve"><value>Refresh QR &amp; Endpoints</value></data>
+  <data name="Settings_Startup_Title" xml:space="preserve"><value>Startup &amp; System Tray</value></data>
+  <data name="Settings_StartWithWindows" xml:space="preserve"><value>Start DNS Pulse with Windows</value></data>
+  <data name="Settings_StartMinimized" xml:space="preserve"><value>Start minimized to system tray</value></data>
+  <data name="Settings_MinimizeOnClose" xml:space="preserve"><value>Minimize to tray when closing window</value></data>
+  <data name="Settings_Interception_Title" xml:space="preserve"><value>Windows Interception Mode</value></data>
+  <data name="Settings_Mode_AdapterDns" xml:space="preserve"><value>Adapter DNS (Standard Windows NIC)</value></data>
+  <data name="Settings_Mode_SplitNrpt" xml:space="preserve"><value>Split NRPT Policy (Windows Name Resolution Policy Table)</value></data>
+  <data name="Settings_Mode_LocalProxyPacOnly" xml:space="preserve"><value>Local Proxy / PAC Only (Unprivileged)</value></data>
+  <data name="Settings_Mode_WfpDivertPlugin" xml:space="preserve"><value>WFP / WinDivert Plugin (Disabled during Anti-Cheat)</value></data>
+  <data name="Settings_AntiCheat_StatusOk" xml:space="preserve"><value>No conflicting kernel anti-cheat detected.</value></data>
+  <data name="Settings_AntiCheat_Detected" xml:space="preserve"><value>Active anti-cheat detected: {0}. WFP/WinDivert interception is blocked for safety.</value></data>
+  <data name="Settings_Privacy_Title" xml:space="preserve"><value>Privacy &amp; DNS Leak Guards</value></data>
+  <data name="Settings_Ipv6Guard" xml:space="preserve"><value>IPv6 AAAA Guard (suppress AAAA on Geo-Unlock bypass)</value></data>
+  <data name="Settings_PerRouteSvcb" xml:space="preserve"><value>Per-Route HTTPS/SVCB Mode (strip ECH on Geo-Unlock, preserve on Tier 1)</value></data>
+  <data name="Settings_RebindingGuard" xml:space="preserve"><value>DNS Rebinding Protection (block bogon/private IP answers on public domains)</value></data>
+  <data name="Settings_ZeroDiskLogging" xml:space="preserve"><value>Zero Disk Query Logging (keep queried domains strictly in memory)</value></data>
+  <data name="Settings_Appearance_Title" xml:space="preserve"><value>Language, Theme &amp; Accessibility</value></data>
+  <data name="Settings_Language" xml:space="preserve"><value>Display Language</value></data>
+  <data name="Settings_DarkTheme" xml:space="preserve"><value>Dark Theme</value></data>
+  <data name="Settings_AccentPreset" xml:space="preserve"><value>Accent Color Preset</value></data>
+  <data name="Settings_CompactMode" xml:space="preserve"><value>Compact Layout Mode</value></data>
+  <data name="Settings_Backdrop_Mica" xml:space="preserve"><value>Windows 11 Mica Backdrop</value></data>
+  <data name="Settings_Backdrop_Solid" xml:space="preserve"><value>Solid Fallback Backdrop (Windows 10 / High Contrast)</value></data>
+  <data name="Settings_Updates_Title" xml:space="preserve"><value>Verified Updates</value></data>
+  <data name="Settings_UpdateChannel" xml:space="preserve"><value>Release Channel</value></data>
+  <data name="Settings_Channel_Stable" xml:space="preserve"><value>Stable</value></data>
+  <data name="Settings_Channel_Beta" xml:space="preserve"><value>Beta</value></data>
+  <data name="Settings_AutoCheckUpdates" xml:space="preserve"><value>Check for updates automatically</value></data>
+  <data name="Settings_CheckUpdatesNow" xml:space="preserve"><value>Check for Updates</value></data>
+  <data name="Settings_Safety_Title" xml:space="preserve"><value>Emergency Recovery &amp; Diagnostics</value></data>
+  <data name="Settings_EmergencyRestore" xml:space="preserve"><value>Emergency Network Restore</value></data>
+  <data name="Settings_ExportBundle" xml:space="preserve"><value>Export Redacted Diagnostic Bundle (.zip)</value></data>
+  <data name="Settings_Save" xml:space="preserve"><value>Save Settings</value></data>
+  <data name="Settings_Saved" xml:space="preserve"><value>Settings saved and applied.</value></data>
+  <data name="Tray_Connect" xml:space="preserve"><value>Connect</value></data>
+  <data name="Tray_Disconnect" xml:space="preserve"><value>Disconnect</value></data>
+  <data name="Tray_RotateUpstream" xml:space="preserve"><value>Rotate Upstream</value></data>
+  <data name="Tray_EmergencyRestore" xml:space="preserve"><value>Emergency Network Restore</value></data>
+  <data name="Tray_Open" xml:space="preserve"><value>Open PulseCore</value></data>
+  <data name="Tray_Exit" xml:space="preserve"><value>Exit</value></data>
+  <data name="Error_InvalidInput" xml:space="preserve"><value>Invalid input: {0}</value></data>
+  <data name="Error_ConnectionFailed" xml:space="preserve"><value>Connection failed: {0}</value></data>
+</root>

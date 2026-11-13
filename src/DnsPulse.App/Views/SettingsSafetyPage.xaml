@@ -1,0 +1,316 @@
+<UserControl x:Class="DnsPulse.App.Views.SettingsSafetyPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:conv="clr-namespace:DnsPulse.App.Converters">
+  <ScrollViewer VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled"
+                Padding="20,16,20,24">
+    <StackPanel MaxWidth="1040">
+      <!-- Startup & Tray -->
+      <ui:TextBlock FontTypography="Subtitle"
+                    Margin="0,0,0,8"
+                    Text="{conv:Localization Settings_Startup_Title}" />
+      <ui:CardControl Margin="0,0,0,8"
+                      Header="{conv:Localization Settings_StartWithWindows}">
+        <ui:CardControl.Icon>
+          <ui:SymbolIcon Symbol="Power24" />
+        </ui:CardControl.Icon>
+        <ui:ToggleSwitch IsChecked="{Binding StartWithWindows, Mode=TwoWay}"
+                         AutomationProperties.Name="{conv:Localization Settings_StartWithWindows}"
+                         AutomationProperties.HelpText="{conv:Localization Settings_Startup_Title}" />
+      </ui:CardControl>
+
+      <ui:CardControl Margin="0,0,0,8"
+                      Header="{conv:Localization Settings_StartMinimized}">
+        <ui:CardControl.Icon>
+          <ui:SymbolIcon Symbol="Apps24" />
+        </ui:CardControl.Icon>
+        <ui:ToggleSwitch IsChecked="{Binding StartMinimizedToTray, Mode=TwoWay}"
+                         AutomationProperties.Name="{conv:Localization Settings_StartMinimized}"
+                         AutomationProperties.HelpText="{conv:Localization Settings_Startup_Title}" />
+      </ui:CardControl>
+
+      <ui:CardControl Margin="0,0,0,16"
+                      Header="{conv:Localization Settings_MinimizeOnClose}">
+        <ui:CardControl.Icon>
+          <ui:SymbolIcon Symbol="Dismiss24" />
+        </ui:CardControl.Icon>
+        <ui:ToggleSwitch IsChecked="{Binding MinimizeToTrayOnClose, Mode=TwoWay}"
+                         AutomationProperties.Name="{conv:Localization Settings_MinimizeOnClose}"
+                         AutomationProperties.HelpText="{conv:Localization Settings_Startup_Title}" />
+      </ui:CardControl>
+
+      <!-- Windows Interception Mode & Anti-Cheat Status -->
+      <ui:TextBlock FontTypography="Subtitle"
+                    Margin="0,0,0,8"
+                    Text="{conv:Localization Settings_Interception_Title}" />
+      <ui:Card Padding="16" Margin="0,0,0,16">
+        <StackPanel>
+          <Grid Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <ComboBox Grid.Column="0"
+                      MinWidth="280"
+                      Margin="0,0,12,0"
+                      ItemsSource="{Binding AvailableInterceptionModes}"
+                      SelectedItem="{Binding SelectedInterceptionMode, Mode=TwoWay}"
+                      AutomationProperties.Name="{conv:Localization Settings_Interception_Title}"
+                      AutomationProperties.HelpText="{Binding AntiCheatStatusMessage}" />
+            <ui:Button Grid.Column="1"
+                       Content="Refresh Anti-Cheat"
+                       Command="{Binding RefreshAntiCheatStatusCommand}"
+                       AutomationProperties.Name="Refresh Anti-Cheat Status"
+                       AutomationProperties.HelpText="{Binding AntiCheatStatusMessage}">
+              <ui:Button.Icon>
+                <ui:SymbolIcon Symbol="ArrowClockwise24" />
+              </ui:Button.Icon>
+            </ui:Button>
+          </Grid>
+
+          <ui:InfoBar IsOpen="True"
+                      IsClosable="False"
+                      Severity="Informational"
+                      Title="{Binding AntiCheatStatusMessage}"
+                      Visibility="{Binding IsWfpAntiCheatBlocked, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+          <ui:InfoBar IsOpen="True"
+                      IsClosable="False"
+                      Severity="Error"
+                      Title="{Binding AntiCheatStatusMessage}"
+                      Visibility="{Binding IsWfpAntiCheatBlocked, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+          <WrapPanel Orientation="Horizontal" Margin="0,12,0,0">
+            <StackPanel Margin="0,0,16,8">
+              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="Pool Strategy" />
+              <ComboBox Width="160"
+                        Margin="0,4,0,0"
+                        ItemsSource="{Binding AvailablePoolStrategies}"
+                        SelectedItem="{Binding SelectedPoolStrategy, Mode=TwoWay}"
+                        AutomationProperties.Name="Pool Strategy"
+                        AutomationProperties.HelpText="{conv:Localization Settings_Interception_Title}" />
+            </StackPanel>
+            <StackPanel Margin="0,0,16,8">
+              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="Bootstrap DNS" />
+              <ComboBox Width="140"
+                        Margin="0,4,0,0"
+                        ItemsSource="{Binding AvailableBootstrapProviders}"
+                        SelectedItem="{Binding BootstrapDnsProvider, Mode=TwoWay}"
+                        AutomationProperties.Name="Bootstrap DNS"
+                        AutomationProperties.HelpText="{conv:Localization Settings_Interception_Title}" />
+            </StackPanel>
+            <StackPanel Margin="0,0,16,8">
+              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="Probe Timeout (ms)" />
+              <ui:TextBox Width="120"
+                          Margin="0,4,0,0"
+                          Text="{Binding ProbeTimeoutMs, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.Name="Probe Timeout ms"
+                          AutomationProperties.HelpText="1000 to 6000 ms" />
+            </StackPanel>
+            <StackPanel Margin="0,0,0,8">
+              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="Benchmark Concurrency" />
+              <ui:TextBox Width="120"
+                          Margin="0,4,0,0"
+                          Text="{Binding BenchmarkConcurrency, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.Name="Benchmark Concurrency"
+                          AutomationProperties.HelpText="2 to 16 threads" />
+            </StackPanel>
+          </WrapPanel>
+        </StackPanel>
+      </ui:Card>
+
+      <!-- Privacy & DNS Leak Guards -->
+      <ui:TextBlock FontTypography="Subtitle"
+                    Margin="0,0,0,8"
+                    Text="{conv:Localization Settings_Privacy_Title}" />
+      <ui:CardControl Margin="0,0,0,8"
+                      Header="{conv:Localization Settings_Ipv6Guard}">
+        <ui:CardControl.Icon>
+          <ui:SymbolIcon Symbol="ShieldLock24" />
+        </ui:CardControl.Icon>
+        <ui:ToggleSwitch IsChecked="{Binding BlockIpv6OnBypass, Mode=TwoWay}"
+                         AutomationProperties.Name="{conv:Localization Settings_Ipv6Guard}"
+                         AutomationProperties.HelpText="{conv:Localization Settings_Privacy_Title}" />
+      </ui:CardControl>
+
+      <ui:CardControl Margin="0,0,0,8"
+                      Header="{conv:Localization Settings_PerRouteSvcb}">
+        <ui:CardControl.Icon>
+          <ui:SymbolIcon Symbol="LockClosed24" />
+        </ui:CardControl.Icon>
+        <ui:ToggleSwitch IsChecked="{Binding PerRouteHttpsSvcbMode, Mode=TwoWay}"
+                         AutomationProperties.Name="{conv:Localization Settings_PerRouteSvcb}"
+                         AutomationProperties.HelpText="{conv:Localization Settings_Privacy_Title}" />
+      </ui:CardControl>
+
+      <ui:CardControl Margin="0,0,0,8"
+                      Header="{conv:Localization Settings_RebindingGuard}">
+        <ui:CardControl.Icon>
+          <ui:SymbolIcon Symbol="ShieldCheckmark24" />
+        </ui:CardControl.Icon>
+        <ui:ToggleSwitch IsChecked="{Binding DnsRebindingProtectionEnabled, Mode=TwoWay}"
+                         AutomationProperties.Name="{conv:Localization Settings_RebindingGuard}"
+                         AutomationProperties.HelpText="{conv:Localization Settings_Privacy_Title}" />
+      </ui:CardControl>
+
+      <ui:CardControl Margin="0,0,0,16"
+                      Header="{conv:Localization Settings_ZeroDiskLogging}">
+        <ui:CardControl.Icon>
+          <ui:SymbolIcon Symbol="ShieldKeyhole24" />
+        </ui:CardControl.Icon>
+        <ui:ToggleSwitch IsChecked="{Binding ZeroDiskQueryLogging, Mode=TwoWay}"
+                         AutomationProperties.Name="{conv:Localization Settings_ZeroDiskLogging}"
+                         AutomationProperties.HelpText="{conv:Localization Settings_Privacy_Title}" />
+      </ui:CardControl>
+
+      <!-- Language, Theme & Accessibility -->
+      <ui:TextBlock FontTypography="Subtitle"
+                    Margin="0,0,0,8"
+                    Text="{conv:Localization Settings_Appearance_Title}" />
+      <ui:CardControl Margin="0,0,0,8"
+                      Header="{conv:Localization Settings_Language}">
+        <ui:CardControl.Icon>
+          <ui:SymbolIcon Symbol="Globe24" />
+        </ui:CardControl.Icon>
+        <ComboBox MinWidth="220"
+                  ItemsSource="{Binding AvailableLanguages}"
+                  SelectedValue="{Binding SelectedLanguageCode, Mode=TwoWay}"
+                  SelectedValuePath="CultureCode"
+                  DisplayMemberPath="NativeName"
+                  AutomationProperties.Name="{conv:Localization Settings_Language}"
+                  AutomationProperties.HelpText="{conv:Localization Settings_Appearance_Title}" />
+      </ui:CardControl>
+
+      <ui:CardControl Margin="0,0,0,8"
+                      Header="{conv:Localization Settings_DarkTheme}">
+        <ui:ToggleSwitch IsChecked="{Binding IsDarkTheme, Mode=TwoWay}"
+                         AutomationProperties.Name="{conv:Localization Settings_DarkTheme}"
+                         AutomationProperties.HelpText="{conv:Localization Settings_Appearance_Title}" />
+      </ui:CardControl>
+
+      <ui:CardControl Margin="0,0,0,8"
+                      Header="{conv:Localization Settings_AccentPreset}">
+        <ComboBox MinWidth="180"
+                  ItemsSource="{Binding AvailableAccentPresets}"
+                  SelectedItem="{Binding SelectedAccentPreset, Mode=TwoWay}"
+                  AutomationProperties.Name="{conv:Localization Settings_AccentPreset}"
+                  AutomationProperties.HelpText="{conv:Localization Settings_Appearance_Title}" />
+      </ui:CardControl>
+
+      <ui:CardControl Margin="0,0,0,8"
+                      Header="{conv:Localization Settings_CompactMode}">
+        <ui:ToggleSwitch IsChecked="{Binding CompactMode, Mode=TwoWay}"
+                         AutomationProperties.Name="{conv:Localization Settings_CompactMode}"
+                         AutomationProperties.HelpText="{conv:Localization Settings_Appearance_Title}" />
+      </ui:CardControl>
+
+      <ui:TextBlock Margin="4,0,0,16"
+                    Appearance="Secondary"
+                    FontTypography="Caption"
+                    Text="{Binding BackdropStatusText}" />
+
+      <!-- Verified Updates -->
+      <ui:CardExpander Header="{conv:Localization Settings_Updates_Title}"
+                       Margin="0,0,0,16">
+        <ui:CardExpander.Icon>
+          <ui:SymbolIcon Symbol="ArrowDownload24" />
+        </ui:CardExpander.Icon>
+        <StackPanel>
+          <WrapPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,8">
+            <StackPanel Margin="0,0,16,8">
+              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_UpdateChannel}" />
+              <ComboBox Width="150"
+                        Margin="0,4,0,0"
+                        ItemsSource="{Binding AvailableUpdateChannels}"
+                        SelectedItem="{Binding SelectedUpdateChannel, Mode=TwoWay}"
+                        AutomationProperties.Name="{conv:Localization Settings_UpdateChannel}"
+                        AutomationProperties.HelpText="{conv:Localization Settings_Updates_Title}" />
+            </StackPanel>
+
+            <CheckBox Margin="0,18,16,8"
+                      IsChecked="{Binding AutoCheckUpdates, Mode=TwoWay}"
+                      Content="{conv:Localization Settings_AutoCheckUpdates}"
+                      AutomationProperties.Name="{conv:Localization Settings_AutoCheckUpdates}"
+                      AutomationProperties.HelpText="{conv:Localization Settings_Updates_Title}" />
+
+            <ui:PasswordBox x:Name="GitHubTokenBox"
+                            Width="220"
+                            Margin="0,12,12,8"
+                            PlaceholderText="Optional GitHub Token"
+                            PasswordChanged="OnGitHubTokenChanged"
+                            AutomationProperties.Name="Optional GitHub Token"
+                            AutomationProperties.HelpText="{conv:Localization Settings_Updates_Title}" />
+
+            <ui:Button Margin="0,12,0,8"
+                       Appearance="Primary"
+                       Content="{conv:Localization Settings_CheckUpdatesNow}"
+                       Command="{Binding CheckForUpdatesCommand}"
+                       IsEnabled="{Binding IsCheckingUpdates, Converter={StaticResource InverseBoolConverter}}"
+                       AutomationProperties.Name="{conv:Localization Settings_CheckUpdatesNow}"
+                       AutomationProperties.HelpText="{conv:Localization Settings_Updates_Title}">
+              <ui:Button.Icon>
+                <ui:SymbolIcon Symbol="ArrowClockwise24" />
+              </ui:Button.Icon>
+            </ui:Button>
+          </WrapPanel>
+
+          <ui:TextBlock Appearance="Secondary"
+                        FontTypography="Caption"
+                        Text="{Binding UpdateStatusMessage}"
+                        TextWrapping="Wrap"
+                        Visibility="{Binding UpdateStatusMessage, Converter={StaticResource NullToVisibilityConverter}}" />
+        </StackPanel>
+      </ui:CardExpander>
+
+      <!-- Emergency Recovery & Diagnostics -->
+      <ui:TextBlock FontTypography="Subtitle"
+                    Margin="0,0,0,8"
+                    Text="{conv:Localization Settings_Safety_Title}" />
+      <ui:Card Padding="16">
+        <StackPanel>
+          <WrapPanel Orientation="Horizontal">
+            <ui:Button Margin="0,0,12,8"
+                       Appearance="Primary"
+                       Content="{conv:Localization Settings_Save}"
+                       Command="{Binding SaveSettingsCommand}"
+                       AutomationProperties.Name="{conv:Localization Settings_Save}"
+                       AutomationProperties.HelpText="{conv:Localization Settings_Safety_Title}">
+              <ui:Button.Icon>
+                <ui:SymbolIcon Symbol="Checkmark24" />
+              </ui:Button.Icon>
+            </ui:Button>
+
+            <ui:Button Margin="0,0,12,8"
+                       Appearance="Danger"
+                       Content="{conv:Localization Settings_EmergencyRestore}"
+                       Command="{Binding EmergencyNetworkRestoreCommand}"
+                       AutomationProperties.Name="{conv:Localization Auto_EmergencyRestoreButton}"
+                       AutomationProperties.HelpText="{conv:Localization Auto_EmergencyRestoreButton}">
+              <ui:Button.Icon>
+                <ui:SymbolIcon Symbol="ArrowReset24" />
+              </ui:Button.Icon>
+            </ui:Button>
+
+            <ui:Button Margin="0,0,0,8"
+                       Content="{conv:Localization Settings_ExportBundle}"
+                       Command="{Binding ExportDiagnosticBundleCommand}"
+                       AutomationProperties.Name="{conv:Localization Auto_ExportBundleButton}"
+                       AutomationProperties.HelpText="{conv:Localization Auto_ExportBundleButton}">
+              <ui:Button.Icon>
+                <ui:SymbolIcon Symbol="FolderZip24" />
+              </ui:Button.Icon>
+            </ui:Button>
+          </WrapPanel>
+
+          <ui:TextBlock Margin="0,8,0,0"
+                        Appearance="Secondary"
+                        FontTypography="Caption"
+                        Text="{Binding SafetyStatusMessage}"
+                        TextWrapping="Wrap"
+                        Visibility="{Binding SafetyStatusMessage, Converter={StaticResource NullToVisibilityConverter}}" />
+        </StackPanel>
+      </ui:Card>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
