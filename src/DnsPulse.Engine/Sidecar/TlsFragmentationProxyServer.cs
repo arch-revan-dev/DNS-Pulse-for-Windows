@@ -316,17 +316,10 @@ public sealed class TlsFragmentationProxyServer : IAsyncDisposable, IDisposable
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            Socket accepted;
+            Socket? accepted;
             try
             {
-                Socket incoming = await listener.AcceptAsync(cancellationToken).ConfigureAwait(false);
-                if (!await _connectionLimiter.WaitAsync(0, cancellationToken).ConfigureAwait(false))
-                {
-                    incoming.Dispose();
-                    continue;
-                }
-
-                accepted = incoming;
+                accepted = await AcceptWithinLimitAsync(listener, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -345,11 +338,36 @@ public sealed class TlsFragmentationProxyServer : IAsyncDisposable, IDisposable
                 continue;
             }
 
+            if (accepted is null)
+            {
+                continue;
+            }
+
             long connectionId = Interlocked.Increment(ref _nextConnectionId);
             Interlocked.Increment(ref _totalConnectionsAccepted);
 
             Task connectionTask = HandleClientConnectionAsync(connectionId, accepted, cancellationToken);
             _activeConnections.TryAdd(connectionId, connectionTask);
+        }
+    }
+
+    private async Task<Socket?> AcceptWithinLimitAsync(Socket listener, CancellationToken cancellationToken)
+    {
+        Socket incoming = await listener.AcceptAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (await _connectionLimiter.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+            {
+                return incoming;
+            }
+
+            incoming.Dispose();
+            return null;
+        }
+        catch
+        {
+            incoming.Dispose();
+            throw;
         }
     }
 
