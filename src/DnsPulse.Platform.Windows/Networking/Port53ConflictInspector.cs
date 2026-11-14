@@ -19,52 +19,83 @@ public sealed class Port53ConflictInspector
     private const uint ErrorInsufficientBuffer = 122;
     private const uint NoError = 0;
 
+    private static readonly HashSet<string> SelfProcessNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "DnsPulse",
+        "DnsPulse.App",
+        "DnsPulse.Service",
+        "DnsPulseService"
+    };
+
     /// <summary>
-    /// Inspects UDP and TCP tables for any process bound to port 53 on loopback or wildcard addresses.
+    /// Returns <see langword="true"/> when <paramref name="processName"/> belongs to DNS Pulse itself
+    /// (desktop app, renamed portable binary, or companion Windows service) and should never be flagged as an external port conflict.
+    /// </summary>
+    public static bool IsSelfProcessName(string? processName)
+    {
+        if (string.IsNullOrWhiteSpace(processName))
+        {
+            return false;
+        }
+
+        string trimmed = processName.Trim();
+        if (trimmed.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed[..^4];
+        }
+
+        return SelfProcessNames.Contains(trimmed)
+            || trimmed.StartsWith("DnsPulse-", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("DnsPulse_", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSelfProcess(string? processName) => IsSelfProcessName(processName);
+
+    /// <summary>
+    /// Inspects UDP and TCP tables for any external process bound to port 53 on loopback or wildcard addresses.
     /// </summary>
     [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Preserves instance API contract.")]
     public (string? OccupantName, int? ProcessId) InspectPort53Conflict()
     {
-        return InspectPortConflict(53);
+        return InspectPortConflict(53, excludeSelfProcesses: true);
+    }
+
+    /// <summary>
+    /// Inspects UDP and TCP tables for any external process bound to <paramref name="port"/> on loopback or wildcard addresses.
+    /// </summary>
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Preserves instance API contract.")]
+    public (string? OccupantName, int? ProcessId) InspectPortConflict(int port)
+    {
+        return InspectPortConflict(port, excludeSelfProcesses: true);
     }
 
     /// <summary>
     /// Inspects UDP and TCP tables for any process bound to <paramref name="port"/> on loopback or wildcard addresses.
     /// </summary>
     [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Preserves instance API contract.")]
-    public (string? OccupantName, int? ProcessId) InspectPortConflict(int port)
+    public (string? OccupantName, int? ProcessId) InspectPortConflict(int port, bool excludeSelfProcesses)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(port, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(port, 65535);
 
-        int? udpV4Pid = FindUdpConflictPid(AfInet, port);
-        if (udpV4Pid is int pid1)
-        {
-            return (ResolveProcessName(pid1), pid1);
-        }
+        (string? Name, int Pid)? candidate =
+            FindUdpConflict(AfInet, port, excludeSelfProcesses) ??
+            FindUdpConflict(AfInet6, port, excludeSelfProcesses) ??
+            FindTcpConflict(AfInet, port, excludeSelfProcesses) ??
+            FindTcpConflict(AfInet6, port, excludeSelfProcesses);
 
-        int? udpV6Pid = FindUdpConflictPid(AfInet6, port);
-        if (udpV6Pid is int pid2)
+        if (candidate is { } found)
         {
-            return (ResolveProcessName(pid2), pid2);
-        }
-
-        int? tcpV4Pid = FindTcpConflictPid(AfInet, port);
-        if (tcpV4Pid is int pid3)
-        {
-            return (ResolveProcessName(pid3), pid3);
-        }
-
-        int? tcpV6Pid = FindTcpConflictPid(AfInet6, port);
-        if (tcpV6Pid is int pid4)
-        {
-            return (ResolveProcessName(pid4), pid4);
+            PlatformDiagnosticLog.Write(string.Create(
+                CultureInfo.InvariantCulture,
+                $"Port {port} conflict detected: '{found.Name}' (PID {found.Pid})."));
+            return (found.Name, found.Pid);
         }
 
         return (null, null);
     }
 
-    private static int? FindUdpConflictPid(int addressFamily, int targetPort)
+    private static (string Name, int Pid)? FindUdpConflict(int addressFamily, int targetPort, bool excludeSelfProcesses)
     {
         int rowSize = addressFamily == AfInet ? 12 : 28;
         int bufferSize = 0;
@@ -132,7 +163,17 @@ public sealed class Port53ConflictInspector
                     int port = DecodeNetworkPort(rawPort);
                     if (port == targetPort && isMatchingAddress && pid > 0)
                     {
-                        return pid;
+                        string name = ResolveProcessName(pid);
+                        if (excludeSelfProcesses && IsSelfProcess(name))
+                        {
+                            PlatformDiagnosticLog.Write(string.Create(
+                                CultureInfo.InvariantCulture,
+                                $"Ignoring self-owned UDP listener on port {targetPort}: '{name}' (PID {pid})."));
+                        }
+                        else
+                        {
+                            return (name, pid);
+                        }
                     }
 
                     offset += rowSize;
@@ -149,7 +190,7 @@ public sealed class Port53ConflictInspector
         return null;
     }
 
-    private static int? FindTcpConflictPid(int addressFamily, int targetPort)
+    private static (string Name, int Pid)? FindTcpConflict(int addressFamily, int targetPort, bool excludeSelfProcesses)
     {
         int rowSize = addressFamily == AfInet ? 24 : 56;
         int bufferSize = 0;
@@ -217,7 +258,17 @@ public sealed class Port53ConflictInspector
                     int port = DecodeNetworkPort(rawPort);
                     if (port == targetPort && isMatchingAddress && pid > 0)
                     {
-                        return pid;
+                        string name = ResolveProcessName(pid);
+                        if (excludeSelfProcesses && IsSelfProcess(name))
+                        {
+                            PlatformDiagnosticLog.Write(string.Create(
+                                CultureInfo.InvariantCulture,
+                                $"Ignoring self-owned TCP listener on port {targetPort}: '{name}' (PID {pid})."));
+                        }
+                        else
+                        {
+                            return (name, pid);
+                        }
                     }
 
                     offset += rowSize;

@@ -15,6 +15,8 @@ using DnsPulse.Core.Routing;
 using DnsPulse.Core.Wire;
 using DnsPulse.Engine.Contracts;
 using DnsPulse.Engine.Pipeline;
+using DnsPulse.Platform.Windows.Autostart;
+using Serilog;
 
 namespace DnsPulse.App.ViewModels;
 
@@ -102,7 +104,9 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
     private readonly List<string> _customGeoUnlockDomains = [];
     private readonly List<string> _customBlockRules = [];
     private readonly List<string> _customAllowRules = [];
+    private Func<IReadOnlyList<string>, IReadOnlyList<string>, IReadOnlyList<string>, IReadOnlyList<string>, CancellationToken, Task>? _persistRoutingHandler;
     private bool _suppressPresetPush;
+    private bool _suppressPersistence;
 
     [ObservableProperty]
     private RuleFormatKind _selectedRuleFormat = RuleFormatKind.Json;
@@ -164,6 +168,58 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
     public IReadOnlyList<string> CustomBlockRules => _customBlockRules;
 
     public IReadOnlyList<string> CustomAllowRules => _customAllowRules;
+
+    /// <summary>
+    /// Registers a persistence callback invoked whenever enabled presets or custom rules change.
+    /// </summary>
+    public void ConfigurePersistenceHandler(
+        Func<IReadOnlyList<string>, IReadOnlyList<string>, IReadOnlyList<string>, IReadOnlyList<string>, CancellationToken, Task>? handler)
+    {
+        _persistRoutingHandler = handler;
+    }
+
+    /// <summary>
+    /// Restores enabled routing presets and custom rules from persisted <paramref name="settings"/>
+    /// and pushes the resulting configuration into the runtime router without re-triggering persistence.
+    /// </summary>
+    public async Task LoadFromSettingsAsync(PulseAppSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        _suppressPresetPush = true;
+        _suppressPersistence = true;
+        try
+        {
+            if (settings.EnabledRoutingPresetIds is not null)
+            {
+                HashSet<string> enabledIds = new(settings.EnabledRoutingPresetIds, StringComparer.OrdinalIgnoreCase);
+                foreach (ServicePresetToggleItem preset in ServicePresets)
+                {
+                    preset.IsEnabled = enabledIds.Contains(preset.Id);
+                }
+            }
+
+            _customGeoUnlockDomains.Clear();
+            _customGeoUnlockDomains.AddRange(settings.CustomGeoUnlockDomains);
+
+            _customBlockRules.Clear();
+            _customBlockRules.AddRange(settings.CustomBlockRules);
+
+            _customAllowRules.Clear();
+            _customAllowRules.AddRange(settings.CustomAllowRules);
+
+            OnPropertyChanged(nameof(CustomGeoUnlockDomains));
+            OnPropertyChanged(nameof(CustomBlockRules));
+            OnPropertyChanged(nameof(CustomAllowRules));
+
+            await PushRouterConfigurationAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _suppressPersistence = false;
+            _suppressPresetPush = false;
+        }
+    }
 
     /// <summary>
     /// Adds a domain to Zone 3 Geo-Unlock custom rules and pushes the updated router config.
@@ -527,6 +583,21 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
         };
 
         await _runtimeService.UpdateRoutingConfigAsync(config, cancellationToken).ConfigureAwait(false);
+
+        if (!_suppressPersistence && _persistRoutingHandler is not null)
+        {
+            IReadOnlyList<string> enabledIds =
+            [
+                .. ServicePresets.Where(static p => p.IsEnabled).Select(static p => p.Id)
+            ];
+
+            await _persistRoutingHandler(
+                enabledIds,
+                [.. _customGeoUnlockDomains],
+                [.. _customBlockRules],
+                [.. _customAllowRules],
+                cancellationToken).ConfigureAwait(false);
+        }
     }
 
     partial void OnSelectedFilterChipChanged(TelemetryFilterChip value)
@@ -716,15 +787,28 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
     private void AddPreset(string id, string resourceKey, IReadOnlyList<string> domains, bool enabled)
     {
         ServicePresetToggleItem item = new(id, resourceKey, _localization[resourceKey], domains, enabled);
-        item.PropertyChanged += async (_, args) =>
+        item.PropertyChanged += (_, args) =>
         {
             if (!_suppressPresetPush && string.Equals(args.PropertyName, nameof(ServicePresetToggleItem.IsEnabled), StringComparison.Ordinal))
             {
-                await PushRouterConfigurationAsync().ConfigureAwait(false);
+                _ = PushPresetToggleSafeAsync(id);
             }
         };
 
         ServicePresets.Add(item);
+    }
+
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "UI preset toggle updates must remain non-fatal and surface failures via logs.")]
+    private async Task PushPresetToggleSafeAsync(string presetId)
+    {
+        try
+        {
+            await PushRouterConfigurationAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to apply or persist preset toggle for {PresetId}.", presetId);
+        }
     }
 
     private void OnTelemetryReceived(object? sender, DnsQueryTelemetryEventArgs e)

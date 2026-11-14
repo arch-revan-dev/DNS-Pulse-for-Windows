@@ -263,6 +263,13 @@
   <data name="Settings_Bootstrap_Auto" xml:space="preserve"><value>Автоматически</value></data>
   <data name="Settings_ProbeTimeoutMs" xml:space="preserve"><value>Таймаут проверки (мс)</value></data>
   <data name="Settings_BenchmarkConcurrency" xml:space="preserve"><value>Потоков проверки</value></data>
+  <data name="Settings_Ports_Title" xml:space="preserve"><value>Локальные порты (0 = автовыбор)</value></data>
+  <data name="Settings_Port_Dns" xml:space="preserve"><value>Порт DNS (53 или свой)</value></data>
+  <data name="Settings_Port_Doh" xml:space="preserve"><value>Порт DoH (0 = авто)</value></data>
+  <data name="Settings_Port_Proxy" xml:space="preserve"><value>Порт прокси (0 = авто)</value></data>
+  <data name="Settings_Port_Pac" xml:space="preserve"><value>Порт PAC (0 = авто)</value></data>
+  <data name="Settings_OpenLogsFolder" xml:space="preserve"><value>Открыть папку логов</value></data>
+  <data name="Settings_LogsPathLabel" xml:space="preserve"><value>Папка диагностических логов:</value></data>
   <data name="Settings_GitHubTokenPlaceholder" xml:space="preserve"><value>Токен GitHub (необязательно)</value></data>
   <data name="Settings_AntiCheat_StatusOk" xml:space="preserve"><value>Конфликтующие игровые античиты не обнаружены.</value></data>
   <data name="Settings_AntiCheat_Detected" xml:space="preserve"><value>Обнаружен активный античит: {0}. Драйвер перехвата пакетов отключён для безопасности.</value></data>

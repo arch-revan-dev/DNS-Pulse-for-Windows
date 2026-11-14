@@ -205,6 +205,47 @@
                           AutomationProperties.HelpText="{conv:Localization Settings_BenchmarkConcurrency}" />
             </StackPanel>
           </WrapPanel>
+
+          <!-- Configurable Local Ports -->
+          <ui:TextBlock Margin="0,8,0,6"
+                        Appearance="Secondary"
+                        FontTypography="Caption"
+                        FontWeight="SemiBold"
+                        Text="{conv:Localization Settings_Ports_Title}" />
+          <WrapPanel Orientation="Horizontal">
+            <StackPanel Margin="0,0,16,8">
+              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_Port_Dns}" />
+              <ui:TextBox Width="160"
+                          Margin="0,4,0,0"
+                          Text="{Binding LocalDnsPort, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.Name="{conv:Localization Settings_Port_Dns}"
+                          AutomationProperties.HelpText="{conv:Localization Settings_Ports_Title}" />
+            </StackPanel>
+            <StackPanel Margin="0,0,16,8">
+              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_Port_Doh}" />
+              <ui:TextBox Width="150"
+                          Margin="0,4,0,0"
+                          Text="{Binding LocalDohPort, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.Name="{conv:Localization Settings_Port_Doh}"
+                          AutomationProperties.HelpText="{conv:Localization Settings_Ports_Title}" />
+            </StackPanel>
+            <StackPanel Margin="0,0,16,8">
+              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_Port_Proxy}" />
+              <ui:TextBox Width="150"
+                          Margin="0,4,0,0"
+                          Text="{Binding LocalProxyPort, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.Name="{conv:Localization Settings_Port_Proxy}"
+                          AutomationProperties.HelpText="{conv:Localization Settings_Ports_Title}" />
+            </StackPanel>
+            <StackPanel Margin="0,0,0,8">
+              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_Port_Pac}" />
+              <ui:TextBox Width="150"
+                          Margin="0,4,0,0"
+                          Text="{Binding LocalPacPort, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.Name="{conv:Localization Settings_Port_Pac}"
+                          AutomationProperties.HelpText="{conv:Localization Settings_Ports_Title}" />
+            </StackPanel>
+          </WrapPanel>
         </StackPanel>
       </ui:Card>
 
@@ -458,7 +499,7 @@
               </ui:Button.Icon>
             </ui:Button>
 
-            <ui:Button Margin="0,0,0,8"
+            <ui:Button Margin="0,0,12,8"
                        Content="{conv:Localization Settings_ExportBundle}"
                        Command="{Binding ExportDiagnosticBundleCommand}"
                        AutomationProperties.Name="{conv:Localization Auto_ExportBundleButton}"
@@ -467,7 +508,28 @@
                 <ui:SymbolIcon Symbol="FolderZip24" />
               </ui:Button.Icon>
             </ui:Button>
+
+            <ui:Button Margin="0,0,0,8"
+                       Content="{conv:Localization Settings_OpenLogsFolder}"
+                       Command="{Binding OpenLogsFolderCommand}"
+                       AutomationProperties.Name="{conv:Localization Settings_OpenLogsFolder}"
+                       AutomationProperties.HelpText="{conv:Localization Settings_LogsPathLabel}">
+              <ui:Button.Icon>
+                <ui:SymbolIcon Symbol="FolderOpen24" />
+              </ui:Button.Icon>
+            </ui:Button>
           </WrapPanel>
+
+          <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+            <ui:TextBlock Margin="0,0,6,0"
+                          Appearance="Secondary"
+                          FontTypography="Caption"
+                          Text="{conv:Localization Settings_LogsPathLabel}" />
+            <ui:TextBlock Appearance="Secondary"
+                          FontTypography="Caption"
+                          Text="{Binding LogDirectoryPath}"
+                          TextTrimming="CharacterEllipsis" />
+          </StackPanel>
 
           <ui:TextBlock Margin="0,8,0,0"
                         Appearance="Secondary"

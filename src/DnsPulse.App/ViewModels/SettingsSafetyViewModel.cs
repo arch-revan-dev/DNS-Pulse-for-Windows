@@ -14,6 +14,7 @@ using DnsPulse.Platform.Windows.Contracts;
 using DnsPulse.Platform.Windows.Interception;
 using DnsPulse.Platform.Windows.Recovery;
 using DnsPulse.Platform.Windows.Updates;
+using Serilog;
 
 namespace DnsPulse.App.ViewModels;
 
@@ -37,6 +38,8 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
     private PulseAppSettings _preservedSettings = new();
     private bool _isLoading;
     private bool _autoCheckTriggered;
+    private int _autoSaveGeneration;
+    private int _hasPendingAutoSave;
 
     public event EventHandler? ShutdownRequested;
 
@@ -87,6 +90,18 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
 
     [ObservableProperty]
     private int _benchmarkConcurrency = 6;
+
+    [ObservableProperty]
+    private int _localDnsPort = 53;
+
+    [ObservableProperty]
+    private int _localDohPort;
+
+    [ObservableProperty]
+    private int _localProxyPort;
+
+    [ObservableProperty]
+    private int _localPacPort;
 
     [ObservableProperty]
     private bool _autoFailoverOnDrop = true;
@@ -214,6 +229,9 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
         "9.9.9.9"
     ];
 
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Exposed as instance property for XAML data binding.")]
+    public string LogDirectoryPath => LoggingSetupService.GetDefaultLogDirectory();
+
     public bool IsWfpAntiCheatBlocked => IsAntiCheatActive && SelectedInterceptionMode == InterceptionMode.WfpDivertPlugin;
 
     public string AntiCheatStatusMessage => IsAntiCheatActive
@@ -266,6 +284,36 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
         }
     }
 
+    public void SyncPreservedOverviewSelections(
+        string strategyProfile,
+        string? trustedUpstreamId,
+        string? geoUnlockUpstreamId)
+    {
+        if (!string.IsNullOrWhiteSpace(strategyProfile))
+        {
+            _preservedSettings.StrategyProfile = strategyProfile.Trim();
+        }
+
+        _preservedSettings.SelectedTrustedUpstreamId = string.IsNullOrWhiteSpace(trustedUpstreamId)
+            ? null
+            : trustedUpstreamId.Trim();
+        _preservedSettings.SelectedGeoUnlockUpstreamId = string.IsNullOrWhiteSpace(geoUnlockUpstreamId)
+            ? null
+            : geoUnlockUpstreamId.Trim();
+    }
+
+    public void SyncPreservedRoutingRules(
+        IReadOnlyList<string> enabledPresetIds,
+        IReadOnlyList<string> customGeoUnlockDomains,
+        IReadOnlyList<string> customBlockRules,
+        IReadOnlyList<string> customAllowRules)
+    {
+        _preservedSettings.EnabledRoutingPresetIds = [.. enabledPresetIds];
+        _preservedSettings.CustomGeoUnlockDomains = [.. customGeoUnlockDomains];
+        _preservedSettings.CustomBlockRules = [.. customBlockRules];
+        _preservedSettings.CustomAllowRules = [.. customAllowRules];
+    }
+
     public void LoadFromSettings(PulseAppSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -291,6 +339,10 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
             CompactMode = normalized.CompactMode;
             ProbeTimeoutMs = normalized.ProbeTimeoutMs;
             BenchmarkConcurrency = normalized.BenchmarkConcurrency;
+            LocalDnsPort = normalized.LocalDnsPort;
+            LocalDohPort = normalized.LocalDohPort;
+            LocalProxyPort = normalized.LocalProxyPort;
+            LocalPacPort = normalized.LocalPacPort;
             AutoFailoverOnDrop = normalized.AutoFailoverOnDrop;
             AutoSyncFeedsOnStartup = normalized.AutoSyncFeedsOnStartup;
             BootstrapDnsProvider = normalized.BootstrapDnsProvider;
@@ -312,41 +364,41 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
 
     public PulseAppSettings BuildNormalizedSettings()
     {
-        PulseAppSettings settings = new()
-        {
-            StartWithWindows = StartWithWindows,
-            StartMinimizedToTray = StartMinimizedToTray,
-            MinimizeToTrayOnClose = MinimizeToTrayOnClose,
-            InterceptionMode = SelectedInterceptionMode,
-            EnableLocalTlsSplitPac = true,
-            SplitTunnelEnabled = true,
-            BlockIpv6OnBypass = BlockIpv6OnBypass,
-            UseLocalDohEndpoint = PerRouteHttpsSvcbMode,
-            DnsRebindingProtectionEnabled = DnsRebindingProtectionEnabled,
-            ZeroDiskQueryLogging = ZeroDiskQueryLogging,
-            UiLanguage = SelectedLanguageCode,
-            IsDarkTheme = IsDarkTheme,
-            AccentPreset = SelectedAccentPreset,
-            CompactMode = CompactMode,
-            ProbeTimeoutMs = ProbeTimeoutMs,
-            BenchmarkConcurrency = BenchmarkConcurrency,
-            AutoFailoverOnDrop = AutoFailoverOnDrop,
-            AutoSyncFeedsOnStartup = AutoSyncFeedsOnStartup,
-            BootstrapDnsProvider = BootstrapDnsProvider,
-            PoolStrategy = SelectedPoolStrategy,
-            UpdateChannel = SelectedUpdateChannel,
-            AutoCheckUpdates = AutoCheckUpdates,
-            GitHubToken = GitHubToken,
-            DismissedBrowserDohBanner = _preservedSettings.DismissedBrowserDohBanner,
-            DismissedPort53Banner = _preservedSettings.DismissedPort53Banner,
-            DismissedVpnBanner = _preservedSettings.DismissedVpnBanner,
-            DismissedAntiCheatBanner = _preservedSettings.DismissedAntiCheatBanner,
-            SelectedQuickServiceId = _preservedSettings.SelectedQuickServiceId,
-            LastVerifiedTargetDomain = _preservedSettings.LastVerifiedTargetDomain
-        };
-
+        PulseAppSettings settings = _preservedSettings.Clone();
+        ApplyUiSettingsTo(settings);
         AppSettingsStore.Normalize(settings);
         return settings;
+    }
+
+    private void ApplyUiSettingsTo(PulseAppSettings settings)
+    {
+        settings.StartWithWindows = StartWithWindows;
+        settings.StartMinimizedToTray = StartMinimizedToTray;
+        settings.MinimizeToTrayOnClose = MinimizeToTrayOnClose;
+        settings.InterceptionMode = SelectedInterceptionMode;
+        settings.EnableLocalTlsSplitPac = true;
+        settings.SplitTunnelEnabled = true;
+        settings.BlockIpv6OnBypass = BlockIpv6OnBypass;
+        settings.UseLocalDohEndpoint = PerRouteHttpsSvcbMode;
+        settings.DnsRebindingProtectionEnabled = DnsRebindingProtectionEnabled;
+        settings.ZeroDiskQueryLogging = ZeroDiskQueryLogging;
+        settings.UiLanguage = SelectedLanguageCode;
+        settings.IsDarkTheme = IsDarkTheme;
+        settings.AccentPreset = SelectedAccentPreset;
+        settings.CompactMode = CompactMode;
+        settings.ProbeTimeoutMs = ProbeTimeoutMs;
+        settings.BenchmarkConcurrency = BenchmarkConcurrency;
+        settings.LocalDnsPort = LocalDnsPort;
+        settings.LocalDohPort = LocalDohPort;
+        settings.LocalProxyPort = LocalProxyPort;
+        settings.LocalPacPort = LocalPacPort;
+        settings.AutoFailoverOnDrop = AutoFailoverOnDrop;
+        settings.AutoSyncFeedsOnStartup = AutoSyncFeedsOnStartup;
+        settings.BootstrapDnsProvider = BootstrapDnsProvider;
+        settings.PoolStrategy = SelectedPoolStrategy;
+        settings.UpdateChannel = SelectedUpdateChannel;
+        settings.AutoCheckUpdates = AutoCheckUpdates;
+        settings.GitHubToken = GitHubToken;
     }
 
     private void ApplyThemeSafely(bool isDarkTheme, string accentPreset)
@@ -364,7 +416,17 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
     [RelayCommand]
     public async Task SaveSettingsAsync(CancellationToken cancellationToken = default)
     {
-        PulseAppSettings normalized = BuildNormalizedSettings();
+        Interlocked.Increment(ref _autoSaveGeneration);
+        Interlocked.Exchange(ref _hasPendingAutoSave, 0);
+
+        PulseAppSettings? normalized = null;
+        PulseAppSettings updated = await _settingsStore.UpdateAsync(current =>
+        {
+            ApplyUiSettingsTo(current);
+            normalized = current;
+        }, cancellationToken).ConfigureAwait(false);
+
+        normalized ??= updated;
 
         // Sync clamped values back to bound properties.
         _isLoading = true;
@@ -372,6 +434,10 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
         {
             ProbeTimeoutMs = normalized.ProbeTimeoutMs;
             BenchmarkConcurrency = normalized.BenchmarkConcurrency;
+            LocalDnsPort = normalized.LocalDnsPort;
+            LocalDohPort = normalized.LocalDohPort;
+            LocalProxyPort = normalized.LocalProxyPort;
+            LocalPacPort = normalized.LocalPacPort;
             SelectedAccentPreset = normalized.AccentPreset;
             BootstrapDnsProvider = normalized.BootstrapDnsProvider;
         }
@@ -380,7 +446,6 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
             _isLoading = false;
         }
 
-        await _settingsStore.SaveAsync(normalized, cancellationToken).ConfigureAwait(false);
         _preservedSettings = normalized.Clone();
         await _runtimeService.UpdateEngineOptionsAsync(normalized, cancellationToken).ConfigureAwait(false);
 
@@ -393,7 +458,64 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
             _autostartService.Disable();
         }
 
+        Log.Information(
+            "User explicitly saved settings (Language={Language}, Dark={Dark}, Mode={Mode}, Ports=[DNS:{DnsPort}, DoH:{DohPort}, Proxy:{ProxyPort}, PAC:{PacPort}]).",
+            normalized.UiLanguage,
+            normalized.IsDarkTheme,
+            normalized.InterceptionMode,
+            normalized.LocalDnsPort,
+            normalized.LocalDohPort,
+            normalized.LocalProxyPort,
+            normalized.LocalPacPort);
+
         SafetyStatusMessage = _localization["Settings_Saved"];
+    }
+
+    /// <summary>
+    /// Flushes any pending debounced auto-save immediately to disk (for clean shutdown).
+    /// </summary>
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Shutdown settings flush must remain non-fatal.")]
+    public async Task FlushPendingAutoSaveAsync(CancellationToken cancellationToken = default)
+    {
+        if (Interlocked.Exchange(ref _hasPendingAutoSave, 0) == 0)
+        {
+            return;
+        }
+
+        Interlocked.Increment(ref _autoSaveGeneration);
+        try
+        {
+            PulseAppSettings updated = await _settingsStore.UpdateAsync(ApplyUiSettingsTo, cancellationToken).ConfigureAwait(false);
+            _preservedSettings = updated.Clone();
+            Log.Information("Flushed pending settings on exit to '{SettingsPath}'.", _settingsStore.SettingsFilePath);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to flush pending settings on exit.");
+        }
+    }
+
+    [RelayCommand]
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Explorer launch failures are surfaced safely in SafetyStatusMessage.")]
+    public void OpenLogsFolder()
+    {
+        string logDir = LogDirectoryPath;
+        try
+        {
+            Directory.CreateDirectory(logDir);
+            using Process? proc = Process.Start(new ProcessStartInfo
+            {
+                FileName = logDir,
+                UseShellExecute = true
+            });
+            SafetyStatusMessage = logDir;
+            Log.Information("Opened logs directory '{LogDir}'.", logDir);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to open logs directory '{LogDir}'.", logDir);
+            SafetyStatusMessage = ex.Message;
+        }
     }
 
     [RelayCommand]
@@ -530,6 +652,7 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            Log.Error(ex, "Download and install update failed for release {Tag}.", targetRelease.TagName);
             UpdateProgressPercent = 0;
             UpdateStatusMessage = string.Format(
                 CultureInfo.CurrentCulture,
@@ -586,6 +709,7 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
 
         if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
         {
+            Log.Warning("Update check returned error: {Error}", result.ErrorMessage);
             IsUpdateAvailable = false;
             UpdateStatusMessage = result.ErrorMessage;
             return;
@@ -593,6 +717,8 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
 
         if (result.UpdateAvailable && result.LatestRelease is not null)
         {
+            Log.Information("Update available: {LatestTag} (current {CurrentVersion}).",
+                result.LatestRelease.TagName, result.CurrentVersion.ToString(3));
             IsUpdateAvailable = true;
             UpdateStatusMessage = string.Format(
                 CultureInfo.CurrentCulture,
@@ -602,6 +728,7 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
             return;
         }
 
+        Log.Information("Application is up to date (current {CurrentVersion}).", result.CurrentVersion.ToString(3));
         IsUpdateAvailable = false;
         UpdateStatusMessage = string.Format(
             CultureInfo.CurrentCulture,
@@ -692,6 +819,7 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
         }
 
         _localization.SetLanguage(value);
+        ScheduleAutoSave(delayMs: 50);
     }
 
     partial void OnIsDarkThemeChanged(bool value)
@@ -703,6 +831,7 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
 
         ApplyThemeSafely(value, SelectedAccentPreset);
         OnPropertyChanged(nameof(BackdropStatusText));
+        ScheduleAutoSave(delayMs: 50);
     }
 
     partial void OnSelectedAccentPresetChanged(string value)
@@ -713,11 +842,216 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
         }
 
         ApplyThemeSafely(IsDarkTheme, value);
+        ScheduleAutoSave(delayMs: 50);
+    }
+
+    partial void OnCompactModeChanged(bool value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 50);
+        }
+    }
+
+    partial void OnStartWithWindowsChanged(bool value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 50);
+        }
+    }
+
+    partial void OnStartMinimizedToTrayChanged(bool value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 50);
+        }
+    }
+
+    partial void OnMinimizeToTrayOnCloseChanged(bool value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 50);
+        }
+    }
+
+    partial void OnBlockIpv6OnBypassChanged(bool value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 50);
+        }
+    }
+
+    partial void OnPerRouteHttpsSvcbModeChanged(bool value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 50);
+        }
+    }
+
+    partial void OnDnsRebindingProtectionEnabledChanged(bool value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 50);
+        }
+    }
+
+    partial void OnZeroDiskQueryLoggingChanged(bool value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 50);
+        }
+    }
+
+    partial void OnSelectedPoolStrategyChanged(PoolSelectionStrategy value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 50);
+        }
+    }
+
+    partial void OnBootstrapDnsProviderChanged(string value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 50);
+        }
+    }
+
+    partial void OnSelectedUpdateChannelChanged(UpdateChannel value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 50);
+        }
+    }
+
+    partial void OnAutoCheckUpdatesChanged(bool value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 50);
+        }
+    }
+
+    partial void OnAutoFailoverOnDropChanged(bool value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 50);
+        }
+    }
+
+    partial void OnAutoSyncFeedsOnStartupChanged(bool value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 50);
+        }
+    }
+
+    partial void OnProbeTimeoutMsChanged(int value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 500);
+        }
+    }
+
+    partial void OnBenchmarkConcurrencyChanged(int value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 500);
+        }
+    }
+
+    partial void OnLocalDnsPortChanged(int value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 500);
+        }
+    }
+
+    partial void OnLocalDohPortChanged(int value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 500);
+        }
+    }
+
+    partial void OnLocalProxyPortChanged(int value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 500);
+        }
+    }
+
+    partial void OnLocalPacPortChanged(int value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 500);
+        }
+    }
+
+    partial void OnGitHubTokenChanged(string value)
+    {
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 500);
+        }
     }
 
     partial void OnSelectedInterceptionModeChanged(InterceptionMode value)
     {
         OnPropertyChanged(nameof(IsWfpAntiCheatBlocked));
+        if (!_isLoading)
+        {
+            ScheduleAutoSave(delayMs: 50);
+        }
+    }
+
+    private void ScheduleAutoSave(int delayMs)
+    {
+        Interlocked.Exchange(ref _hasPendingAutoSave, 1);
+        int generation = Interlocked.Increment(ref _autoSaveGeneration);
+        _ = ExecuteDebouncedAutoSaveAsync(generation, delayMs);
+    }
+
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Background settings auto-save must remain non-fatal and log diagnostics.")]
+    private async Task ExecuteDebouncedAutoSaveAsync(int generation, int delayMs)
+    {
+        try
+        {
+            if (delayMs > 0)
+            {
+                await Task.Delay(delayMs).ConfigureAwait(false);
+            }
+
+            if (Volatile.Read(ref _autoSaveGeneration) != generation || _isLoading)
+            {
+                return;
+            }
+
+            Interlocked.Exchange(ref _hasPendingAutoSave, 0);
+            PulseAppSettings updated = await _settingsStore.UpdateAsync(ApplyUiSettingsTo).ConfigureAwait(false);
+            _preservedSettings = updated.Clone();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Automatic settings save failed for generation {Generation}.", generation);
+        }
     }
 
     private void OnCultureChanged(object? sender, CultureChangedEventArgs e)

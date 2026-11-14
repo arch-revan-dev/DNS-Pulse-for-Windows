@@ -7,13 +7,16 @@ using DnsPulse.Engine.Cache;
 using DnsPulse.Engine.Contracts;
 using DnsPulse.Engine.Pipeline;
 using DnsPulse.Engine.Transports;
+using DnsPulse.Platform.Windows;
 using DnsPulse.Platform.Windows.Contracts;
 using DnsPulse.Platform.Windows.Interception;
 using DnsPulse.Platform.Windows.Networking;
 using DnsPulse.Platform.Windows.Recovery;
 using DnsPulse.Service;
+using Microsoft.Extensions.Logging;
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
+builder.Services.AddSingleton<ILoggerProvider, ServiceFileLoggerProvider>();
 builder.Services.AddWindowsService(options =>
 {
     options.ServiceName = "DnsPulseService";
@@ -127,6 +130,19 @@ builder.Services.AddSingleton<IPulseRuntimeBackend>(sp =>
 builder.Services.AddHostedService<DnsPulseWorkerService>();
 
 using IHost host = builder.Build();
+ILogger platformLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("DnsPulse.Platform");
+PlatformDiagnosticLog.Configure((msg, ex) =>
+{
+    if (ex is not null)
+    {
+        platformLogger.LogWarning(ex, "{Message}", msg);
+    }
+    else
+    {
+        platformLogger.LogInformation("{Message}", msg);
+    }
+});
+
 NetworkSnapshotJournal journal = host.Services.GetRequiredService<NetworkSnapshotJournal>();
 NetworkSnapshotJournal.RegisterEmergencyProcessHooks(journal);
 

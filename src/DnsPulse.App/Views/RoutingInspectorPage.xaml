@@ -188,11 +188,21 @@
                                     VerticalAlignment="Center"
                                     Text="{Binding DisplayName}"
                                     TextWrapping="Wrap" />
-                      <ui:Badge Grid.Column="1"
-                                Margin="8,0"
-                                VerticalAlignment="Center"
-                                Appearance="Secondary"
-                                Content="{Binding DomainCount}" />
+                      <Border Grid.Column="1"
+                              Margin="8,0"
+                              Padding="8,2"
+                              MinWidth="28"
+                              CornerRadius="10"
+                              VerticalAlignment="Center"
+                              Background="{DynamicResource ControlFillColorDefaultBrush}"
+                              BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                              BorderThickness="1">
+                        <TextBlock HorizontalAlignment="Center"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                   Text="{Binding DomainCount}" />
+                      </Border>
                       <ui:ToggleSwitch Grid.Column="2"
                                        VerticalAlignment="Center"
                                        IsChecked="{Binding IsEnabled, Mode=TwoWay}"

@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Security;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -16,6 +18,8 @@ public sealed class AppSettingsStore
 {
     private const string SettingsFileName = "settings.json";
 
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> PerPathLocks = new(StringComparer.OrdinalIgnoreCase);
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -23,7 +27,7 @@ public sealed class AppSettingsStore
         Converters = { new JsonStringEnumConverter() }
     };
 
-    private readonly Lock _syncLock = new();
+    private SemaphoreSlim PathGate => PerPathLocks.GetOrAdd(SettingsFilePath, static _ => new SemaphoreSlim(1, 1));
 
     /// <summary>
     /// Initializes a new <see cref="AppSettingsStore"/>.
@@ -80,22 +84,14 @@ public sealed class AppSettingsStore
     /// </summary>
     public PulseAppSettings Load()
     {
-        lock (_syncLock)
+        PathGate.Wait();
+        try
         {
-            if (TryReadSettings(SettingsFilePath, out PulseAppSettings? primary))
-            {
-                return primary;
-            }
-
-            if (!string.IsNullOrWhiteSpace(LegacySettingsFilePath) &&
-                TryReadSettings(LegacySettingsFilePath, out PulseAppSettings? legacy))
-            {
-                return legacy;
-            }
-
-            PulseAppSettings defaults = new();
-            Normalize(defaults);
-            return defaults;
+            return LoadUnlocked();
+        }
+        finally
+        {
+            PathGate.Release();
         }
     }
 
@@ -105,46 +101,15 @@ public sealed class AppSettingsStore
     public async Task<PulseAppSettings> LoadAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-
-        string? pathToRead = File.Exists(SettingsFilePath)
-            ? SettingsFilePath
-            : !string.IsNullOrWhiteSpace(LegacySettingsFilePath) && File.Exists(LegacySettingsFilePath)
-                ? LegacySettingsFilePath
-                : null;
-
-        if (pathToRead is not null)
+        await PathGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            try
-            {
-                byte[] bytes = await File.ReadAllBytesAsync(pathToRead, cancellationToken).ConfigureAwait(false);
-                PulseAppSettings? parsed = JsonSerializer.Deserialize<PulseAppSettings>(bytes, JsonOptions);
-                if (parsed is not null)
-                {
-                    Normalize(parsed);
-                    return parsed;
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (JsonException)
-            {
-            }
-            catch (IOException)
-            {
-            }
-            catch (UnauthorizedAccessException)
-            {
-            }
-            catch (SecurityException)
-            {
-            }
+            return await LoadUnlockedAsync(cancellationToken).ConfigureAwait(false);
         }
-
-        PulseAppSettings defaults = new();
-        Normalize(defaults);
-        return defaults;
+        finally
+        {
+            PathGate.Release();
+        }
     }
 
     /// <summary>
@@ -159,7 +124,8 @@ public sealed class AppSettingsStore
         string tempPath = string.Concat(SettingsFilePath, ".tmp");
         string backupPath = string.Concat(SettingsFilePath, ".bak");
 
-        lock (_syncLock)
+        PathGate.Wait();
+        try
         {
             Directory.CreateDirectory(BaseDirectory);
             using (FileStream stream = new(
@@ -174,14 +140,17 @@ public sealed class AppSettingsStore
                 stream.Flush();
             }
 
-            if (File.Exists(SettingsFilePath))
-            {
-                File.Replace(tempPath, SettingsFilePath, backupPath, ignoreMetadataErrors: true);
-            }
-            else
-            {
-                File.Move(tempPath, SettingsFilePath, overwrite: true);
-            }
+            CommitTempFile(tempPath, backupPath);
+            LogSettingsSaved(settings, bytes.Length);
+        }
+        catch (Exception ex)
+        {
+            PlatformDiagnosticLog.Write(string.Create(CultureInfo.InvariantCulture, $"Failed to save settings to '{SettingsFilePath}'."), ex);
+            throw;
+        }
+        finally
+        {
+            PathGate.Release();
         }
     }
 
@@ -193,33 +162,83 @@ public sealed class AppSettingsStore
         ArgumentNullException.ThrowIfNull(settings);
         Normalize(settings);
 
-        Directory.CreateDirectory(BaseDirectory);
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(settings, JsonOptions);
         string tempPath = string.Concat(SettingsFilePath, ".tmp");
         string backupPath = string.Concat(SettingsFilePath, ".bak");
-        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(settings, JsonOptions);
 
-        await using (FileStream stream = new(
-            tempPath,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
-            bufferSize: 4096,
-            FileOptions.WriteThrough | FileOptions.Asynchronous))
+        await PathGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
-            await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            Directory.CreateDirectory(BaseDirectory);
+            await using (FileStream stream = new(
+                tempPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                FileOptions.WriteThrough | FileOptions.Asynchronous))
+            {
+                await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            CommitTempFile(tempPath, backupPath);
+            LogSettingsSaved(settings, bytes.Length);
         }
-
-        lock (_syncLock)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            if (File.Exists(SettingsFilePath))
+            throw;
+        }
+        catch (Exception ex)
+        {
+            PlatformDiagnosticLog.Write(string.Create(CultureInfo.InvariantCulture, $"Failed to save settings asynchronously to '{SettingsFilePath}'."), ex);
+            throw;
+        }
+        finally
+        {
+            PathGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Atomically loads, mutates, normalizes, and persists <see cref="PulseAppSettings"/> under the per-path lock.
+    /// </summary>
+    public async Task<PulseAppSettings> UpdateAsync(
+        Action<PulseAppSettings> updateAction,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(updateAction);
+        await PathGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            PulseAppSettings current = await LoadUnlockedAsync(cancellationToken).ConfigureAwait(false);
+            updateAction(current);
+            Normalize(current);
+
+            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(current, JsonOptions);
+            string tempPath = string.Concat(SettingsFilePath, ".tmp");
+            string backupPath = string.Concat(SettingsFilePath, ".bak");
+
+            Directory.CreateDirectory(BaseDirectory);
+            await using (FileStream stream = new(
+                tempPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                FileOptions.WriteThrough | FileOptions.Asynchronous))
             {
-                File.Replace(tempPath, SettingsFilePath, backupPath, ignoreMetadataErrors: true);
+                await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
-            else
-            {
-                File.Move(tempPath, SettingsFilePath, overwrite: true);
-            }
+
+            CommitTempFile(tempPath, backupPath);
+            LogSettingsSaved(current, bytes.Length);
+            return current;
+        }
+        finally
+        {
+            PathGate.Release();
         }
     }
 
@@ -244,6 +263,10 @@ public sealed class AppSettingsStore
 
         settings.ProbeTimeoutMs = Math.Clamp(settings.ProbeTimeoutMs, 1000, 6000);
         settings.BenchmarkConcurrency = Math.Clamp(settings.BenchmarkConcurrency, 2, 16);
+        settings.LocalDnsPort = NormalizePort(settings.LocalDnsPort);
+        settings.LocalDohPort = NormalizePort(settings.LocalDohPort);
+        settings.LocalProxyPort = NormalizePort(settings.LocalProxyPort);
+        settings.LocalPacPort = NormalizePort(settings.LocalPacPort);
 
         settings.GitHubToken = (settings.GitHubToken ?? string.Empty).Trim();
         settings.UiLanguage = string.IsNullOrWhiteSpace(settings.UiLanguage)
@@ -272,6 +295,144 @@ public sealed class AppSettingsStore
         settings.LastVerifiedTargetDomain = string.IsNullOrWhiteSpace(settings.LastVerifiedTargetDomain)
             ? "aistudio.google.com"
             : settings.LastVerifiedTargetDomain.Trim();
+
+        settings.StrategyProfile = string.IsNullOrWhiteSpace(settings.StrategyProfile)
+            ? "SmartSplitDnsGeo"
+            : settings.StrategyProfile.Trim();
+
+        settings.SelectedTrustedUpstreamId = string.IsNullOrWhiteSpace(settings.SelectedTrustedUpstreamId)
+            ? null
+            : settings.SelectedTrustedUpstreamId.Trim();
+
+        settings.SelectedGeoUnlockUpstreamId = string.IsNullOrWhiteSpace(settings.SelectedGeoUnlockUpstreamId)
+            ? null
+            : settings.SelectedGeoUnlockUpstreamId.Trim();
+
+        settings.EnabledRoutingPresetIds = settings.EnabledRoutingPresetIds?
+            .Where(static id => !string.IsNullOrWhiteSpace(id))
+            .Select(static id => id.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        settings.CustomGeoUnlockDomains = NormalizeRuleList(settings.CustomGeoUnlockDomains);
+        settings.CustomBlockRules = NormalizeRuleList(settings.CustomBlockRules);
+        settings.CustomAllowRules = NormalizeRuleList(settings.CustomAllowRules);
+    }
+
+    private static int NormalizePort(int port) => port <= 0 ? 0 : Math.Clamp(port, 1, 65535);
+
+    private static string[] NormalizeRuleList(IReadOnlyList<string>? rules)
+    {
+        if (rules is null || rules.Count == 0)
+        {
+            return [];
+        }
+
+        return
+        [
+            .. rules
+                .Where(static r => !string.IsNullOrWhiteSpace(r))
+                .Select(static r => r.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+        ];
+    }
+
+    private PulseAppSettings LoadUnlocked()
+    {
+        if (TryReadSettings(SettingsFilePath, out PulseAppSettings? primary))
+        {
+            LogSettingsLoaded(SettingsFilePath, primary);
+            return primary;
+        }
+
+        if (!string.IsNullOrWhiteSpace(LegacySettingsFilePath) &&
+            TryReadSettings(LegacySettingsFilePath, out PulseAppSettings? legacy))
+        {
+            LogSettingsLoaded(LegacySettingsFilePath, legacy);
+            return legacy;
+        }
+
+        PulseAppSettings defaults = new();
+        Normalize(defaults);
+        PlatformDiagnosticLog.Write(string.Create(
+            CultureInfo.InvariantCulture,
+            $"Settings not found at '{SettingsFilePath}'; using defaults (Language={defaults.UiLanguage}, Dark={defaults.IsDarkTheme}, DnsPort={defaults.LocalDnsPort})."));
+        return defaults;
+    }
+
+    private async Task<PulseAppSettings> LoadUnlockedAsync(CancellationToken cancellationToken)
+    {
+        string? pathToRead = File.Exists(SettingsFilePath)
+            ? SettingsFilePath
+            : !string.IsNullOrWhiteSpace(LegacySettingsFilePath) && File.Exists(LegacySettingsFilePath)
+                ? LegacySettingsFilePath
+                : null;
+
+        if (pathToRead is not null)
+        {
+            try
+            {
+                byte[] bytes = await File.ReadAllBytesAsync(pathToRead, cancellationToken).ConfigureAwait(false);
+                PulseAppSettings? parsed = JsonSerializer.Deserialize<PulseAppSettings>(bytes, JsonOptions);
+                if (parsed is not null)
+                {
+                    Normalize(parsed);
+                    LogSettingsLoaded(pathToRead, parsed);
+                    return parsed;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or SecurityException)
+            {
+                PlatformDiagnosticLog.Write(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Error loading settings from '{pathToRead}'; falling back to defaults."), ex);
+            }
+        }
+
+        PulseAppSettings defaults = new();
+        Normalize(defaults);
+        PlatformDiagnosticLog.Write(string.Create(
+            CultureInfo.InvariantCulture,
+            $"Settings initialized with defaults (File='{SettingsFilePath}', Exists={File.Exists(SettingsFilePath)}, Language={defaults.UiLanguage}, DnsPort={defaults.LocalDnsPort})."));
+        return defaults;
+    }
+
+    private void CommitTempFile(string tempPath, string backupPath)
+    {
+        if (File.Exists(SettingsFilePath))
+        {
+            try
+            {
+                File.Replace(tempPath, SettingsFilePath, backupPath, ignoreMetadataErrors: true);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                PlatformDiagnosticLog.Write(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"File.Replace failed for '{SettingsFilePath}', falling back to File.Move overwrite."), ex);
+            }
+        }
+
+        File.Move(tempPath, SettingsFilePath, overwrite: true);
+    }
+
+    private static void LogSettingsLoaded(string path, PulseAppSettings settings)
+    {
+        PlatformDiagnosticLog.Write(string.Create(
+            CultureInfo.InvariantCulture,
+            $"Loaded settings from '{path}' (Language={settings.UiLanguage}, Dark={settings.IsDarkTheme}, Accent={settings.AccentPreset}, Mode={settings.InterceptionMode}, Ports=[DNS:{settings.LocalDnsPort}, DoH:{settings.LocalDohPort}, Proxy:{settings.LocalProxyPort}, PAC:{settings.LocalPacPort}], Strategy={settings.StrategyProfile})."));
+    }
+
+    private void LogSettingsSaved(PulseAppSettings settings, int byteCount)
+    {
+        PlatformDiagnosticLog.Write(string.Create(
+            CultureInfo.InvariantCulture,
+            $"Saved settings to '{SettingsFilePath}' ({byteCount} bytes; Language={settings.UiLanguage}, Dark={settings.IsDarkTheme}, Accent={settings.AccentPreset}, Mode={settings.InterceptionMode}, Ports=[DNS:{settings.LocalDnsPort}, DoH:{settings.LocalDohPort}, Proxy:{settings.LocalProxyPort}, PAC:{settings.LocalPacPort}], Strategy={settings.StrategyProfile})."));
     }
 
     private static bool TryReadSettings(string path, [NotNullWhen(true)] out PulseAppSettings? result)
@@ -295,20 +456,11 @@ public sealed class AppSettingsStore
             result = parsed;
             return true;
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or SecurityException)
         {
-            return false;
-        }
-        catch (IOException)
-        {
-            return false;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return false;
-        }
-        catch (SecurityException)
-        {
+            PlatformDiagnosticLog.Write(string.Create(
+                CultureInfo.InvariantCulture,
+                $"Error reading settings from '{path}'."), ex);
             return false;
         }
     }

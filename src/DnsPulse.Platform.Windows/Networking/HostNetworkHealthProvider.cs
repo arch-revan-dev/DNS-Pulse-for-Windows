@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Security;
@@ -15,15 +16,19 @@ public sealed class HostNetworkHealthProvider : IHostNetworkHealthProvider
     private const string NlaInternetSubKey = @"SYSTEM\CurrentControlSet\Services\NlaSvc\Parameters\Internet";
 
     private readonly bool _enableOsProbes;
+    private readonly Func<int>? _desiredDnsPortProvider;
     private readonly Port53ConflictInspector _port53Inspector = new();
     private readonly BrowserDohInspector _browserDohInspector = new();
 
     /// <summary>
     /// Initializes a new <see cref="HostNetworkHealthProvider"/>.
     /// </summary>
-    public HostNetworkHealthProvider(bool enableOsProbes = true)
+    public HostNetworkHealthProvider(
+        bool enableOsProbes = true,
+        Func<int>? desiredDnsPortProvider = null)
     {
         _enableOsProbes = enableOsProbes;
+        _desiredDnsPortProvider = desiredDnsPortProvider;
     }
 
     /// <summary>
@@ -53,9 +58,16 @@ public sealed class HostNetworkHealthProvider : IHostNetworkHealthProvider
 
         (bool hasIpv4, bool hasIpv6) = InspectAddressFamilyConnectivity(activeGuidSet);
         bool captivePortalDetected = DetectNcsiCaptivePortal(hasIpv4 || hasIpv6);
-        (string? occupantName, int? occupantPid) = _port53Inspector.InspectPort53Conflict();
+        int inspectedDnsPort = _desiredDnsPortProvider?.Invoke() ?? 53;
+        (string? occupantName, int? occupantPid) = inspectedDnsPort > 0
+            ? _port53Inspector.InspectPortConflict(inspectedDnsPort, excludeSelfProcesses: true)
+            : (null, null);
         bool isSmhnrDisabled = SmhnrPolicyManager.IsSmhnrDisabled();
         IReadOnlyList<string> bypassingBrowsers = _browserDohInspector.DetectBypassingBrowsers();
+
+        PlatformDiagnosticLog.Write(string.Create(
+            CultureInfo.InvariantCulture,
+            $"HostHealth inspected: IPv4={hasIpv4}, IPv6={hasIpv6}, Captive={captivePortalDetected}, DnsPort={inspectedDnsPort}, ExternalConflict={(occupantName ?? "None")} ({occupantPid?.ToString(CultureInfo.InvariantCulture) ?? "-"}), SmhnrDisabled={isSmhnrDisabled}, BrowserDoH=[{string.Join(",", bypassingBrowsers)}]."));
 
         HostNetworkHealthSnapshot snapshot = new()
         {

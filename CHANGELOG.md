@@ -2,6 +2,21 @@
 
 Все значимые изменения в проекте **DNS Pulse** документируются в этом файле в формате [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
+## [2.0.3] - 2026-11-14
+
+### Исправлено и улучшено
+- **Исключение ложного самоконфликта на порту 53 (`Port53ConflictInspector`, `HostNetworkHealthProvider`):**
+  - Исправлена ошибка, из-за которой `DnsPulse` / `DnsPulse.Service` жаловались сами на себя («Port 53 occupied by DnsPulse.Service») и проваливали проверку уровня 1. Собственные процессы приложения (`DnsPulse`, `DnsPulse.App`, `DnsPulse.Service`, `DnsPulseService`) теперь корректно игнорируются при поиске внешних конфликтов.
+- **Настраиваемые локальные порты (`PulseAppSettings`, `HybridPulseRuntimeService`, `DnsPulse.Service`, `SettingsSafetyPage`):**
+  - В «Настройки и защита» добавлена настройка локальных портов (`LocalDnsPort`, `LocalDohPort`, `LocalProxyPort`, `LocalPacPort`, значение `0` — автовыбор) для обхода конфликтов с другими программами без редактирования конфигов.
+  - Порты передаются в локальные слушатели и фоновый сервис `DnsPulse.Service` через расширенный IPC `Connect`.
+- **Сохранение всех настроек между перезапусками (`AppSettingsStore`, `SettingsSafetyViewModel`, `RoutingInspectorViewModel`, `OverviewViewModel`):**
+  - Включено потокобезопасное автосохранение настроек, языка, темы, портов, стратегии обхода, выбранных серверов и включённых пресетов маршрутизации/своих правил с гарантированным сбросом отложенной записи при выходе (`FlushPendingAutoSaveAsync`) и сериализованными атомарными обновлениями `AppSettingsStore.UpdateAsync`.
+- **Контрастность бейджей в тёмной теме (`RoutingInspectorPage`, `OverviewPage`):**
+  - Заменены плохо читаемые `ui:Badge` (чёрный текст на тёмно-сером фоне) на контрастные pill-индикаторы с тема-зависимыми ресурсами.
+- **Подробное диагностическое логирование и доступ к логам (`PlatformDiagnosticLog`, `ServiceFileLoggerProvider`, `App`, `SettingsSafetyPage`):**
+  - Добавлено структурированное zero-PII логирование загрузки/сохранения настроек, проверок портов и хоста, IPC/Portable-переключений, 6-уровневой диагностики и обновлений, а также файл-логгер для `DnsPulse.Service` (`%ProgramData%\DnsPulse\logs`) и кнопка **«Открыть папку логов»** в настройках.
+
 ## [2.0.2] - 2026-11-14
 
 ### Исправлено и улучшено

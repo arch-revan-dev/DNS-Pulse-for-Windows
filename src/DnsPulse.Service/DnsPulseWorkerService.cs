@@ -202,7 +202,7 @@ public sealed class DnsPulseWorkerService : BackgroundService
                 return CreateSuccessResponse(request.RequestId, GetStatus());
 
             case PipeCommandNames.Connect:
-                return await HandleConnectAsync(request.RequestId, cancellationToken).ConfigureAwait(false);
+                return await HandleConnectAsync(request.RequestId, request.PayloadJson, cancellationToken).ConfigureAwait(false);
 
             case PipeCommandNames.Disconnect:
                 ServiceStatusSnapshot disconnectedStatus = await _backend.DisconnectAsync(cancellationToken).ConfigureAwait(false);
@@ -250,10 +250,49 @@ public sealed class DnsPulseWorkerService : BackgroundService
         }
     }
 
+    private sealed record ServiceConnectRequest(
+        int? DnsPort = null,
+        int? DohPort = null,
+        int? ProxyPort = null,
+        int? PacPort = null);
+
     private async Task<PipeRpcResponse> HandleConnectAsync(
         string requestId,
+        string? payloadJson,
         CancellationToken cancellationToken)
     {
+        if (!string.IsNullOrWhiteSpace(payloadJson) && _backend is DefaultPulseRuntimeBackend concreteBackend)
+        {
+            try
+            {
+                ServiceConnectRequest? connectRequest = JsonSerializer.Deserialize<ServiceConnectRequest>(payloadJson, JsonOptions);
+                if (connectRequest is not null)
+                {
+                    ServiceStatusSnapshot current = _backend.GetStatus();
+                    concreteBackend.ConfigurePorts(
+                        connectRequest.DnsPort,
+                        connectRequest.DohPort,
+                        connectRequest.ProxyPort,
+                        connectRequest.PacPort);
+
+                    bool portsChangedWhileConnected = current.IsConnected &&
+                        ((connectRequest.DnsPort is > 0 && current.BoundDnsPort != connectRequest.DnsPort) ||
+                         (connectRequest.DohPort is > 0 && current.BoundDoHPort != connectRequest.DohPort) ||
+                         (connectRequest.ProxyPort is > 0 && current.BoundProxyPort != connectRequest.ProxyPort) ||
+                         (connectRequest.PacPort is > 0 && current.BoundPacPort != connectRequest.PacPort));
+
+                    if (portsChangedWhileConnected)
+                    {
+                        await _backend.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                // Ignore malformed optional payload and proceed with current service options.
+            }
+        }
+
         ServiceStatusSnapshot status = await _backend.ConnectAsync(cancellationToken).ConfigureAwait(false);
         lock (_statusGate)
         {

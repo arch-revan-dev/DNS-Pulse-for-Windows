@@ -44,7 +44,7 @@ public sealed class DefaultPulseRuntimeBackend : IPulseRuntimeBackend, IAsyncDis
             new EventId(1004, nameof(LogNonFatalTeardownError)),
             "Non-fatal error while tearing down interceptor or listener.");
 
-    private readonly PulseServiceOptions _options;
+    private PulseServiceOptions _options;
     private readonly PulseCoreDnsEngine _dnsEngine;
     private readonly OptimisticDnsCache? _cache;
     private readonly UpstreamPoolManager? _poolManager;
@@ -105,6 +105,25 @@ public sealed class DefaultPulseRuntimeBackend : IPulseRuntimeBackend, IAsyncDis
     {
         string? normalized = string.IsNullOrWhiteSpace(upstreamId) ? null : upstreamId.Trim();
         Volatile.Write(ref _activeGeoUnlockUpstreamId, normalized);
+    }
+
+    /// <summary>
+    /// Updates preferred local listener ports before connecting (or reconnects cleanly when called while active).
+    /// </summary>
+    public void ConfigurePorts(int? dnsPort, int? dohPort, int? proxyPort, int? pacPort)
+    {
+        int nextDns = dnsPort is >= 0 and <= 65535 ? dnsPort.Value : _options.DnsPort;
+        int nextDoh = dohPort is >= 0 and <= 65535 ? dohPort.Value : _options.DohPort;
+        int nextProxy = proxyPort is >= 0 and <= 65535 ? proxyPort.Value : _options.ProxyPort;
+        int nextPac = pacPort is >= 0 and <= 65535 ? pacPort.Value : _options.PacPort;
+
+        _options = _options with
+        {
+            DnsPort = nextDns,
+            DohPort = nextDoh,
+            ProxyPort = nextProxy,
+            PacPort = nextPac
+        };
     }
 
     public ServiceStatusSnapshot GetStatus()
@@ -199,7 +218,8 @@ public sealed class DefaultPulseRuntimeBackend : IPulseRuntimeBackend, IAsyncDis
                     await pacServer.StartAsync(cancellationToken).ConfigureAwait(false);
                 }
 
-                if (_dnsInterceptor is not null)
+                if (_dnsInterceptor is not null &&
+                    (_dnsInterceptor.Mode == InterceptionMode.LocalProxyPacOnly || dnsServer.BoundPort == 53))
                 {
                     await _dnsInterceptor.ActivateAsync(
                         _options.PreferredLoopbackAddress,

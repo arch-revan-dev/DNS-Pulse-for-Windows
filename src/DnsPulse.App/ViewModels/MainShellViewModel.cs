@@ -220,6 +220,7 @@ public sealed partial class MainShellViewModel : ObservableObject
         Settings.LoadFromSettings(loadedSettings);
         ApplyLoadedBannerFlags(loadedSettings);
         Overview.LoadPersistedQuickService(loadedSettings);
+        await _runtimeService.UpdateEngineOptionsAsync(loadedSettings, cancellationToken).ConfigureAwait(false);
 
         bool skipDirtyRestore = cliOptions is not null && (cliOptions.ApplyTunnel || !string.IsNullOrWhiteSpace(cliOptions.ConnectServerId));
         if (!skipDirtyRestore)
@@ -236,7 +237,7 @@ public sealed partial class MainShellViewModel : ObservableObject
 
         Overview.EnsureDefaultUpstreamsSelected(Servers.AllServers);
 
-        await Routing.PushRouterConfigurationAsync(cancellationToken).ConfigureAwait(false);
+        await Routing.LoadFromSettingsAsync(loadedSettings, cancellationToken).ConfigureAwait(false);
         await RefreshHostAdvisoriesAsync(cancellationToken).ConfigureAwait(false);
         await _runtimeService.RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
 
@@ -402,12 +403,19 @@ public sealed partial class MainShellViewModel : ObservableObject
             _dismissedVpnBanner,
             _dismissedAntiCheatBanner);
 
-        PulseAppSettings current = await _settingsStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        current.DismissedBrowserDohBanner = _dismissedBrowserDohBanner;
-        current.DismissedPort53Banner = _dismissedPort53Banner;
-        current.DismissedVpnBanner = _dismissedVpnBanner;
-        current.DismissedAntiCheatBanner = _dismissedAntiCheatBanner;
-        await _settingsStore.SaveAsync(current, cancellationToken).ConfigureAwait(false);
+        PulseAppSettings updated = await _settingsStore.UpdateAsync(current =>
+        {
+            current.DismissedBrowserDohBanner = _dismissedBrowserDohBanner;
+            current.DismissedPort53Banner = _dismissedPort53Banner;
+            current.DismissedVpnBanner = _dismissedVpnBanner;
+            current.DismissedAntiCheatBanner = _dismissedAntiCheatBanner;
+        }, cancellationToken).ConfigureAwait(false);
+
+        Settings.SyncPreservedBannerFlags(
+            updated.DismissedBrowserDohBanner,
+            updated.DismissedPort53Banner,
+            updated.DismissedVpnBanner,
+            updated.DismissedAntiCheatBanner);
     }
 
     private void NotifyDismissedBannerCountChanged()
@@ -484,12 +492,36 @@ public sealed partial class MainShellViewModel : ObservableObject
             persistQuickServiceHandler: async (serviceId, domain, ct) =>
             {
                 Settings.SyncPreservedQuickService(serviceId, domain);
-                PulseAppSettings current = await _settingsStore.LoadAsync(ct).ConfigureAwait(false);
-                current.SelectedQuickServiceId = serviceId;
-                current.LastVerifiedTargetDomain = domain;
-                await _settingsStore.SaveAsync(current, ct).ConfigureAwait(false);
+                await _settingsStore.UpdateAsync(current =>
+                {
+                    current.SelectedQuickServiceId = serviceId;
+                    current.LastVerifiedTargetDomain = domain;
+                }, ct).ConfigureAwait(false);
             },
-            catalogEntryUpdatedHandler: Servers.ApplyProbedServerUpdate);
+            catalogEntryUpdatedHandler: Servers.ApplyProbedServerUpdate,
+            persistSelectionHandler: async (strategyProfile, trustedId, geoId, ct) =>
+            {
+                string profileName = strategyProfile.ToString();
+                Settings.SyncPreservedOverviewSelections(profileName, trustedId, geoId);
+                await _settingsStore.UpdateAsync(current =>
+                {
+                    current.StrategyProfile = profileName;
+                    current.SelectedTrustedUpstreamId = trustedId;
+                    current.SelectedGeoUnlockUpstreamId = geoId;
+                }, ct).ConfigureAwait(false);
+            });
+
+        Routing.ConfigurePersistenceHandler(async (enabledPresetIds, customGeo, customBlock, customAllow, ct) =>
+        {
+            Settings.SyncPreservedRoutingRules(enabledPresetIds, customGeo, customBlock, customAllow);
+            await _settingsStore.UpdateAsync(current =>
+            {
+                current.EnabledRoutingPresetIds = [.. enabledPresetIds];
+                current.CustomGeoUnlockDomains = [.. customGeo];
+                current.CustomBlockRules = [.. customBlock];
+                current.CustomAllowRules = [.. customAllow];
+            }, ct).ConfigureAwait(false);
+        });
 
         Overview.StrategyProfileApplied += async (_, e) =>
         {

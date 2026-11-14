@@ -263,6 +263,13 @@
   <data name="Settings_Bootstrap_Auto" xml:space="preserve"><value>Automatic</value></data>
   <data name="Settings_ProbeTimeoutMs" xml:space="preserve"><value>Check Timeout (ms)</value></data>
   <data name="Settings_BenchmarkConcurrency" xml:space="preserve"><value>Parallel Checks</value></data>
+  <data name="Settings_Ports_Title" xml:space="preserve"><value>Local Listener Ports (0 = Auto)</value></data>
+  <data name="Settings_Port_Dns" xml:space="preserve"><value>DNS Port (53 = system, or custom)</value></data>
+  <data name="Settings_Port_Doh" xml:space="preserve"><value>DoH Port (0 = auto)</value></data>
+  <data name="Settings_Port_Proxy" xml:space="preserve"><value>Proxy Port (0 = auto)</value></data>
+  <data name="Settings_Port_Pac" xml:space="preserve"><value>PAC Port (0 = auto)</value></data>
+  <data name="Settings_OpenLogsFolder" xml:space="preserve"><value>Open Logs Folder</value></data>
+  <data name="Settings_LogsPathLabel" xml:space="preserve"><value>Diagnostic logs folder:</value></data>
   <data name="Settings_GitHubTokenPlaceholder" xml:space="preserve"><value>GitHub Token (optional)</value></data>
   <data name="Settings_AntiCheat_StatusOk" xml:space="preserve"><value>No conflicting game anti-cheat detected.</value></data>
   <data name="Settings_AntiCheat_Detected" xml:space="preserve"><value>Active anti-cheat detected: {0}. Packet driver capture is disabled for safety.</value></data>

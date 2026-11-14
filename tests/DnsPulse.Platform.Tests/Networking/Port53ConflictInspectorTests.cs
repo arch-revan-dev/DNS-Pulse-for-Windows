@@ -40,4 +40,34 @@ public sealed class Port53ConflictInspectorTests
         occupantName.Should().BeNull();
         processId.Should().BeNull();
     }
+
+    [Theory]
+    [InlineData("DnsPulse", true)]
+    [InlineData("DnsPulse.exe", true)]
+    [InlineData("DnsPulse.Service", true)]
+    [InlineData("DnsPulse.Service.exe", true)]
+    [InlineData("DnsPulse.App", true)]
+    [InlineData("DnsPulse-2.0.3-win-x64.exe", true)]
+    [InlineData("ag_dns", false)]
+    [InlineData("dnscrypt-proxy.exe", false)]
+    [InlineData("testhost", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void IsSelfProcessName_MatchesOnlyDnsPulseProcesses(string? processName, bool expected)
+    {
+        Port53ConflictInspector.IsSelfProcessName(processName).Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task HostNetworkHealthProvider_SkipsPort53Check_WhenDesiredDnsPortIsAuto()
+    {
+        HostNetworkHealthProvider provider = new(
+            enableOsProbes: true,
+            desiredDnsPortProvider: static () => 0);
+
+        var snapshot = await provider.InspectAsync();
+
+        snapshot.Port53OccupantName.Should().BeNull();
+        snapshot.Port53OccupantProcessId.Should().BeNull();
+    }
 }

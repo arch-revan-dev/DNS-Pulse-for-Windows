@@ -17,6 +17,7 @@ using DnsPulse.Engine.Pipeline;
 using DnsPulse.Platform.Windows.Autostart;
 using DnsPulse.Platform.Windows.Contracts;
 using DnsPulse.Platform.Windows.Networking;
+using Serilog;
 
 namespace DnsPulse.App.ViewModels;
 
@@ -115,8 +116,12 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
     private Func<string, string?, CancellationToken, Task>? _ensureRoutingPresetHandler;
     private Func<CancellationToken, Task>? _fixBrowserDohHandler;
     private Func<string, string, CancellationToken, Task>? _persistQuickServiceHandler;
+    private Func<StrategyProfileKind, string?, string?, CancellationToken, Task>? _persistSelectionHandler;
     private Action<DnsServerEntry>? _catalogEntryUpdatedHandler;
+    private string? _preferredTrustedUpstreamId;
+    private string? _preferredGeoUnlockUpstreamId;
     private bool _suppressQuickServicePersistence;
+    private bool _suppressSelectionPersistence;
     private bool _disposed;
 
     [ObservableProperty]
@@ -324,12 +329,14 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
         Func<string, string?, CancellationToken, Task>? ensureRoutingPresetHandler = null,
         Func<CancellationToken, Task>? fixBrowserDohHandler = null,
         Func<string, string, CancellationToken, Task>? persistQuickServiceHandler = null,
-        Action<DnsServerEntry>? catalogEntryUpdatedHandler = null)
+        Action<DnsServerEntry>? catalogEntryUpdatedHandler = null,
+        Func<StrategyProfileKind, string?, string?, CancellationToken, Task>? persistSelectionHandler = null)
     {
         _ensureRoutingPresetHandler = ensureRoutingPresetHandler;
         _fixBrowserDohHandler = fixBrowserDohHandler;
         _persistQuickServiceHandler = persistQuickServiceHandler;
         _catalogEntryUpdatedHandler = catalogEntryUpdatedHandler;
+        _persistSelectionHandler = persistSelectionHandler;
     }
 
     public void LoadPersistedQuickService(PulseAppSettings settings)
@@ -337,6 +344,7 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
         ArgumentNullException.ThrowIfNull(settings);
 
         _suppressQuickServicePersistence = true;
+        _suppressSelectionPersistence = true;
         try
         {
             if (!string.IsNullOrWhiteSpace(settings.LastVerifiedTargetDomain))
@@ -347,9 +355,20 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
             QuickServiceOption? match = _quickServices.FirstOrDefault(q =>
                 string.Equals(q.Id, settings.SelectedQuickServiceId, StringComparison.OrdinalIgnoreCase));
             SelectedQuickService = match ?? _quickServices[0];
+
+            if (Enum.TryParse(settings.StrategyProfile, ignoreCase: true, out StrategyProfileKind parsedProfile))
+            {
+                SelectedStrategyProfile = parsedProfile;
+                HasActiveSmartBypassRules = parsedProfile != StrategyProfileKind.EncryptedDnsOnly;
+                UpdateHeroState();
+            }
+
+            _preferredTrustedUpstreamId = settings.SelectedTrustedUpstreamId;
+            _preferredGeoUnlockUpstreamId = settings.SelectedGeoUnlockUpstreamId;
         }
         finally
         {
+            _suppressSelectionPersistence = false;
             _suppressQuickServicePersistence = false;
         }
     }
@@ -802,66 +821,89 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
         HasActiveSmartBypassRules = profile != StrategyProfileKind.EncryptedDnsOnly;
         UpdateHeroState();
         StrategyProfileApplied?.Invoke(this, new StrategyProfileAppliedEventArgs(profile));
+        _ = PersistSelectionStateAsync(CancellationToken.None);
     }
 
     public void EnsureDefaultUpstreamsSelected(IReadOnlyList<DnsServerEntry> catalog)
     {
         ArgumentNullException.ThrowIfNull(catalog);
 
-        if (SelectedTrustedUpstream is null ||
-            !TrustTierPolicy.CanServeDefaultInternet(SelectedTrustedUpstream.TrustTier, SelectedTrustedUpstream.Protocol))
+        _suppressSelectionPersistence = true;
+        try
         {
-            SelectedTrustedUpstream = catalog
-                .Where(static s => TrustTierPolicy.CanServeDefaultInternet(s.TrustTier, s.Protocol))
-                .OrderBy(static s => s.Verdict switch
-                {
-                    DiagnosticVerdict.Healthy => 0,
-                    DiagnosticVerdict.TlsSniDpiReset => 1,
-                    DiagnosticVerdict.Unknown => 2,
-                    _ => 3
-                })
-                .ThenBy(static s => s.IsFavorite ? 0 : 1)
-                .ThenBy(static s => s.IsEncrypted ? 0 : 1)
-                .ThenBy(static s => s.LatencyP50Ms ?? s.LastLatencyMs ?? double.MaxValue)
-                .FirstOrDefault();
+            if (SelectedTrustedUpstream is null ||
+                !TrustTierPolicy.CanServeDefaultInternet(SelectedTrustedUpstream.TrustTier, SelectedTrustedUpstream.Protocol))
+            {
+                DnsServerEntry? preferredTrusted = !string.IsNullOrWhiteSpace(_preferredTrustedUpstreamId)
+                    ? catalog.FirstOrDefault(s =>
+                        string.Equals(s.Id, _preferredTrustedUpstreamId, StringComparison.OrdinalIgnoreCase) &&
+                        TrustTierPolicy.CanServeDefaultInternet(s.TrustTier, s.Protocol))
+                    : null;
 
-            OnPropertyChanged(nameof(TrustedUpstreamName));
-            OnPropertyChanged(nameof(TrustedUpstreamBadge));
+                SelectedTrustedUpstream = preferredTrusted ?? catalog
+                    .Where(static s => TrustTierPolicy.CanServeDefaultInternet(s.TrustTier, s.Protocol))
+                    .OrderBy(static s => s.Verdict switch
+                    {
+                        DiagnosticVerdict.Healthy => 0,
+                        DiagnosticVerdict.TlsSniDpiReset => 1,
+                        DiagnosticVerdict.Unknown => 2,
+                        _ => 3
+                    })
+                    .ThenBy(static s => s.IsFavorite ? 0 : 1)
+                    .ThenBy(static s => s.IsEncrypted ? 0 : 1)
+                    .ThenBy(static s => s.LatencyP50Ms ?? s.LastLatencyMs ?? double.MaxValue)
+                    .FirstOrDefault();
+
+                OnPropertyChanged(nameof(TrustedUpstreamName));
+                OnPropertyChanged(nameof(TrustedUpstreamBadge));
+            }
+
+            string targetDomain = EffectiveTargetDomain;
+            bool aiTarget = ServerCategoryClassifier.IsAiDomain(targetDomain);
+
+            bool currentGeoValid = SelectedGeoUnlockUpstream is not null
+                && TrustTierPolicy.CanServeGeoUnlock(SelectedGeoUnlockUpstream.TrustTier)
+                && SelectedGeoUnlockUpstream.Protocol != DnsProtocol.SniProxy
+                && (!aiTarget || ServerCategoryClassifier.SupportsAiDomain(SelectedGeoUnlockUpstream));
+
+            if (!currentGeoValid)
+            {
+                DnsServerEntry? preferredGeo = !string.IsNullOrWhiteSpace(_preferredGeoUnlockUpstreamId)
+                    ? catalog.FirstOrDefault(s =>
+                        string.Equals(s.Id, _preferredGeoUnlockUpstreamId, StringComparison.OrdinalIgnoreCase) &&
+                        TrustTierPolicy.CanServeGeoUnlock(s.TrustTier) &&
+                        s.Protocol != DnsProtocol.SniProxy &&
+                        (!aiTarget || ServerCategoryClassifier.SupportsAiDomain(s)))
+                    : null;
+
+                SelectedGeoUnlockUpstream = preferredGeo ?? catalog
+                    .Where(s => TrustTierPolicy.CanServeGeoUnlock(s.TrustTier)
+                        && s.Protocol != DnsProtocol.SniProxy
+                        && (!aiTarget || ServerCategoryClassifier.SupportsAiDomain(s)))
+                    .OrderBy(static s => s.Verdict switch
+                    {
+                        DiagnosticVerdict.Healthy => 0,
+                        DiagnosticVerdict.TlsSniDpiReset => 1,
+                        DiagnosticVerdict.Unknown => 2,
+                        _ => 3
+                    })
+                    .ThenBy(static s => s.CompanionPassed == true ? 0 : 1)
+                    .ThenBy(static s => s.IsEncrypted ? 0 : 1)
+                    .ThenBy(s => ServerCategoryClassifier.HasExplicitAiTag(s) ? 0 : 1)
+                    .ThenBy(static s => s.IsFavorite ? 0 : 1)
+                    .ThenBy(static s => s.LatencyP50Ms ?? s.LastLatencyMs ?? double.MaxValue)
+                    .FirstOrDefault()
+                    ?? catalog.FirstOrDefault(static s =>
+                        TrustTierPolicy.CanServeGeoUnlock(s.TrustTier)
+                        && s.Protocol != DnsProtocol.SniProxy
+                        && !ServerCategoryClassifier.IsGamingOnlyGeoServer(s));
+
+                OnPropertyChanged(nameof(ActiveGeoUnlockName));
+            }
         }
-
-        string targetDomain = EffectiveTargetDomain;
-        bool aiTarget = ServerCategoryClassifier.IsAiDomain(targetDomain);
-
-        bool currentGeoValid = SelectedGeoUnlockUpstream is not null
-            && TrustTierPolicy.CanServeGeoUnlock(SelectedGeoUnlockUpstream.TrustTier)
-            && SelectedGeoUnlockUpstream.Protocol != DnsProtocol.SniProxy
-            && (!aiTarget || ServerCategoryClassifier.SupportsAiDomain(SelectedGeoUnlockUpstream));
-
-        if (!currentGeoValid)
+        finally
         {
-            SelectedGeoUnlockUpstream = catalog
-                .Where(s => TrustTierPolicy.CanServeGeoUnlock(s.TrustTier)
-                    && s.Protocol != DnsProtocol.SniProxy
-                    && (!aiTarget || ServerCategoryClassifier.SupportsAiDomain(s)))
-                .OrderBy(static s => s.Verdict switch
-                {
-                    DiagnosticVerdict.Healthy => 0,
-                    DiagnosticVerdict.TlsSniDpiReset => 1,
-                    DiagnosticVerdict.Unknown => 2,
-                    _ => 3
-                })
-                .ThenBy(static s => s.CompanionPassed == true ? 0 : 1)
-                .ThenBy(static s => s.IsEncrypted ? 0 : 1)
-                .ThenBy(s => ServerCategoryClassifier.HasExplicitAiTag(s) ? 0 : 1)
-                .ThenBy(static s => s.IsFavorite ? 0 : 1)
-                .ThenBy(static s => s.LatencyP50Ms ?? s.LastLatencyMs ?? double.MaxValue)
-                .FirstOrDefault()
-                ?? catalog.FirstOrDefault(static s =>
-                    TrustTierPolicy.CanServeGeoUnlock(s.TrustTier)
-                    && s.Protocol != DnsProtocol.SniProxy
-                    && !ServerCategoryClassifier.IsGamingOnlyGeoServer(s));
-
-            OnPropertyChanged(nameof(ActiveGeoUnlockName));
+            _suppressSelectionPersistence = false;
         }
     }
 
@@ -940,11 +982,52 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
     {
         OnPropertyChanged(nameof(TrustedUpstreamName));
         OnPropertyChanged(nameof(TrustedUpstreamBadge));
+        if (!_suppressSelectionPersistence && value is not null)
+        {
+            _preferredTrustedUpstreamId = value.Id;
+            _ = PersistSelectionStateAsync(CancellationToken.None);
+        }
     }
 
     partial void OnSelectedGeoUnlockUpstreamChanged(DnsServerEntry? value)
     {
         OnPropertyChanged(nameof(ActiveGeoUnlockName));
+        if (!_suppressSelectionPersistence && value is not null)
+        {
+            _preferredGeoUnlockUpstreamId = value.Id;
+            _ = PersistSelectionStateAsync(CancellationToken.None);
+        }
+    }
+
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Selection persistence runs fire-and-forget from property change hooks and must remain non-fatal.")]
+    private async Task PersistSelectionStateAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (_persistSelectionHandler is not null)
+            {
+                await _persistSelectionHandler(
+                    SelectedStrategyProfile,
+                    SelectedTrustedUpstream?.Id,
+                    SelectedGeoUnlockUpstream?.Id,
+                    cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            if (_settingsStore is not null)
+            {
+                await _settingsStore.UpdateAsync(settings =>
+                {
+                    settings.StrategyProfile = SelectedStrategyProfile.ToString();
+                    settings.SelectedTrustedUpstreamId = SelectedTrustedUpstream?.Id;
+                    settings.SelectedGeoUnlockUpstreamId = SelectedGeoUnlockUpstream?.Id;
+                }, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to persist overview upstream/strategy selections.");
+        }
     }
 
     partial void OnSelectedStrategyProfileChanged(StrategyProfileKind value)
@@ -1141,6 +1224,16 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
 
         AutoSetupStepMessage = VerificationHeadline;
         UpdateHeroState();
+
+        Log.Information(
+            "Target verification completed: Target={Target}, Upstream={UpstreamId}, Connected={IsConnected}, Mode={Mode}, Working={Working}, Verdict={Verdict}, Reason={Reason}",
+            targetDomain,
+            upstreamToVerify?.Id ?? "none",
+            IsConnected,
+            ActiveInterceptionMode,
+            targetWorking,
+            report.Verdict,
+            report.Reason ?? string.Empty);
     }
 
     private async Task PersistQuickServiceChoiceAsync(string targetDomain, CancellationToken cancellationToken)
@@ -1154,10 +1247,11 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
 
         if (_settingsStore is not null)
         {
-            PulseAppSettings settings = await _settingsStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-            settings.SelectedQuickServiceId = serviceId;
-            settings.LastVerifiedTargetDomain = targetDomain;
-            await _settingsStore.SaveAsync(settings, cancellationToken).ConfigureAwait(false);
+            await _settingsStore.UpdateAsync(settings =>
+            {
+                settings.SelectedQuickServiceId = serviceId;
+                settings.LastVerifiedTargetDomain = targetDomain;
+            }, cancellationToken).ConfigureAwait(false);
         }
     }
 

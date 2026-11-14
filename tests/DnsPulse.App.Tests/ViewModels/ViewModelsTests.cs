@@ -17,6 +17,8 @@ using DnsPulse.Engine.Diagnostics;
 using DnsPulse.Engine.Pipeline;
 using DnsPulse.Platform.Windows.Autostart;
 using DnsPulse.Platform.Windows.Contracts;
+using DnsPulse.Platform.Windows.Ipc;
+using DnsPulse.Platform.Windows.Networking;
 using DnsPulse.Platform.Windows.Recovery;
 using DnsPulse.Platform.Windows.Updates;
 using FluentAssertions;
@@ -810,6 +812,143 @@ public sealed class ViewModelsTests : IDisposable
 
         vm.SelectedCategoryFilter = null;
         vm.FilteredServers.Should().HaveCount(vm.AllCount);
+    }
+
+    [Fact]
+    public async Task MainShellViewModel_AutoSavesAndRestoresSettingsPortsStrategyAndRoutingAcrossRestart()
+    {
+        AppSettingsStore store = new(_tempDir, _tempDir);
+
+        // Session 1: change UI settings, ports, strategy profile, and routing without clicking Save.
+        IPulseRuntimeService runtime1 = CreateMockRuntime();
+        LocalizationService loc1 = new();
+        using PulseCatalogRepository repo1 = new(_dbPath);
+        ThemeAppearanceService theme1 = new(static () => false, static () => 22631);
+        NetworkSnapshotJournal journal1 = new(_tempDir);
+        WindowsAutostartService autostart1 = new(@"SOFTWARE\DnsPulseTests_NonExistentRun", "DnsPulseTest");
+
+        using OverviewViewModel overview1 = new(runtime1, loc1);
+        RoutingInspectorViewModel routing1 = new(runtime1, loc1);
+        using ServersCatalogViewModel servers1 = new(repo1, runtime1, loc1);
+        using DiagnosticsDoctorViewModel diagnostics1 = new(runtime1, repo1, loc1);
+        SettingsSafetyViewModel settings1 = new(store, autostart1, runtime1, loc1, theme1, journal1, static () => (false, []));
+
+        MainShellViewModel shell1 = new(
+            loc1, runtime1, repo1, store, theme1, overview1, routing1, servers1, diagnostics1, settings1, journal1,
+            antiCheatDetector: static () => (false, []));
+
+        await shell1.InitializeAsync();
+
+        settings1.SelectedLanguageCode = "ru-RU";
+        settings1.IsDarkTheme = false;
+        settings1.SelectedAccentPreset = "Azure";
+        settings1.LocalDnsPort = 5353;
+        settings1.LocalDohPort = 8443;
+        settings1.LocalProxyPort = 10888;
+        settings1.LocalPacPort = 10889;
+        await settings1.FlushPendingAutoSaveAsync();
+
+        overview1.SelectStrategyProfile(StrategyProfileKind.AntiDpiHybrid);
+        await Task.Delay(50);
+
+        await routing1.EnablePresetByIdAsync("youtube");
+        await routing1.AddCustomGeoUnlockDomainAsync("custom-ai.example");
+
+        // Session 2: fresh ViewModels initialized from disk should restore all user changes.
+        IPulseRuntimeService runtime2 = CreateMockRuntime();
+        LocalizationService loc2 = new();
+        using PulseCatalogRepository repo2 = new(_dbPath);
+        ThemeAppearanceService theme2 = new(static () => false, static () => 22631);
+        NetworkSnapshotJournal journal2 = new(_tempDir);
+        WindowsAutostartService autostart2 = new(@"SOFTWARE\DnsPulseTests_NonExistentRun", "DnsPulseTest");
+
+        using OverviewViewModel overview2 = new(runtime2, loc2);
+        RoutingInspectorViewModel routing2 = new(runtime2, loc2);
+        using ServersCatalogViewModel servers2 = new(repo2, runtime2, loc2);
+        using DiagnosticsDoctorViewModel diagnostics2 = new(runtime2, repo2, loc2);
+        SettingsSafetyViewModel settings2 = new(store, autostart2, runtime2, loc2, theme2, journal2, static () => (false, []));
+
+        MainShellViewModel shell2 = new(
+            loc2, runtime2, repo2, store, theme2, overview2, routing2, servers2, diagnostics2, settings2, journal2,
+            antiCheatDetector: static () => (false, []));
+
+        await shell2.InitializeAsync();
+
+        settings2.SelectedLanguageCode.Should().Be("ru-RU");
+        loc2.CurrentCulture.Name.Should().Be("ru-RU");
+        settings2.IsDarkTheme.Should().BeFalse();
+        settings2.SelectedAccentPreset.Should().Be("Azure");
+        settings2.LocalDnsPort.Should().Be(5353);
+        settings2.LocalDohPort.Should().Be(8443);
+        settings2.LocalProxyPort.Should().Be(10888);
+        settings2.LocalPacPort.Should().Be(10889);
+        overview2.SelectedStrategyProfile.Should().Be(StrategyProfileKind.AntiDpiHybrid);
+        routing2.ServicePresets.Single(static p => p.Id == "youtube").IsEnabled.Should().BeTrue();
+        routing2.CustomGeoUnlockDomains.Should().Contain("custom-ai.example");
+    }
+
+    [Fact]
+    public async Task HybridPulseRuntimeService_BindsConfiguredCustomPorts_AndNormalizesBounds()
+    {
+        PulseAppSettings outOfRange = new()
+        {
+            LocalDnsPort = -5,
+            LocalDohPort = 70000,
+            LocalProxyPort = 10808,
+            LocalPacPort = 0
+        };
+        AppSettingsStore.Normalize(outOfRange);
+        outOfRange.LocalDnsPort.Should().Be(0);
+        outOfRange.LocalDohPort.Should().Be(65535);
+        outOfRange.LocalProxyPort.Should().Be(10808);
+        outOfRange.LocalPacPort.Should().Be(0);
+
+        int dnsPort = FindAvailableDualPort();
+        int dohPort = FindAvailableTcpPort();
+        int proxyPort = FindAvailableTcpPort();
+        int pacPort = FindAvailableTcpPort();
+
+        NetworkSnapshotJournal journal = new(_tempDir);
+        HostNetworkHealthProvider health = new(enableOsProbes: false);
+        PulsePipeIpcClient unavailableIpc = new(string.Concat("DnsPulse_TestUnavailable_", Guid.NewGuid().ToString("N")), TimeSpan.FromMilliseconds(50));
+        await using HybridPulseRuntimeService runtime = new(unavailableIpc, journal, health);
+
+        PulseAppSettings customSettings = new()
+        {
+            InterceptionMode = InterceptionMode.LocalProxyPacOnly,
+            LocalDnsPort = dnsPort,
+            LocalDohPort = dohPort,
+            LocalProxyPort = proxyPort,
+            LocalPacPort = pacPort
+        };
+
+        ServiceStatusSnapshot connected = await runtime.ConnectAsync(null, null, null, customSettings);
+        try
+        {
+            connected.IsConnected.Should().BeTrue();
+            connected.BoundDnsPort.Should().Be(dnsPort);
+            connected.BoundDoHPort.Should().Be(dohPort);
+            connected.BoundProxyPort.Should().Be(proxyPort);
+            connected.BoundPacPort.Should().Be(pacPort);
+        }
+        finally
+        {
+            await runtime.DisconnectAsync();
+        }
+    }
+
+    private static int FindAvailableDualPort()
+    {
+        using System.Net.Sockets.Socket udp = new(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Dgram, System.Net.Sockets.ProtocolType.Udp);
+        udp.Bind(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 0));
+        return ((System.Net.IPEndPoint)udp.LocalEndPoint!).Port;
+    }
+
+    private static int FindAvailableTcpPort()
+    {
+        using System.Net.Sockets.Socket tcp = new(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+        tcp.Bind(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 0));
+        return ((System.Net.IPEndPoint)tcp.LocalEndPoint!).Port;
     }
 
     private static IPulseRuntimeService CreateMockRuntime()

@@ -75,7 +75,9 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
     {
         _ipcClient = ipcClient ?? new PulsePipeIpcClient(PipeSecurityBuilder.DefaultPipeName, IpcProbeTimeout);
         _journal = journal ?? new NetworkSnapshotJournal();
-        _hostHealthProvider = hostHealthProvider ?? new HostNetworkHealthProvider(enableOsProbes: true);
+        _hostHealthProvider = hostHealthProvider ?? new HostNetworkHealthProvider(
+            enableOsProbes: true,
+            desiredDnsPortProvider: () => _lastSettings.LocalDnsPort);
         _portSelector = new LoopbackPortSelector();
         _router = new SplitNamespaceRouter();
         _cache = new OptimisticDnsCache();
@@ -150,7 +152,22 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
             ProbeCompanionDomains = true
         };
 
-        return await engine.DiagnoseAsync(targetDomain.Trim(), upstream, effectiveOptions, cancellationToken).ConfigureAwait(false);
+        DiagnosticReport report = await engine.DiagnoseAsync(targetDomain.Trim(), upstream, effectiveOptions, cancellationToken).ConfigureAwait(false);
+        string layerIssues = string.Join("; ", report.Layers
+            .Where(static l => l.Status is DiagnosticLayerStatus.Warning or DiagnosticLayerStatus.Failed)
+            .Select(static l => $"L{l.LayerNumber}:{l.Status}({l.Summary})"));
+        Log.Information(
+            "QuickProbe finished: Upstream={UpstreamId} ({Protocol}), Verdict={Verdict}, P50={LatencyMs}ms, TlsOk={TlsOk}, Http={HttpStatus}, Companion={Companion}, Issues=[{Issues}]",
+            upstream.Id,
+            upstream.Protocol,
+            report.Verdict,
+            report.LatencyP50Ms?.ToString("F1", CultureInfo.InvariantCulture) ?? "n/a",
+            report.TlsHandshakeSucceeded,
+            report.HttpStatusCode?.ToString(CultureInfo.InvariantCulture) ?? "n/a",
+            report.CompanionPassed?.ToString() ?? "n/a",
+            layerIssues);
+
+        return report;
     }
 
     public async Task<ServiceStatusSnapshot> RefreshStatusAsync(CancellationToken cancellationToken = default)
@@ -192,15 +209,41 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
 
             ConfigureEngineUpstreams(trustedUpstream, geoUnlockUpstream, fallbackTrustedPool, effectiveSettings);
 
+            Log.Information(
+                "Connect requested (Trusted={TrustedId}, GeoUnlock={GeoId}, Mode={Mode}, RequestedPorts=[DNS:{DnsPort}, DoH:{DohPort}, Proxy:{ProxyPort}, PAC:{PacPort}], Elevated={Elevated})",
+                _activeTrustedUpstream?.Id ?? "none",
+                _activeGeoUnlockUpstream?.Id ?? "none",
+                effectiveSettings.InterceptionMode,
+                effectiveSettings.LocalDnsPort,
+                effectiveSettings.LocalDohPort,
+                effectiveSettings.LocalProxyPort,
+                effectiveSettings.LocalPacPort,
+                IsElevated);
+
+            object connectPayload = new
+            {
+                dnsPort = effectiveSettings.LocalDnsPort,
+                dohPort = effectiveSettings.LocalDohPort,
+                proxyPort = effectiveSettings.LocalProxyPort,
+                pacPort = effectiveSettings.LocalPacPort
+            };
+
             ServiceStatusSnapshot? ipcStatus = await TrySendIpcAsync<ServiceStatusSnapshot>(
                 PipeCommandNames.Connect,
-                payload: null,
+                payload: connectPayload,
                 cancellationToken).ConfigureAwait(false);
 
             if (ipcStatus is not null)
             {
                 _isServiceMode = true;
                 UpdateSnapshot(ipcStatus);
+                Log.Information(
+                    "Connected via DnsPulseService IPC (Mode={Mode}, DNS:{DnsPort}, DoH:{DohPort}, Proxy:{ProxyPort}, PAC:{PacPort})",
+                    ipcStatus.ActiveMode,
+                    ipcStatus.BoundDnsPort,
+                    ipcStatus.BoundDoHPort,
+                    ipcStatus.BoundProxyPort,
+                    ipcStatus.BoundPacPort);
                 return ipcStatus;
             }
 
@@ -379,7 +422,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         return Task.CompletedTask;
     }
 
-    public Task UpdateEngineOptionsAsync(
+    public async Task UpdateEngineOptionsAsync(
         PulseAppSettings settings,
         CancellationToken cancellationToken = default)
     {
@@ -387,9 +430,35 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         ObjectDisposedException.ThrowIf(_disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
 
+        PulseAppSettings previousSettings = _lastSettings;
         _lastSettings = settings.Clone();
         ConfigureEngineUpstreams(_activeTrustedUpstream, _activeGeoUnlockUpstream, fallbackPool: null, settings);
-        return Task.CompletedTask;
+
+        bool listenersActive = _currentStatus.IsConnected &&
+            (previousSettings.LocalDnsPort != settings.LocalDnsPort ||
+             previousSettings.LocalDohPort != settings.LocalDohPort ||
+             previousSettings.LocalProxyPort != settings.LocalProxyPort ||
+             previousSettings.LocalPacPort != settings.LocalPacPort ||
+             previousSettings.InterceptionMode != settings.InterceptionMode);
+
+        if (listenersActive)
+        {
+            Log.Information(
+                "Port or interception settings changed while connected (Ports [{OldDns},{OldDoh},{OldProxy},{OldPac}] -> [{NewDns},{NewDoh},{NewProxy},{NewPac}], Mode {OldMode} -> {NewMode}); reconnecting.",
+                previousSettings.LocalDnsPort,
+                previousSettings.LocalDohPort,
+                previousSettings.LocalProxyPort,
+                previousSettings.LocalPacPort,
+                settings.LocalDnsPort,
+                settings.LocalDohPort,
+                settings.LocalProxyPort,
+                settings.LocalPacPort,
+                previousSettings.InterceptionMode,
+                settings.InterceptionMode);
+
+            await DisconnectAsync(cancellationToken).ConfigureAwait(false);
+            await ConnectAsync(_activeTrustedUpstream, _activeGeoUnlockUpstream, null, settings, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     public Task<HostNetworkHealthSnapshot> InspectHostHealthAsync(CancellationToken cancellationToken = default)
@@ -543,24 +612,51 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         IDnsInterceptor? interceptor = null;
 
         bool elevated = IsElevated;
-        bool wantsSystemDns = elevated && settings.InterceptionMode is InterceptionMode.AdapterDns or InterceptionMode.SplitNrpt or InterceptionMode.WfpDivertPlugin;
+        bool wantsSystemDns = elevated
+            && settings.LocalDnsPort == 53
+            && settings.InterceptionMode is InterceptionMode.AdapterDns or InterceptionMode.SplitNrpt or InterceptionMode.WfpDivertPlugin;
 
         try
         {
             IPAddress loopbackIp = IPAddress.Loopback;
             int desiredDnsPort = 0;
 
-            if (wantsSystemDns)
+            if (settings.LocalDnsPort == 0)
             {
+                desiredDnsPort = 0;
+            }
+            else if (settings.LocalDnsPort == 53)
+            {
+                if (wantsSystemDns)
+                {
+                    try
+                    {
+                        loopbackIp = _portSelector.SelectAvailableDnsEndpoint(53);
+                        desiredDnsPort = 53;
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        Log.Warning(ex, "Loopback port 53 is unavailable; falling back to auto ephemeral port and LocalProxyPacOnly.");
+                        loopbackIp = IPAddress.Loopback;
+                        desiredDnsPort = 0;
+                    }
+                }
+                else
+                {
+                    Log.Information("Using auto ephemeral DNS port because mode={Mode}, elevated={Elevated}.", settings.InterceptionMode, elevated);
+                    desiredDnsPort = 0;
+                }
+            }
+            else
+            {
+                desiredDnsPort = settings.LocalDnsPort;
                 try
                 {
-                    loopbackIp = _portSelector.SelectAvailableDnsEndpoint(53);
-                    desiredDnsPort = 53;
+                    loopbackIp = _portSelector.SelectAvailableDnsEndpoint(desiredDnsPort);
                 }
-                catch (InvalidOperationException)
+                catch (InvalidOperationException ex)
                 {
-                    loopbackIp = IPAddress.Loopback;
-                    desiredDnsPort = 0;
+                    Log.Warning(ex, "Configured custom DNS port {DnsPort} could not pre-bind all fallback loopbacks; attempting direct bind on {Loopback}.", desiredDnsPort, loopbackIp);
                 }
             }
 
@@ -578,7 +674,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
                 new LocalDohServerOptions
                 {
                     ListenAddress = IPAddress.Loopback,
-                    Port = 0
+                    Port = settings.LocalDohPort
                 });
             await dohListener.StartAsync(cancellationToken).ConfigureAwait(false);
 
@@ -586,17 +682,17 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
                 new TlsFragmentationProxyOptions
                 {
                     BindAddress = IPAddress.Loopback,
-                    Port = 0
+                    Port = settings.LocalProxyPort
                 },
                 ResolveSidecarHostAsync);
             await proxyServer.StartAsync(cancellationToken).ConfigureAwait(false);
 
-            int proxyPort = proxyServer.BoundEndPoint?.Port ?? 10808;
+            int proxyPort = proxyServer.BoundEndPoint?.Port ?? (settings.LocalProxyPort > 0 ? settings.LocalProxyPort : 10808);
             pacServer = new AutoPacServer(
                 new AutoPacServerOptions
                 {
                     BindAddress = IPAddress.Loopback,
-                    Port = 0,
+                    Port = settings.LocalPacPort,
                     ProxyHost = IPAddress.Loopback.ToString(),
                     ProxyPort = proxyPort
                 },
@@ -679,6 +775,11 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         }
         catch (Exception ex)
         {
+            Log.Error(ex, "Portable mode connect failed (RequestedPorts=[DNS:{DnsPort}, DoH:{DohPort}, Proxy:{ProxyPort}, PAC:{PacPort}]).",
+                settings.LocalDnsPort,
+                settings.LocalDohPort,
+                settings.LocalProxyPort,
+                settings.LocalPacPort);
             await DisposePortableResourcesAsync(interceptor, pacServer, proxyServer, dohListener, dnsServer).ConfigureAwait(false);
             ServiceStatusSnapshot errorSnapshot = BuildPortableSnapshot(lastError: ex.Message);
             UpdateSnapshot(errorSnapshot);
@@ -939,6 +1040,8 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
             PipeRpcResponse response = await _ipcClient.SendAsync(request, IpcProbeTimeout, cancellationToken).ConfigureAwait(false);
             if (!response.Success || string.IsNullOrWhiteSpace(response.PayloadJson))
             {
+                Log.Debug("IPC command {Command} returned unsuccessful or empty response (Success={Success}, ErrorCode={ErrorCode}, Error={Error}).",
+                    command, response.Success, response.ErrorCode, response.ErrorMessage);
                 return null;
             }
 
@@ -948,20 +1051,24 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         {
             throw;
         }
-        catch (TimeoutException)
+        catch (TimeoutException ex)
         {
+            Log.Debug(ex, "IPC probe timed out for command {Command}; using Portable Mode.", command);
             return null;
         }
-        catch (IOException)
+        catch (IOException ex)
         {
+            Log.Debug(ex, "IPC pipe unavailable for command {Command}; using Portable Mode.", command);
             return null;
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
+            Log.Warning(ex, "IPC pipe access denied for command {Command}; falling back to Portable Mode.", command);
             return null;
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            Log.Warning(ex, "IPC response JSON invalid for command {Command}.", command);
             return null;
         }
     }

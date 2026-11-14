@@ -75,6 +75,43 @@ public sealed class PulseAppSettings
     public string LastVerifiedTargetDomain { get; set; } = "aistudio.google.com";
 
     /// <summary>
+    /// Local DNS listener port (<c>53</c> default, or <c>0</c> for Auto ephemeral port selection).
+    /// </summary>
+    public int LocalDnsPort { get; set; } = 53;
+
+    /// <summary>
+    /// Local DoH listener port (<c>0</c> for Auto ephemeral port selection, or custom <c>1..65535</c>).
+    /// </summary>
+    public int LocalDohPort { get; set; }
+
+    /// <summary>
+    /// Local TLS-fragmentation HTTP/SOCKS5 proxy port (<c>0</c> for Auto, or custom <c>1..65535</c>).
+    /// </summary>
+    public int LocalProxyPort { get; set; }
+
+    /// <summary>
+    /// Local PAC HTTP server port (<c>0</c> for Auto, or custom <c>1..65535</c>).
+    /// </summary>
+    public int LocalPacPort { get; set; }
+
+    public string StrategyProfile { get; set; } = "SmartSplitDnsGeo";
+
+    public string? SelectedTrustedUpstreamId { get; set; }
+
+    public string? SelectedGeoUnlockUpstreamId { get; set; }
+
+    /// <summary>
+    /// Exact IDs of enabled Zone 3 Geo-Unlock presets (<see langword="null"/> retains built-in defaults).
+    /// </summary>
+    public IReadOnlyList<string>? EnabledRoutingPresetIds { get; set; }
+
+    public IReadOnlyList<string> CustomGeoUnlockDomains { get; set; } = [];
+
+    public IReadOnlyList<string> CustomBlockRules { get; set; } = [];
+
+    public IReadOnlyList<string> CustomAllowRules { get; set; } = [];
+
+    /// <summary>
     /// Creates a deep copy of the settings instance.
     /// </summary>
     public PulseAppSettings Clone()
@@ -111,7 +148,18 @@ public sealed class PulseAppSettings
             DismissedVpnBanner = DismissedVpnBanner,
             DismissedAntiCheatBanner = DismissedAntiCheatBanner,
             SelectedQuickServiceId = SelectedQuickServiceId,
-            LastVerifiedTargetDomain = LastVerifiedTargetDomain
+            LastVerifiedTargetDomain = LastVerifiedTargetDomain,
+            LocalDnsPort = LocalDnsPort,
+            LocalDohPort = LocalDohPort,
+            LocalProxyPort = LocalProxyPort,
+            LocalPacPort = LocalPacPort,
+            StrategyProfile = StrategyProfile,
+            SelectedTrustedUpstreamId = SelectedTrustedUpstreamId,
+            SelectedGeoUnlockUpstreamId = SelectedGeoUnlockUpstreamId,
+            EnabledRoutingPresetIds = EnabledRoutingPresetIds is null ? null : [.. EnabledRoutingPresetIds],
+            CustomGeoUnlockDomains = [.. CustomGeoUnlockDomains],
+            CustomBlockRules = [.. CustomBlockRules],
+            CustomAllowRules = [.. CustomAllowRules]
         };
     }
 }

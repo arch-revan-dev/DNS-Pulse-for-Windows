@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 using System.Windows;
 using DnsPulse.App.Converters;
 using DnsPulse.App.Data;
@@ -6,6 +7,7 @@ using DnsPulse.App.Localization;
 using DnsPulse.App.Services;
 using DnsPulse.App.ViewModels;
 using DnsPulse.App.Views;
+using DnsPulse.Platform.Windows;
 using DnsPulse.Platform.Windows.Autostart;
 using DnsPulse.Platform.Windows.Recovery;
 using DnsPulse.Platform.Windows.Updates;
@@ -75,6 +77,26 @@ public sealed partial class App : System.Windows.Application, IDisposable
             CliLaunchOptions cliOptions = CliArgumentHandler.Parse(e.Args);
             VerifiedAppUpdateService.CleanupOldUpdateBackups();
             LoggingSetupService.InitializeGlobalLogger();
+            PlatformDiagnosticLog.Configure(static (message, ex) =>
+            {
+                if (ex is not null)
+                {
+                    Log.Warning(ex, "[Platform] {Message}", message);
+                }
+                else
+                {
+                    Log.Information("[Platform] {Message}", message);
+                }
+            });
+
+            RegisterGlobalExceptionLogging();
+            Log.Information(
+                "DNS Pulse starting (Version={Version}, OS={OS}, Arch={Arch}, Elevated={Elevated}, LogDir={LogDir})",
+                VerifiedAppUpdateService.GetCurrentVersion().ToString(3),
+                Environment.OSVersion.VersionString,
+                RuntimeInformation.ProcessArchitecture,
+                Environment.IsPrivilegedProcess,
+                LoggingSetupService.GetDefaultLogDirectory());
 
             int? earlyExitCode = await CliArgumentHandler.TryHandleEarlyExitAsync(cliOptions).ConfigureAwait(true);
             if (earlyExitCode.HasValue)
@@ -144,11 +166,45 @@ public sealed partial class App : System.Windows.Application, IDisposable
         }
     }
 
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Shutdown settings flush must not prevent application exit.")]
     protected override void OnExit(ExitEventArgs e)
     {
+        try
+        {
+            if (_serviceProvider?.GetService<SettingsSafetyViewModel>() is { } settingsVm)
+            {
+                settingsVm.FlushPendingAutoSaveAsync().GetAwaiter().GetResult();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to flush pending settings during OnExit.");
+        }
+
         Dispose();
         LoggingSetupService.CloseAndFlush();
         base.OnExit(e);
+    }
+
+    private void RegisterGlobalExceptionLogging()
+    {
+        DispatcherUnhandledException += (_, args) =>
+        {
+            Log.Error(args.Exception, "Unhandled WPF dispatcher exception.");
+        };
+
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            if (args.ExceptionObject is Exception ex)
+            {
+                Log.Fatal(ex, "Unhandled AppDomain exception (Terminating={IsTerminating}).", args.IsTerminating);
+            }
+        };
+
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            Log.Warning(args.Exception, "Unobserved task exception.");
+        };
     }
 
     public void Dispose()
