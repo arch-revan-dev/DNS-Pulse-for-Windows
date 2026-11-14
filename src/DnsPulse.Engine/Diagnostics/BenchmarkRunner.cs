@@ -100,27 +100,30 @@ public sealed class BenchmarkRunner
         Task producerTask = Task.Run(
             async () =>
             {
-                using SemaphoreSlim gate = new(maxConcurrency, maxConcurrency);
                 try
                 {
-                    Task[] workerTasks = new Task[servers.Count];
-                    for (int i = 0; i < servers.Count; i++)
+                    ParallelOptions parallelOptions = new()
                     {
-                        int serverIndex = i;
-                        DnsServerEntry server = servers[i];
-                        workerTasks[i] = BenchmarkSingleAsync(
-                            serverIndex,
-                            server,
-                            servers.Count,
-                            targetDomain,
-                            probeOptions,
-                            gate,
-                            channel.Writer,
-                            () => Interlocked.Increment(ref completedCounter),
-                            cancellationToken);
-                    }
+                        MaxDegreeOfParallelism = maxConcurrency,
+                        CancellationToken = cancellationToken
+                    };
 
-                    await Task.WhenAll(workerTasks).ConfigureAwait(false);
+                    await Parallel.ForEachAsync(
+                        Enumerable.Range(0, servers.Count),
+                        parallelOptions,
+                        async (serverIndex, ct) =>
+                        {
+                            await BenchmarkSingleAsync(
+                                serverIndex,
+                                servers[serverIndex],
+                                servers.Count,
+                                targetDomain,
+                                probeOptions,
+                                channel.Writer,
+                                () => Interlocked.Increment(ref completedCounter),
+                                ct).ConfigureAwait(false);
+                        }).ConfigureAwait(false);
+
                     channel.Writer.TryComplete();
                 }
                 catch (OperationCanceledException ex)
@@ -181,30 +184,21 @@ public sealed class BenchmarkRunner
         int totalCount,
         string targetDomain,
         DiagnosticProbeOptions probeOptions,
-        SemaphoreSlim gate,
         ChannelWriter<BenchmarkProgressUpdate> writer,
         Func<int> incrementCompleted,
         CancellationToken cancellationToken)
     {
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            DiagnosticReport report = await _diagnosticEngine.DiagnoseAsync(
-                targetDomain,
-                server,
-                probeOptions,
-                cancellationToken).ConfigureAwait(false);
+        DiagnosticReport report = await _diagnosticEngine.DiagnoseAsync(
+            targetDomain,
+            server,
+            probeOptions,
+            cancellationToken).ConfigureAwait(false);
 
-            DnsServerEntry updated = ApplyReportToServer(server, report);
-            int completed = incrementCompleted();
-            await writer.WriteAsync(
-                new BenchmarkProgressUpdate(index, completed, totalCount, updated, report),
-                cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            gate.Release();
-        }
+        DnsServerEntry updated = ApplyReportToServer(server, report);
+        int completed = incrementCompleted();
+        await writer.WriteAsync(
+            new BenchmarkProgressUpdate(index, completed, totalCount, updated, report),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private static DnsServerEntry ApplyReportToServer(DnsServerEntry server, DiagnosticReport report)

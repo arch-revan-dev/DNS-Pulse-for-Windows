@@ -38,13 +38,11 @@ public sealed class TlsFragmentingStreamTests
 
         byte[] appData = [0x17, 0x03, 0x03, 0x00, 0x05, 1, 2, 3, 4, 5];
 
-        Task<byte[]> readAllTask = ReadExactAsync(serverSocket, clientHello.Length + appData.Length);
-
         await fragStream.WriteAsync(clientHello.AsMemory(), CancellationToken.None);
         await fragStream.WriteAsync(appData.AsMemory(), CancellationToken.None);
         await fragStream.FlushAsync(CancellationToken.None);
 
-        byte[] received = await readAllTask;
+        byte[] received = await ReadExactAsync(serverSocket, clientHello.Length + appData.Length);
         received.AsSpan(0, clientHello.Length).ToArray().Should().Equal(clientHello);
         received.AsSpan(clientHello.Length).ToArray().Should().Equal(appData);
 

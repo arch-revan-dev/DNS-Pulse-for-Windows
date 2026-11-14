@@ -416,30 +416,34 @@ public sealed class AdvancedSubnetScannerService
         Task producerTask = Task.Run(
             async () =>
             {
-                using SemaphoreSlim gate = new(concurrency, concurrency);
                 try
                 {
-                    Task[] tasks = new Task[publicCandidates.Count];
-                    for (int i = 0; i < publicCandidates.Count; i++)
+                    ParallelOptions parallelOptions = new()
                     {
-                        IPAddress candidate = publicCandidates[i];
-                        tasks[i] = ProbeCandidateAsync(
-                            candidate,
-                            normalizedDomain,
-                            classification,
-                            request,
-                            publicCandidates.Count,
-                            excludedCount,
-                            gate,
-                            limiter,
-                            channel.Writer,
-                            () => Interlocked.Increment(ref probedCounter),
-                            () => Interlocked.Increment(ref acceptedCounter),
-                            () => Volatile.Read(ref acceptedCounter),
-                            cancellationToken);
-                    }
+                        MaxDegreeOfParallelism = concurrency,
+                        CancellationToken = cancellationToken
+                    };
 
-                    await Task.WhenAll(tasks).ConfigureAwait(false);
+                    await Parallel.ForEachAsync(
+                        publicCandidates,
+                        parallelOptions,
+                        async (candidate, ct) =>
+                        {
+                            await ProbeCandidateAsync(
+                                candidate,
+                                normalizedDomain,
+                                classification,
+                                request,
+                                publicCandidates.Count,
+                                excludedCount,
+                                limiter,
+                                channel.Writer,
+                                () => Interlocked.Increment(ref probedCounter),
+                                () => Interlocked.Increment(ref acceptedCounter),
+                                () => Volatile.Read(ref acceptedCounter),
+                                ct).ConfigureAwait(false);
+                        }).ConfigureAwait(false);
+
                     channel.Writer.TryComplete();
                 }
                 catch (OperationCanceledException ex)
@@ -496,7 +500,6 @@ public sealed class AdvancedSubnetScannerService
         SubnetScanRequest request,
         int totalCandidates,
         int excludedCount,
-        SemaphoreSlim gate,
         TokenBucketRateLimiter limiter,
         ChannelWriter<SubnetScanProgress> writer,
         Func<int> incrementProbed,
@@ -504,69 +507,61 @@ public sealed class AdvancedSubnetScannerService
         Func<int> readAccepted,
         CancellationToken cancellationToken)
     {
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
+        await limiter.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        (bool validCert, double? latencyMs, string reason) = await ProbeTlsLayer4Async(
+            candidateIp,
+            domain,
+            request,
+            cancellationToken).ConfigureAwait(false);
+
+        int probed = incrementProbed();
+        DnsServerEntry? node = null;
+        int acceptedCount;
+
+        if (validCert && latencyMs is double rtt)
         {
-            await limiter.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-            (bool validCert, double? latencyMs, string reason) = await ProbeTlsLayer4Async(
-                candidateIp,
-                domain,
-                request,
-                cancellationToken).ConfigureAwait(false);
-
-            int probed = incrementProbed();
-            DnsServerEntry? node = null;
-            int acceptedCount;
-
-            if (validCert && latencyMs is double rtt)
+            acceptedCount = incrementAccepted();
+            string ipText = candidateIp.ToString();
+            node = new DnsServerEntry
             {
-                acceptedCount = incrementAccepted();
-                string ipText = candidateIp.ToString();
-                node = new DnsServerEntry
-                {
-                    Id = string.Create(CultureInfo.InvariantCulture, $"auto_proxy_{ipText.Replace('.', '_').Replace(':', '_')}"),
-                    Name = string.Create(CultureInfo.InvariantCulture, $"Lab SNI {ipText}"),
-                    Provider = "Advanced Network Lab",
-                    Protocol = DnsProtocol.SniProxy,
-                    TrustTier = TrustTier.Tier4ExperimentalLab,
-                    PrimaryIp = ipText,
-                    DohUrl = string.Concat("smartproxy://", ipText),
-                    SmartProxyIp = ipText,
-                    BootstrapIps = [ipText],
-                    Port = request.Port,
-                    Category = classification.Category,
-                    Country = "LAB",
-                    Tags = ["lab-scan", "tier4", "sni443", classification.ServiceTag],
-                    Description = string.Create(CultureInfo.InvariantCulture, $"{classification.PurposeLabel} (Tier 4 experimental lab node)"),
-                    SupportsBypass = classification.RequiresBypass,
-                    IsBuiltin = false,
-                    IsFavorite = false,
-                    IsSubscription = false,
-                    IsFreeUnlimited = true,
-                    LastLatencyMs = rtt,
-                    LatencyP50Ms = rtt,
-                    LatencyP95Ms = rtt,
-                    Port443Ok = true,
-                    Verdict = DiagnosticVerdict.Healthy,
-                    VerdictReason = reason,
-                    LastCheckedDomain = domain,
-                    LastCheckedAt = DateTimeOffset.UtcNow
-                };
-            }
-            else
-            {
-                acceptedCount = readAccepted();
-            }
-
-            await writer.WriteAsync(
-                new SubnetScanProgress(probed, totalCandidates, excludedCount, acceptedCount, node),
-                cancellationToken).ConfigureAwait(false);
+                Id = string.Create(CultureInfo.InvariantCulture, $"auto_proxy_{ipText.Replace('.', '_').Replace(':', '_')}"),
+                Name = string.Create(CultureInfo.InvariantCulture, $"Lab SNI {ipText}"),
+                Provider = "Advanced Network Lab",
+                Protocol = DnsProtocol.SniProxy,
+                TrustTier = TrustTier.Tier4ExperimentalLab,
+                PrimaryIp = ipText,
+                DohUrl = string.Concat("smartproxy://", ipText),
+                SmartProxyIp = ipText,
+                BootstrapIps = [ipText],
+                Port = request.Port,
+                Category = classification.Category,
+                Country = "LAB",
+                Tags = ["lab-scan", "tier4", "sni443", classification.ServiceTag],
+                Description = string.Create(CultureInfo.InvariantCulture, $"{classification.PurposeLabel} (Tier 4 experimental lab node)"),
+                SupportsBypass = classification.RequiresBypass,
+                IsBuiltin = false,
+                IsFavorite = false,
+                IsSubscription = false,
+                IsFreeUnlimited = true,
+                LastLatencyMs = rtt,
+                LatencyP50Ms = rtt,
+                LatencyP95Ms = rtt,
+                Port443Ok = true,
+                Verdict = DiagnosticVerdict.Healthy,
+                VerdictReason = reason,
+                LastCheckedDomain = domain,
+                LastCheckedAt = DateTimeOffset.UtcNow
+            };
         }
-        finally
+        else
         {
-            gate.Release();
+            acceptedCount = readAccepted();
         }
+
+        await writer.WriteAsync(
+            new SubnetScanProgress(probed, totalCandidates, excludedCount, acceptedCount, node),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<(bool Valid, double? LatencyMs, string Reason)> ProbeTlsLayer4Async(

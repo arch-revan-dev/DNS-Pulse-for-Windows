@@ -41,7 +41,7 @@ public sealed class DotDnsClientTests
                 }
 
                 Interlocked.Increment(ref acceptedConnections);
-                _ = HandleDotClientAsync(client, cert, cts.Token);
+                await HandleDotClientAsync(client, cert, cts.Token);
             }
         }, cts.Token);
 

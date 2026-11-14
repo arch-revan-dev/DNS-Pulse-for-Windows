@@ -126,26 +126,31 @@ public sealed class TlsFragmentationProxyServer : IAsyncDisposable, IDisposable
                 return Task.CompletedTask;
             }
 
-            Socket listener = new(_options.BindAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            try
-            {
-                listener.NoDelay = true;
-                listener.Bind(new IPEndPoint(_options.BindAddress, _options.Port));
-                listener.Listen(512);
-
-                _listenerSocket = listener;
-                BoundEndPoint = (IPEndPoint?)listener.LocalEndPoint;
-                _serverCts = new CancellationTokenSource();
-                _acceptLoopTask = RunAcceptLoopAsync(listener, _serverCts.Token);
-            }
-            catch
-            {
-                listener.Dispose();
-                throw;
-            }
+            Socket listener = CreateBoundTcpListener(_options.BindAddress, _options.Port, backlog: 512);
+            _listenerSocket = listener;
+            BoundEndPoint = (IPEndPoint?)listener.LocalEndPoint;
+            _serverCts = new CancellationTokenSource();
+            _acceptLoopTask = RunAcceptLoopAsync(listener, _serverCts.Token);
         }
 
         return Task.CompletedTask;
+    }
+
+    internal static Socket CreateBoundTcpListener(IPAddress bindAddress, int port, int backlog)
+    {
+        Socket listener = new(bindAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+        try
+        {
+            listener.NoDelay = true;
+            listener.Bind(new IPEndPoint(bindAddress, port));
+            listener.Listen(backlog);
+            return listener;
+        }
+        catch
+        {
+            listener.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -311,43 +316,40 @@ public sealed class TlsFragmentationProxyServer : IAsyncDisposable, IDisposable
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            Socket? clientSocket = null;
+            Socket accepted;
             try
             {
-                clientSocket = await listener.AcceptAsync(cancellationToken).ConfigureAwait(false);
+                Socket incoming = await listener.AcceptAsync(cancellationToken).ConfigureAwait(false);
                 if (!await _connectionLimiter.WaitAsync(0, cancellationToken).ConfigureAwait(false))
                 {
-                    clientSocket.Dispose();
+                    incoming.Dispose();
                     continue;
                 }
 
-                long connectionId = Interlocked.Increment(ref _nextConnectionId);
-                Interlocked.Increment(ref _totalConnectionsAccepted);
-
-                Socket accepted = clientSocket;
-                clientSocket = null;
-
-                Task connectionTask = HandleClientConnectionAsync(connectionId, accepted, cancellationToken);
-                _activeConnections.TryAdd(connectionId, connectionTask);
+                accepted = incoming;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                clientSocket?.Dispose();
                 break;
             }
             catch (ObjectDisposedException)
             {
-                clientSocket?.Dispose();
                 break;
             }
             catch (SocketException)
             {
-                clientSocket?.Dispose();
+                continue;
             }
             catch (Exception)
             {
-                clientSocket?.Dispose();
+                continue;
             }
+
+            long connectionId = Interlocked.Increment(ref _nextConnectionId);
+            Interlocked.Increment(ref _totalConnectionsAccepted);
+
+            Task connectionTask = HandleClientConnectionAsync(connectionId, accepted, cancellationToken);
+            _activeConnections.TryAdd(connectionId, connectionTask);
         }
     }
 

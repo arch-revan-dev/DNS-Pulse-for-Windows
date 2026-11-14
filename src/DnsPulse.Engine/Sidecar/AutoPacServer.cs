@@ -123,23 +123,11 @@ public sealed class AutoPacServer : IAsyncDisposable, IDisposable
                 return Task.CompletedTask;
             }
 
-            Socket listener = new(_options.BindAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            try
-            {
-                listener.NoDelay = true;
-                listener.Bind(new IPEndPoint(_options.BindAddress, _options.Port));
-                listener.Listen(128);
-
-                _listenerSocket = listener;
-                BoundEndPoint = (IPEndPoint?)listener.LocalEndPoint;
-                _serverCts = new CancellationTokenSource();
-                _acceptLoopTask = RunAcceptLoopAsync(listener, _serverCts.Token);
-            }
-            catch
-            {
-                listener.Dispose();
-                throw;
-            }
+            Socket listener = TlsFragmentationProxyServer.CreateBoundTcpListener(_options.BindAddress, _options.Port, backlog: 128);
+            _listenerSocket = listener;
+            BoundEndPoint = (IPEndPoint?)listener.LocalEndPoint;
+            _serverCts = new CancellationTokenSource();
+            _acceptLoopTask = RunAcceptLoopAsync(listener, _serverCts.Token);
         }
 
         return Task.CompletedTask;
