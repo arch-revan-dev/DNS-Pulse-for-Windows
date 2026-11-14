@@ -1,5 +1,6 @@
 using System.IO;
 using System.IO.Compression;
+using System.Net.Sockets;
 using DnsPulse.App.Data;
 using DnsPulse.App.Localization;
 using DnsPulse.App.Services;
@@ -9,6 +10,7 @@ using DnsPulse.Core.Routing;
 using DnsPulse.Core.Wire;
 using DnsPulse.Engine.Contracts;
 using DnsPulse.Engine.Diagnostics;
+using DnsPulse.Engine.Pipeline;
 using DnsPulse.Platform.Windows.Autostart;
 using DnsPulse.Platform.Windows.Contracts;
 using DnsPulse.Platform.Windows.Recovery;
@@ -329,14 +331,383 @@ public sealed class ViewModelsTests : IDisposable
         shell.NavigationItems[0].Title.Should().Be("Обзор");
     }
 
+    [Fact]
+    public void OverviewViewModel_EnsureDefaultUpstreamsSelected_NeverPicksXboxDnsUdp53ForAi_And_QuickServicesDefaultsToAiStudio()
+    {
+        IPulseRuntimeService runtime = CreateMockRuntime();
+        LocalizationService localization = new();
+        using OverviewViewModel vm = new(runtime, localization);
+
+        vm.SelectedQuickService.Should().NotBeNull();
+        vm.SelectedQuickService!.Id.Should().Be("google_ai_studio");
+        vm.EffectiveTargetDomain.Should().Be("aistudio.google.com");
+
+        IReadOnlyList<DnsServerEntry> flagships = BuiltInCatalogPresets.BuildFlagshipServers();
+        DnsServerEntry xboxUdp = flagships.Single(static s => s.Id == "smart_xbox_dns_udp") with
+        {
+            Verdict = DiagnosticVerdict.Healthy,
+            LatencyP50Ms = 4.0
+        };
+        DnsServerEntry comssDoh = flagships.Single(static s => s.Id == "smart_comss_doh") with
+        {
+            Verdict = DiagnosticVerdict.Unknown,
+            LatencyP50Ms = null
+        };
+        DnsServerEntry cloudflare = flagships.Single(static s => s.Id == "global_cloudflare_1111");
+
+        // Even when Xbox-DNS UDP 53 appears first and has lower latency, AI Geo-Unlock must pick an AI-capable server.
+        vm.EnsureDefaultUpstreamsSelected([xboxUdp, comssDoh, cloudflare]);
+
+        vm.SelectedTrustedUpstream.Should().NotBeNull();
+        vm.SelectedTrustedUpstream!.Id.Should().Be("global_cloudflare_1111");
+        vm.SelectedGeoUnlockUpstream.Should().NotBeNull();
+        vm.SelectedGeoUnlockUpstream!.Id.Should().Be("smart_comss_doh");
+
+        // Even if Xbox-DNS UDP 53 was previously selected, re-validating for AI target replaces it.
+        vm.SelectedGeoUnlockUpstream = xboxUdp;
+        vm.EnsureDefaultUpstreamsSelected([xboxUdp, comssDoh, cloudflare]);
+        vm.SelectedGeoUnlockUpstream!.Id.Should().Be("smart_comss_doh");
+
+        // Custom quick service normalizes URLs down to the hostname.
+        vm.SelectedQuickService = vm.QuickServices.Single(static q => q.Id == "custom");
+        vm.CustomQuickDomain = "https://aistudio.google.com/prompts/new_chat";
+        vm.IsCustomQuickServiceSelected.Should().BeTrue();
+        vm.EffectiveTargetDomain.Should().Be("aistudio.google.com");
+    }
+
+    [Fact]
+    public void OverviewViewModel_LatencyP50Ms_UpdatesFromSnapshotAndTelemetryEvents()
+    {
+        IPulseRuntimeService runtime = CreateMockRuntime();
+        LocalizationService localization = new();
+        using OverviewViewModel vm = new(runtime, localization);
+
+        vm.LatencyP50Ms.Should().Be(0);
+        vm.P50SparklineSamples.Should().BeEmpty();
+
+        // StatusChanged with connected snapshot and real LatencyP50Ms updates LatencyP50Ms and sparkline.
+        runtime.StatusChanged += Raise.EventWith(new RuntimeStatusChangedEventArgs(new ServiceStatusSnapshot
+        {
+            IsConnected = true,
+            IsHealthy = true,
+            ActiveMode = InterceptionMode.AdapterDns,
+            LatencyP50Ms = 23.6
+        }));
+
+        vm.IsConnected.Should().BeTrue();
+        vm.LatencyP50Ms.Should().BeApproximately(23.6, 0.01);
+        vm.P50SparklineSamples.Should().ContainSingle().Which.Should().BeApproximately(23.6, 0.01);
+
+        // TelemetryReceived events compute median latency when snapshot LatencyP50Ms is absent.
+        runtime.TelemetryReceived += Raise.EventWith(new DnsQueryTelemetryEventArgs(new DnsQueryTelemetryEvent(
+            DateTimeOffset.UtcNow,
+            "aistudio.google.com",
+            DnsRecordType.A,
+            RouteZone.Zone3GeoUnlock,
+            "Comss.one DNS",
+            DnsProtocol.DoH,
+            18.4,
+            false,
+            false,
+            DnsResponseCode.NoError,
+            "GeoUnlock")));
+
+        vm.LatencyP50Ms.Should().BeApproximately(18.4, 0.01);
+        vm.P50SparklineSamples.Should().HaveCount(2);
+
+        runtime.TelemetryReceived += Raise.EventWith(new DnsQueryTelemetryEventArgs(new DnsQueryTelemetryEvent(
+            DateTimeOffset.UtcNow,
+            "gemini.google.com",
+            DnsRecordType.A,
+            RouteZone.Zone3GeoUnlock,
+            "Comss.one DNS",
+            DnsProtocol.DoH,
+            26.4,
+            false,
+            false,
+            DnsResponseCode.NoError,
+            "GeoUnlock")));
+
+        vm.LatencyP50Ms.Should().BeApproximately(22.4, 0.01);
+        vm.P50SparklineSamples.Should().HaveCount(3);
+
+        // Disconnecting resets LatencyP50Ms back to 0.
+        runtime.StatusChanged += Raise.EventWith(new RuntimeStatusChangedEventArgs(new ServiceStatusSnapshot
+        {
+            IsConnected = false,
+            IsHealthy = false,
+            ActiveMode = InterceptionMode.None
+        }));
+
+        vm.IsConnected.Should().BeFalse();
+        vm.LatencyP50Ms.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task OverviewViewModel_AutoConnectBestAndVerifyAccess_ProbesCandidates_ActivatesAiPreset_And_SetsVerificationHeadline()
+    {
+        IPulseRuntimeService runtime = CreateMockRuntime();
+        IBootstrapResolver bootstrap = Substitute.For<IBootstrapResolver>();
+        IDnsUpstreamClient probeClient = Substitute.For<IDnsUpstreamClient>();
+        probeClient.QueryAsync(
+            Arg.Any<DnsMessage>(),
+            Arg.Any<DnsServerEntry>(),
+            Arg.Any<CancellationToken>())
+            .Returns<UpstreamQueryResult>(_ => throw new SocketException((int)SocketError.ConnectionRefused));
+
+        SixLayerDiagnosticEngine probeEngine = new(bootstrap, probeClient);
+        runtime.CreateDiagnosticEngine().Returns(probeEngine);
+
+        LocalizationService localization = new();
+        RoutingInspectorViewModel routing = new(runtime, localization);
+        ServicePresetToggleItem aiPreset = routing.ServicePresets.Single(static p => p.Id == "google_ai_studio");
+        aiPreset.IsEnabled = false;
+
+        using OverviewViewModel vm = new(runtime, localization);
+
+        IReadOnlyList<DnsServerEntry> flagships = BuiltInCatalogPresets.BuildFlagshipServers();
+        DnsServerEntry xboxUdp = flagships.Single(static s => s.Id == "smart_xbox_dns_udp") with
+        {
+            Verdict = DiagnosticVerdict.Healthy,
+            LatencyP50Ms = 4.0
+        };
+        DnsServerEntry comssDoh = flagships.Single(static s => s.Id == "smart_comss_doh");
+        DnsServerEntry cloudflare = flagships.Single(static s => s.Id == "global_cloudflare_1111");
+
+        vm.ConfigureContextProviders(
+            () => [xboxUdp, comssDoh, cloudflare],
+            () => new PulseAppSettings { ProbeTimeoutMs = 1200 });
+
+        string? activatedPresetId = null;
+        vm.ConfigureOverviewCoordinators(
+            ensureRoutingPresetHandler: async (presetId, _, ct) =>
+            {
+                activatedPresetId = presetId;
+                await routing.EnablePresetByIdAsync(presetId, ct);
+            });
+
+        // 1. AutoConnectBest probes AI candidates (never Xbox-DNS UDP 53), activates AI preset, and reports offline probe failure truthfully.
+        await vm.AutoConnectBestCommand.ExecuteAsync(null);
+
+        activatedPresetId.Should().Be("google_ai_studio");
+        aiPreset.IsEnabled.Should().BeTrue();
+        aiPreset.Domains.Should().BeEquivalentTo(BuiltInCatalogPresets.BuiltinAiDomains);
+        vm.SelectedGeoUnlockUpstream.Should().NotBeNull();
+        vm.SelectedGeoUnlockUpstream!.Id.Should().Be("smart_comss_doh");
+        vm.HasVerificationResult.Should().BeTrue();
+        vm.IsTargetVerifiedWorking.Should().BeFalse();
+        vm.VerificationHeadline.Should().Be(localization["Overview_Step_Failed"]);
+        vm.AutoSetupProgress.Should().Be(100);
+
+        await probeClient.Received(2).QueryAsync(
+            Arg.Any<DnsMessage>(),
+            Arg.Is<DnsServerEntry>(s => s.Id == "smart_comss_doh"),
+            Arg.Any<CancellationToken>());
+        await probeClient.DidNotReceive().QueryAsync(
+            Arg.Any<DnsMessage>(),
+            Arg.Is<DnsServerEntry>(s => s.Id == "smart_xbox_dns_udp"),
+            Arg.Any<CancellationToken>());
+
+        // 2. When connected and healthy without Browser DoH override, VerifyAccessNow sets VerificationHeadline to success.
+        runtime.CreateDiagnosticEngine().Returns((SixLayerDiagnosticEngine)null!);
+        await vm.ToggleConnectionCommand.ExecuteAsync(null);
+        vm.IsConnected.Should().BeTrue();
+
+        await vm.VerifyAccessNowCommand.ExecuteAsync(null);
+        vm.HasVerificationResult.Should().BeTrue();
+        vm.IsTargetVerifiedWorking.Should().BeTrue();
+        vm.VerificationHeadline.Should().Be(localization["Overview_Step_Success"]);
+        vm.HasDegradedCondition.Should().BeFalse();
+    }
+
+    [Fact]
+    public void RoutingInspectorViewModel_EnablePresetById_EnablesPresetSynchronously()
+    {
+        IPulseRuntimeService runtime = CreateMockRuntime();
+        LocalizationService localization = new();
+        RoutingInspectorViewModel routing = new(runtime, localization);
+
+        ServicePresetToggleItem aiPreset = routing.ServicePresets.Single(static p => p.Id == "google_ai_studio");
+        aiPreset.Domains.Should().BeEquivalentTo(BuiltInCatalogPresets.BuiltinAiDomains);
+
+        aiPreset.IsEnabled = false;
+        routing.EnablePresetById("non_existent_preset").Should().BeFalse();
+        routing.EnablePresetById("google_ai_studio").Should().BeTrue();
+        aiPreset.IsEnabled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RoutingInspectorViewModel_EnablePresetByIdAsync_EnablesAllBuiltinAiDomainsAndPushesConfig()
+    {
+        IPulseRuntimeService runtime = CreateMockRuntime();
+        LocalizationService localization = new();
+        RoutingInspectorViewModel routing = new(runtime, localization);
+
+        ServicePresetToggleItem aiPreset = routing.ServicePresets.Single(static p => p.Id == "google_ai_studio");
+        aiPreset.Domains.Should().BeEquivalentTo(BuiltInCatalogPresets.BuiltinAiDomains);
+
+        aiPreset.IsEnabled = false;
+        (await routing.EnablePresetByIdAsync("non_existent_preset")).Should().BeFalse();
+        bool asyncResult = await routing.EnablePresetByIdAsync("aistudio");
+        asyncResult.Should().BeTrue();
+        aiPreset.IsEnabled.Should().BeTrue();
+
+        await runtime.Received().UpdateRoutingConfigAsync(
+            Arg.Is<SplitNamespaceRouterConfig>(cfg =>
+                BuiltInCatalogPresets.BuiltinAiDomains.All(d =>
+                    cfg.GeoUnlockRules.Any(r => string.Equals(r.Pattern, d, StringComparison.OrdinalIgnoreCase)))),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task MainShellViewModel_DismissAndRestoreBanners_PersistsFlagsAcrossRefresh()
+    {
+        LocalizationService localization = new();
+        IPulseRuntimeService runtime = CreateMockRuntime();
+        runtime.InspectHostHealthAsync(Arg.Any<CancellationToken>()).Returns(new HostNetworkHealthSnapshot
+        {
+            ActiveInterfaceNames = ["Ethernet", "WireGuard"],
+            Port53OccupantName = "ag_dns",
+            Port53OccupantProcessId = 7171,
+            IsSmhnrDisabled = false,
+            DetectedBrowserDohBypassBrowsers = ["Chrome"]
+        });
+
+        using PulseCatalogRepository repo = new(_dbPath);
+        AppSettingsStore store = new(_tempDir, _tempDir);
+        ThemeAppearanceService theme = new(static () => false, static () => 22631);
+        NetworkSnapshotJournal journal = new(_tempDir);
+        WindowsAutostartService autostart = new(@"SOFTWARE\DnsPulseTests_NonExistentRun", "DnsPulseTest");
+
+        using OverviewViewModel overview = new(runtime, localization);
+        RoutingInspectorViewModel routing = new(runtime, localization);
+        using ServersCatalogViewModel servers = new(repo, runtime, localization);
+        using DiagnosticsDoctorViewModel diagnostics = new(runtime, repo, localization);
+        SettingsSafetyViewModel settings = new(store, autostart, runtime, localization, theme, journal, static () => (false, []));
+
+        MainShellViewModel shell = new(
+            localization,
+            runtime,
+            repo,
+            store,
+            theme,
+            overview,
+            routing,
+            servers,
+            diagnostics,
+            settings,
+            journal,
+            antiCheatDetector: static () => (false, []));
+
+        await shell.InitializeAsync();
+
+        shell.ShowBrowserDohBanner.Should().BeTrue();
+        shell.ShowPort53ConflictBanner.Should().BeTrue();
+        shell.ShowVpnAdvisoryBanner.Should().BeTrue();
+        shell.DismissedBannerCount.Should().Be(0);
+        shell.HasDismissedBanners.Should().BeFalse();
+
+        await shell.DismissBrowserDohBannerCommand.ExecuteAsync(null);
+        await shell.DismissPort53ConflictBannerCommand.ExecuteAsync(null);
+        await shell.DismissVpnAdvisoryBannerCommand.ExecuteAsync(null);
+
+        shell.ShowBrowserDohBanner.Should().BeFalse();
+        shell.ShowPort53ConflictBanner.Should().BeFalse();
+        shell.ShowVpnAdvisoryBanner.Should().BeFalse();
+        shell.DismissedBannerCount.Should().Be(3);
+        shell.HasDismissedBanners.Should().BeTrue();
+
+        PulseAppSettings persisted = await store.LoadAsync();
+        persisted.DismissedBrowserDohBanner.Should().BeTrue();
+        persisted.DismissedPort53Banner.Should().BeTrue();
+        persisted.DismissedVpnBanner.Should().BeTrue();
+
+        // Refreshing host advisories must keep dismissed banners hidden.
+        await shell.RefreshHostAdvisoriesAsync();
+        shell.ShowBrowserDohBanner.Should().BeFalse();
+        shell.ShowPort53ConflictBanner.Should().BeFalse();
+        shell.ShowVpnAdvisoryBanner.Should().BeFalse();
+
+        // Restoring dismissed banners persists cleared flags and shows banners again.
+        await shell.RestoreDismissedBannersCommand.ExecuteAsync(null);
+        shell.DismissedBannerCount.Should().Be(0);
+        shell.HasDismissedBanners.Should().BeFalse();
+        shell.ShowBrowserDohBanner.Should().BeTrue();
+        shell.ShowPort53ConflictBanner.Should().BeTrue();
+        shell.ShowVpnAdvisoryBanner.Should().BeTrue();
+
+        PulseAppSettings restored = await store.LoadAsync();
+        restored.DismissedBrowserDohBanner.Should().BeFalse();
+        restored.DismissedPort53Banner.Should().BeFalse();
+        restored.DismissedVpnBanner.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ServersCatalogViewModel_CategoryFiltering_UpdatesFilteredServersAndCountsCleanly()
+    {
+        using PulseCatalogRepository repo = new(_dbPath);
+        await repo.InitializeAsync();
+
+        IPulseRuntimeService runtime = CreateMockRuntime();
+        LocalizationService localization = new();
+        using ServersCatalogViewModel vm = new(repo, runtime, localization);
+        await vm.LoadCatalogAsync();
+
+        vm.SelectedCategoryFilter.Should().BeNull();
+        vm.AllCount.Should().Be(vm.AllServers.Count);
+        vm.AiGeoCount.Should().BeGreaterThan(0);
+        vm.FastEncryptedCount.Should().BeGreaterThan(0);
+        vm.StreamingGamingCount.Should().BeGreaterThan(0);
+        vm.CustomCount.Should().BeGreaterThan(0);
+        (vm.AiGeoCount + vm.FastEncryptedCount + vm.StreamingGamingCount + vm.CustomCount).Should().Be(vm.AllCount);
+        vm.FilteredServers.Should().HaveCount(vm.AllCount);
+
+        vm.CategoryFilterOptions.Should().HaveCount(5);
+        vm.CategoryFilterOptions.Single(static o => o.Category is null).Count.Should().Be(vm.AllCount);
+        vm.CategoryFilterOptions.Single(static o => o.Category == ServerDisplayCategory.AiAndGeoUnlock).Count.Should().Be(vm.AiGeoCount);
+        vm.CategoryFilterOptions.Single(static o => o.Category == ServerDisplayCategory.FastEncrypted).Count.Should().Be(vm.FastEncryptedCount);
+        vm.CategoryFilterOptions.Single(static o => o.Category == ServerDisplayCategory.StreamingAndGaming).Count.Should().Be(vm.StreamingGamingCount);
+        vm.CategoryFilterOptions.Single(static o => o.Category == ServerDisplayCategory.CustomAndDiscovered).Count.Should().Be(vm.CustomCount);
+
+        vm.SelectedCategoryFilter = ServerDisplayCategory.AiAndGeoUnlock;
+        vm.FilteredServers.Should().HaveCount(vm.AiGeoCount);
+        vm.FilteredServers.Should().OnlyContain(static s => ServerCategoryClassifier.Classify(s) == ServerDisplayCategory.AiAndGeoUnlock);
+        vm.FilteredServers.Should().Contain(static s => s.Id == "smart_comss_doh");
+        vm.FilteredServers.Should().NotContain(static s => s.Id == "smart_xbox_dns_udp");
+
+        vm.SelectedCategoryFilter = ServerDisplayCategory.FastEncrypted;
+        vm.FilteredServers.Should().HaveCount(vm.FastEncryptedCount);
+        vm.FilteredServers.Should().OnlyContain(static s => ServerCategoryClassifier.Classify(s) == ServerDisplayCategory.FastEncrypted);
+
+        vm.SelectedCategoryFilter = ServerDisplayCategory.StreamingAndGaming;
+        vm.FilteredServers.Should().HaveCount(vm.StreamingGamingCount);
+        vm.FilteredServers.Should().OnlyContain(static s => ServerCategoryClassifier.Classify(s) == ServerDisplayCategory.StreamingAndGaming);
+        vm.FilteredServers.Should().Contain(static s => s.Id == "smart_xbox_dns_udp");
+
+        vm.SelectedCategoryFilter = ServerDisplayCategory.CustomAndDiscovered;
+        vm.FilteredServers.Should().HaveCount(vm.CustomCount);
+        vm.FilteredServers.Should().OnlyContain(static s => ServerCategoryClassifier.Classify(s) == ServerDisplayCategory.CustomAndDiscovered);
+
+        vm.SelectedCategoryFilter = null;
+        vm.FilteredServers.Should().HaveCount(vm.AllCount);
+    }
+
     private static IPulseRuntimeService CreateMockRuntime()
     {
         IPulseRuntimeService runtime = Substitute.For<IPulseRuntimeService>();
+        SplitNamespaceRouter router = new();
         ServiceStatusSnapshot current = new() { IsConnected = false, ActiveMode = InterceptionMode.None };
+        runtime.Router.Returns(router);
         runtime.CurrentStatus.Returns(_ => current);
         runtime.RefreshStatusAsync(Arg.Any<CancellationToken>()).Returns(_ => Task.FromResult(current));
         runtime.InspectHostHealthAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(new HostNetworkHealthSnapshot()));
         runtime.GetRecentTelemetryAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult<IReadOnlyList<DnsQueryTelemetryEvent>>([]));
+        runtime.UpdateRoutingConfigAsync(Arg.Any<SplitNamespaceRouterConfig>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                router.UpdateConfiguration(callInfo.ArgAt<SplitNamespaceRouterConfig>(0));
+                return Task.CompletedTask;
+            });
 
         runtime.ConnectAsync(
             Arg.Any<DnsServerEntry?>(),

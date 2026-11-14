@@ -39,6 +39,34 @@ public sealed class LocalizationServiceTests
             pair.Value.Should().NotBeNullOrWhiteSpace($"en-US key '{pair.Key}' must have a non-empty translation");
             ruEntries[pair.Key].Should().NotBeNullOrWhiteSpace($"ru-RU key '{pair.Key}' must have a non-empty Russian translation");
         }
+
+        // Verify v2.0.1 category, zone, rcode, and quick-connect keys are present and plain-language.
+        string[] requiredV201Keys =
+        [
+            "Banner_ShowNotifications",
+            "Banner_HideNotifications",
+            "Overview_QuickConnect_Title",
+            "Overview_QuickConnect_Button",
+            "Overview_Step_Success",
+            "Overview_Step_Failed",
+            "Servers_Category_All",
+            "Servers_Category_AiGeo",
+            "Servers_Category_FastEncrypted",
+            "Servers_Category_StreamingGaming",
+            "Servers_Category_Custom",
+            "Servers_Badge_Trust_Fast",
+            "Servers_Badge_Trust_Geo",
+            "Zone_Zone3GeoUnlock",
+            "RCode_NoError"
+        ];
+
+        foreach (string key in requiredV201Keys)
+        {
+            enEntries.Should().ContainKey(key);
+            ruEntries.Should().ContainKey(key);
+            enEntries[key].Should().NotContain("Tier ");
+            ruEntries[key].Should().NotContain("Уровень ");
+        }
     }
 
     [Fact]

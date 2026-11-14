@@ -47,7 +47,9 @@ public sealed class PulsePipeIpcTests
                             IsConnected = true,
                             IsHealthy = true,
                             ActiveMode = InterceptionMode.AdapterDns,
-                            BoundDnsPort = 53
+                            BoundDnsPort = 53,
+                            LatencyP50Ms = 17.4,
+                            ActiveGeoUnlockUpstreamId = "smart_comss_doh"
                         };
                         return Task.FromResult(new PipeRpcResponse(
                             request.RequestId,
@@ -91,11 +93,17 @@ public sealed class PulsePipeIpcTests
 
         PipeRpcResponse initialStatus = await client.SendAsync(new PipeRpcRequest("req-1", PipeCommandNames.GetStatus));
         initialStatus.Success.Should().BeTrue();
-        JsonSerializer.Deserialize<ServiceStatusSnapshot>(initialStatus.PayloadJson!, JsonOptions)!.IsConnected.Should().BeFalse();
+        ServiceStatusSnapshot initialSnapshot = JsonSerializer.Deserialize<ServiceStatusSnapshot>(initialStatus.PayloadJson!, JsonOptions)!;
+        initialSnapshot.IsConnected.Should().BeFalse();
+        initialSnapshot.LatencyP50Ms.Should().BeNull();
+        initialSnapshot.ActiveGeoUnlockUpstreamId.Should().BeNull();
 
         PipeRpcResponse connectResp = await client.SendAsync(new PipeRpcRequest("req-2", PipeCommandNames.Connect));
         connectResp.Success.Should().BeTrue();
-        JsonSerializer.Deserialize<ServiceStatusSnapshot>(connectResp.PayloadJson!, JsonOptions)!.IsConnected.Should().BeTrue();
+        ServiceStatusSnapshot connectedSnapshot = JsonSerializer.Deserialize<ServiceStatusSnapshot>(connectResp.PayloadJson!, JsonOptions)!;
+        connectedSnapshot.IsConnected.Should().BeTrue();
+        connectedSnapshot.LatencyP50Ms.Should().BeApproximately(17.4, 0.001);
+        connectedSnapshot.ActiveGeoUnlockUpstreamId.Should().Be("smart_comss_doh");
 
         PipeRpcResponse disconnectResp = await client.SendAsync(new PipeRpcRequest("req-3", PipeCommandNames.Disconnect));
         disconnectResp.Success.Should().BeTrue();

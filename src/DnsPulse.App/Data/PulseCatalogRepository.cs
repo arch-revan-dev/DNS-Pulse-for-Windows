@@ -162,7 +162,18 @@ public sealed class PulseCatalogRepository : IDisposable
                        successRatePercent, verdict, verdictReason, resolvedIpsJson, companionPassed, port443Ok,
                        httpStatus, lastCheckedDomain, lastCheckedAt, historyMsJson
                 FROM dns_servers
-                ORDER BY trustTier ASC, isFavorite DESC, COALESCE(latencyP50Ms, lastLatencyMs, 999999.0) ASC, name COLLATE NOCASE ASC;
+                ORDER BY trustTier ASC,
+                         isFavorite DESC,
+                         CASE
+                             WHEN verdict IN ('Healthy', 'OK') THEN 0
+                             WHEN verdict IN ('TlsSniDpiReset') THEN 1
+                             WHEN verdict IN ('GeoBlockedByService', 'DnsPoisoned', 'EncryptedDnsDpiBlocked', 'IpBlockedByIsp', 'TlsMitmRejected', 'LocalPort53Conflict', 'BrowserDohBypass', 'GEO_BLOCKED') THEN 3
+                             ELSE 2
+                         END ASC,
+                         CASE WHEN category = 'Игры и Регионы' THEN 1 ELSE 0 END ASC,
+                         CASE WHEN protocol IN ('DoH', 'DoT', 'DoH3', 'DoQ', 'DnsCrypt', 'AnonymizedDnsCrypt', 'ODoH') THEN 0 ELSE 1 END ASC,
+                         COALESCE(latencyP50Ms, lastLatencyMs, 999999.0) ASC,
+                         name COLLATE NOCASE ASC;
                 """;
 
             await using SqliteCommand command = connection.CreateCommand();
@@ -192,6 +203,57 @@ public sealed class PulseCatalogRepository : IDisposable
     {
         IReadOnlyList<DnsServerEntry> all = await GetAllAsync(cancellationToken).ConfigureAwait(false);
         return [.. all.Where(entry => entry.TrustTier == tier)];
+    }
+
+    /// <summary>
+    /// Returns all entries classified into the user-friendly <paramref name="category"/>.
+    /// </summary>
+    public async Task<IReadOnlyList<DnsServerEntry>> GetByDisplayCategoryAsync(
+        ServerDisplayCategory category,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<DnsServerEntry> all = await GetAllAsync(cancellationToken).ConfigureAwait(false);
+        return [.. all.Where(entry => ServerCategoryClassifier.Classify(entry) == category)];
+    }
+
+    /// <summary>
+    /// Returns ranked Geo-Unlock DNS candidates compatible with <paramref name="targetDomain"/>
+    /// (excluding gaming-only servers when <paramref name="targetDomain"/> is an AI domain or omitted).
+    /// </summary>
+    public async Task<IReadOnlyList<DnsServerEntry>> GetGeoUnlockCandidatesAsync(
+        string? targetDomain = null,
+        bool verifiedOnly = false,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<DnsServerEntry> all = await GetAllAsync(cancellationToken).ConfigureAwait(false);
+        bool aiTarget = string.IsNullOrWhiteSpace(targetDomain) || ServerCategoryClassifier.IsAiDomain(targetDomain);
+
+        IEnumerable<DnsServerEntry> query = all.Where(entry =>
+            TrustTierPolicy.CanServeGeoUnlock(entry.TrustTier)
+            && ServerCategoryClassifier.SupportsTargetDomain(entry, targetDomain));
+
+        if (verifiedOnly)
+        {
+            query = query.Where(static entry => entry.Verdict == DiagnosticVerdict.Healthy);
+        }
+
+        return
+        [
+            .. query
+                .OrderBy(static entry => entry.Verdict switch
+                {
+                    DiagnosticVerdict.Healthy => 0,
+                    DiagnosticVerdict.TlsSniDpiReset => 1,
+                    DiagnosticVerdict.Unknown => 2,
+                    _ => 3
+                })
+                .ThenBy(static entry => entry.CompanionPassed == true ? 0 : 1)
+                .ThenBy(static entry => entry.IsFavorite ? 0 : 1)
+                .ThenBy(static entry => entry.IsEncrypted ? 0 : 1)
+                .ThenBy(entry => aiTarget && ServerCategoryClassifier.HasExplicitAiTag(entry) ? 0 : 1)
+                .ThenBy(static entry => entry.LatencyP50Ms ?? entry.LastLatencyMs ?? 999999.0)
+                .ThenBy(static entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+        ];
     }
 
     /// <summary>

@@ -11,8 +11,11 @@ namespace DnsPulse.Platform.Windows.Interception;
 /// </summary>
 public sealed class AdapterDnsInterceptor : IDnsInterceptor
 {
+    private static readonly IPAddress Ipv6DiscardSinkhole = IPAddress.Parse("100::1");
+
     private readonly bool _blockIpv6OnBypass;
     private readonly bool _disableSmhnr;
+    private readonly Func<int, bool> _isIpv6LoopbackPortFree;
 
     private IReadOnlyList<AdapterDnsConfiguration> _capturedAdapters = [];
     private bool _priorSmhnrDisabled;
@@ -22,9 +25,18 @@ public sealed class AdapterDnsInterceptor : IDnsInterceptor
     /// Initializes a new <see cref="AdapterDnsInterceptor"/>.
     /// </summary>
     public AdapterDnsInterceptor(bool blockIpv6OnBypass = true, bool disableSmhnr = true)
+        : this(blockIpv6OnBypass, disableSmhnr, isIpv6LoopbackPortFree: null)
+    {
+    }
+
+    internal AdapterDnsInterceptor(
+        bool blockIpv6OnBypass,
+        bool disableSmhnr,
+        Func<int, bool>? isIpv6LoopbackPortFree)
     {
         _blockIpv6OnBypass = blockIpv6OnBypass;
         _disableSmhnr = disableSmhnr;
+        _isIpv6LoopbackPortFree = isIpv6LoopbackPortFree ?? IsIpv6LoopbackPortFree;
     }
 
     /// <inheritdoc />
@@ -65,9 +77,13 @@ public sealed class AdapterDnsInterceptor : IDnsInterceptor
             ? [localDnsIp]
             : [];
 
-        IReadOnlyList<IPAddress> ipv6Servers = localDnsIp.AddressFamily == AddressFamily.InterNetworkV6
-            ? [localDnsIp]
-            : (_blockIpv6OnBypass ? [IPAddress.IPv6Loopback] : []);
+        // When PulseCore binds an IPv4 fallback (e.g. 127.0.53.1) because another resolver (such as ag_dns)
+        // occupies [::1]:53 or [::]:53, pointing adapter IPv6 DNS at ::1 would leak AAAA queries to that
+        // conflicting listener. Route IPv6 bypass to RFC 6666 discard-only 100::1 instead when [::1]:53 is busy.
+        IReadOnlyList<IPAddress> ipv6Servers = ResolveEffectiveIpv6BypassServers(
+            localDnsIp,
+            _blockIpv6OnBypass,
+            _isIpv6LoopbackPortFree);
 
         List<AdapterDnsConfiguration> modifiedAdapters = new(adapters.Count);
 
@@ -130,5 +146,51 @@ public sealed class AdapterDnsInterceptor : IDnsInterceptor
         _capturedAdapters = [];
         _isActive = false;
         return Task.CompletedTask;
+    }
+
+    internal static IReadOnlyList<IPAddress> ResolveEffectiveIpv6BypassServers(
+        IPAddress localDnsIp,
+        bool blockIpv6OnBypass,
+        Func<int, bool>? isIpv6LoopbackPortFree = null)
+    {
+        ArgumentNullException.ThrowIfNull(localDnsIp);
+
+        if (localDnsIp.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            return [localDnsIp];
+        }
+
+        if (!blockIpv6OnBypass)
+        {
+            return [];
+        }
+
+        Func<int, bool> probe = isIpv6LoopbackPortFree ?? IsIpv6LoopbackPortFree;
+        return probe(53) ? [IPAddress.IPv6Loopback] : [Ipv6DiscardSinkhole];
+    }
+
+    internal static bool IsIpv6LoopbackPortFree(int port)
+    {
+        if (!Socket.OSSupportsIPv6)
+        {
+            return true;
+        }
+
+        try
+        {
+            using Socket udpSocket = new(AddressFamily.InterNetworkV6, SocketType.Dgram, ProtocolType.Udp);
+            udpSocket.ExclusiveAddressUse = true;
+            udpSocket.Bind(new IPEndPoint(IPAddress.IPv6Loopback, port));
+
+            using Socket tcpSocket = new(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp);
+            tcpSocket.ExclusiveAddressUse = true;
+            tcpSocket.Bind(new IPEndPoint(IPAddress.IPv6Loopback, port));
+
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
     }
 }

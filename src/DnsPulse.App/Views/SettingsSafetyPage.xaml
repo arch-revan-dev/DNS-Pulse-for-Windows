@@ -58,11 +58,24 @@
                       ItemsSource="{Binding AvailableInterceptionModes}"
                       SelectedItem="{Binding SelectedInterceptionMode, Mode=TwoWay}"
                       AutomationProperties.Name="{conv:Localization Settings_Interception_Title}"
-                      AutomationProperties.HelpText="{Binding AntiCheatStatusMessage}" />
+                      AutomationProperties.HelpText="{Binding AntiCheatStatusMessage}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock>
+                    <TextBlock.Text>
+                      <MultiBinding Converter="{StaticResource EnumLocalizationConverter}">
+                        <Binding />
+                        <Binding Path="[App_Title]" Source="{x:Static conv:LocalizationSource.Instance}" />
+                      </MultiBinding>
+                    </TextBlock.Text>
+                  </TextBlock>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
             <ui:Button Grid.Column="1"
-                       Content="Refresh Anti-Cheat"
+                       Content="{conv:Localization Settings_RefreshAntiCheat}"
                        Command="{Binding RefreshAntiCheatStatusCommand}"
-                       AutomationProperties.Name="Refresh Anti-Cheat Status"
+                       AutomationProperties.Name="{conv:Localization Settings_RefreshAntiCheat}"
                        AutomationProperties.HelpText="{Binding AntiCheatStatusMessage}">
               <ui:Button.Icon>
                 <ui:SymbolIcon Symbol="ArrowClockwise24" />
@@ -70,51 +83,126 @@
             </ui:Button>
           </Grid>
 
-          <ui:InfoBar IsOpen="True"
-                      IsClosable="False"
-                      Severity="Informational"
-                      Title="{Binding AntiCheatStatusMessage}"
-                      Visibility="{Binding IsWfpAntiCheatBlocked, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
-          <ui:InfoBar IsOpen="True"
-                      IsClosable="False"
-                      Severity="Error"
-                      Title="{Binding AntiCheatStatusMessage}"
-                      Visibility="{Binding IsWfpAntiCheatBlocked, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          <!-- Anti-Cheat Status Card -->
+          <Border Padding="12,9"
+                  CornerRadius="8"
+                  Background="#1C212A"
+                  BorderThickness="1"
+                  AutomationProperties.LiveSetting="Polite"
+                  AutomationProperties.Name="{Binding AntiCheatStatusMessage}">
+            <Border.Style>
+              <Style TargetType="Border">
+                <Setter Property="BorderBrush" Value="#2563EB" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding IsWfpAntiCheatBlocked}" Value="True">
+                    <Setter Property="BorderBrush" Value="#DC2626" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Border.Style>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Border Grid.Column="0"
+                      Width="24"
+                      Height="24"
+                      CornerRadius="12"
+                      Margin="0,0,10,0"
+                      VerticalAlignment="Center">
+                <Border.Style>
+                  <Style TargetType="Border">
+                    <Setter Property="Background" Value="#1D4ED8" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding IsWfpAntiCheatBlocked}" Value="True">
+                        <Setter Property="Background" Value="#B91C1C" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </Border.Style>
+                <ui:SymbolIcon FontSize="14" Foreground="White">
+                  <ui:SymbolIcon.Style>
+                    <Style TargetType="ui:SymbolIcon">
+                      <Setter Property="Symbol" Value="Info24" />
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsWfpAntiCheatBlocked}" Value="True">
+                          <Setter Property="Symbol" Value="ErrorCircle24" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </ui:SymbolIcon.Style>
+                </ui:SymbolIcon>
+              </Border>
+              <TextBlock Grid.Column="1"
+                         VerticalAlignment="Center"
+                         FontSize="12"
+                         Foreground="#F8FAFC"
+                         Text="{Binding AntiCheatStatusMessage}"
+                         TextWrapping="Wrap" />
+            </Grid>
+          </Border>
 
           <WrapPanel Orientation="Horizontal" Margin="0,12,0,0">
             <StackPanel Margin="0,0,16,8">
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="Pool Strategy" />
-              <ComboBox Width="160"
+              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_PoolStrategy}" />
+              <ComboBox Width="190"
                         Margin="0,4,0,0"
                         ItemsSource="{Binding AvailablePoolStrategies}"
                         SelectedItem="{Binding SelectedPoolStrategy, Mode=TwoWay}"
-                        AutomationProperties.Name="Pool Strategy"
-                        AutomationProperties.HelpText="{conv:Localization Settings_Interception_Title}" />
+                        AutomationProperties.Name="{conv:Localization Settings_PoolStrategy}"
+                        AutomationProperties.HelpText="{conv:Localization Settings_Interception_Title}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock>
+                      <TextBlock.Text>
+                        <MultiBinding Converter="{StaticResource EnumLocalizationConverter}">
+                          <Binding />
+                          <Binding Path="[App_Title]" Source="{x:Static conv:LocalizationSource.Instance}" />
+                        </MultiBinding>
+                      </TextBlock.Text>
+                    </TextBlock>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
             </StackPanel>
             <StackPanel Margin="0,0,16,8">
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="Bootstrap DNS" />
-              <ComboBox Width="140"
+              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_BootstrapDns}" />
+              <ComboBox Width="165"
                         Margin="0,4,0,0"
                         ItemsSource="{Binding AvailableBootstrapProviders}"
                         SelectedItem="{Binding BootstrapDnsProvider, Mode=TwoWay}"
-                        AutomationProperties.Name="Bootstrap DNS"
-                        AutomationProperties.HelpText="{conv:Localization Settings_Interception_Title}" />
+                        AutomationProperties.Name="{conv:Localization Settings_BootstrapDns}"
+                        AutomationProperties.HelpText="{conv:Localization Settings_Interception_Title}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock>
+                      <TextBlock.Text>
+                        <MultiBinding Converter="{StaticResource EnumLocalizationConverter}">
+                          <Binding />
+                          <Binding Path="[App_Title]" Source="{x:Static conv:LocalizationSource.Instance}" />
+                        </MultiBinding>
+                      </TextBlock.Text>
+                    </TextBlock>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
             </StackPanel>
             <StackPanel Margin="0,0,16,8">
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="Probe Timeout (ms)" />
-              <ui:TextBox Width="120"
+              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_ProbeTimeoutMs}" />
+              <ui:TextBox Width="140"
                           Margin="0,4,0,0"
                           Text="{Binding ProbeTimeoutMs, UpdateSourceTrigger=PropertyChanged}"
-                          AutomationProperties.Name="Probe Timeout ms"
-                          AutomationProperties.HelpText="1000 to 6000 ms" />
+                          AutomationProperties.Name="{conv:Localization Settings_ProbeTimeoutMs}"
+                          AutomationProperties.HelpText="{conv:Localization Settings_ProbeTimeoutMs}" />
             </StackPanel>
             <StackPanel Margin="0,0,0,8">
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="Benchmark Concurrency" />
-              <ui:TextBox Width="120"
+              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_BenchmarkConcurrency}" />
+              <ui:TextBox Width="140"
                           Margin="0,4,0,0"
                           Text="{Binding BenchmarkConcurrency, UpdateSourceTrigger=PropertyChanged}"
-                          AutomationProperties.Name="Benchmark Concurrency"
-                          AutomationProperties.HelpText="2 to 16 threads" />
+                          AutomationProperties.Name="{conv:Localization Settings_BenchmarkConcurrency}"
+                          AutomationProperties.HelpText="{conv:Localization Settings_BenchmarkConcurrency}" />
             </StackPanel>
           </WrapPanel>
         </StackPanel>
@@ -195,7 +283,20 @@
                   ItemsSource="{Binding AvailableAccentPresets}"
                   SelectedItem="{Binding SelectedAccentPreset, Mode=TwoWay}"
                   AutomationProperties.Name="{conv:Localization Settings_AccentPreset}"
-                  AutomationProperties.HelpText="{conv:Localization Settings_Appearance_Title}" />
+                  AutomationProperties.HelpText="{conv:Localization Settings_Appearance_Title}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock>
+                <TextBlock.Text>
+                  <MultiBinding Converter="{StaticResource EnumLocalizationConverter}">
+                    <Binding />
+                    <Binding Path="[App_Title]" Source="{x:Static conv:LocalizationSource.Instance}" />
+                  </MultiBinding>
+                </TextBlock.Text>
+              </TextBlock>
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
       </ui:CardControl>
 
       <ui:CardControl Margin="0,0,0,8"
@@ -220,12 +321,25 @@
           <WrapPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,8">
             <StackPanel Margin="0,0,16,8">
               <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_UpdateChannel}" />
-              <ComboBox Width="150"
+              <ComboBox Width="170"
                         Margin="0,4,0,0"
                         ItemsSource="{Binding AvailableUpdateChannels}"
                         SelectedItem="{Binding SelectedUpdateChannel, Mode=TwoWay}"
                         AutomationProperties.Name="{conv:Localization Settings_UpdateChannel}"
-                        AutomationProperties.HelpText="{conv:Localization Settings_Updates_Title}" />
+                        AutomationProperties.HelpText="{conv:Localization Settings_Updates_Title}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock>
+                      <TextBlock.Text>
+                        <MultiBinding Converter="{StaticResource EnumLocalizationConverter}">
+                          <Binding />
+                          <Binding Path="[App_Title]" Source="{x:Static conv:LocalizationSource.Instance}" />
+                        </MultiBinding>
+                      </TextBlock.Text>
+                    </TextBlock>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
             </StackPanel>
 
             <CheckBox Margin="0,18,16,8"
@@ -235,11 +349,11 @@
                       AutomationProperties.HelpText="{conv:Localization Settings_Updates_Title}" />
 
             <ui:PasswordBox x:Name="GitHubTokenBox"
-                            Width="220"
+                            Width="240"
                             Margin="0,12,12,8"
-                            PlaceholderText="Optional GitHub Token"
+                            PlaceholderText="{conv:Localization Settings_GitHubTokenPlaceholder}"
                             PasswordChanged="OnGitHubTokenChanged"
-                            AutomationProperties.Name="Optional GitHub Token"
+                            AutomationProperties.Name="{conv:Localization Settings_GitHubTokenPlaceholder}"
                             AutomationProperties.HelpText="{conv:Localization Settings_Updates_Title}" />
 
             <ui:Button Margin="0,12,0,8"

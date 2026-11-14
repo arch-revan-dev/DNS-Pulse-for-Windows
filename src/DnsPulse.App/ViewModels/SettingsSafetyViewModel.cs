@@ -1,6 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
+using System.Windows;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DnsPulse.App.Localization;
@@ -30,6 +32,7 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
     private readonly Func<(bool IsActive, IReadOnlyList<string> Names)> _antiCheatDetector;
     private readonly Func<VerifiedAppUpdateService>? _updateServiceFactory;
 
+    private PulseAppSettings _preservedSettings = new();
     private bool _isLoading;
 
     [ObservableProperty]
@@ -195,12 +198,38 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
         ? _localization["Settings_Backdrop_Mica"]
         : _localization["Settings_Backdrop_Solid"];
 
+    public void SyncPreservedBannerFlags(
+        bool dismissedBrowserDoh,
+        bool dismissedPort53,
+        bool dismissedVpn,
+        bool dismissedAntiCheat)
+    {
+        _preservedSettings.DismissedBrowserDohBanner = dismissedBrowserDoh;
+        _preservedSettings.DismissedPort53Banner = dismissedPort53;
+        _preservedSettings.DismissedVpnBanner = dismissedVpn;
+        _preservedSettings.DismissedAntiCheatBanner = dismissedAntiCheat;
+    }
+
+    public void SyncPreservedQuickService(string quickServiceId, string lastVerifiedTargetDomain)
+    {
+        if (!string.IsNullOrWhiteSpace(quickServiceId))
+        {
+            _preservedSettings.SelectedQuickServiceId = quickServiceId.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(lastVerifiedTargetDomain))
+        {
+            _preservedSettings.LastVerifiedTargetDomain = lastVerifiedTargetDomain.Trim();
+        }
+    }
+
     public void LoadFromSettings(PulseAppSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
 
         PulseAppSettings normalized = settings.Clone();
         AppSettingsStore.Normalize(normalized);
+        _preservedSettings = normalized.Clone();
 
         _isLoading = true;
         try
@@ -233,7 +262,7 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
         }
 
         _localization.SetLanguage(SelectedLanguageCode);
-        _themeService.ApplyTheme(IsDarkTheme, SelectedAccentPreset);
+        ApplyThemeSafely(IsDarkTheme, SelectedAccentPreset);
         OnPropertyChanged(nameof(BackdropStatusText));
         OnPropertyChanged(nameof(IsWfpAntiCheatBlocked));
     }
@@ -264,11 +293,29 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
             PoolStrategy = SelectedPoolStrategy,
             UpdateChannel = SelectedUpdateChannel,
             AutoCheckUpdates = AutoCheckUpdates,
-            GitHubToken = GitHubToken
+            GitHubToken = GitHubToken,
+            DismissedBrowserDohBanner = _preservedSettings.DismissedBrowserDohBanner,
+            DismissedPort53Banner = _preservedSettings.DismissedPort53Banner,
+            DismissedVpnBanner = _preservedSettings.DismissedVpnBanner,
+            DismissedAntiCheatBanner = _preservedSettings.DismissedAntiCheatBanner,
+            SelectedQuickServiceId = _preservedSettings.SelectedQuickServiceId,
+            LastVerifiedTargetDomain = _preservedSettings.LastVerifiedTargetDomain
         };
 
         AppSettingsStore.Normalize(settings);
         return settings;
+    }
+
+    private void ApplyThemeSafely(bool isDarkTheme, string accentPreset)
+    {
+        Dispatcher? dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            dispatcher.Invoke(() => _themeService.ApplyTheme(isDarkTheme, accentPreset));
+            return;
+        }
+
+        _themeService.ApplyTheme(isDarkTheme, accentPreset);
     }
 
     [RelayCommand]
@@ -291,6 +338,7 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
         }
 
         await _settingsStore.SaveAsync(normalized, cancellationToken).ConfigureAwait(false);
+        _preservedSettings = normalized.Clone();
         await _runtimeService.UpdateEngineOptionsAsync(normalized, cancellationToken).ConfigureAwait(false);
 
         if (normalized.StartWithWindows)
@@ -444,7 +492,7 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
             return;
         }
 
-        _themeService.ApplyTheme(value, SelectedAccentPreset);
+        ApplyThemeSafely(value, SelectedAccentPreset);
         OnPropertyChanged(nameof(BackdropStatusText));
     }
 
@@ -455,7 +503,7 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
             return;
         }
 
-        _themeService.ApplyTheme(IsDarkTheme, value);
+        ApplyThemeSafely(IsDarkTheme, value);
     }
 
     partial void OnSelectedInterceptionModeChanged(InterceptionMode value)

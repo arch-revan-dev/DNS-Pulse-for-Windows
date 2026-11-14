@@ -4,6 +4,8 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Windows;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DnsPulse.App.Localization;
@@ -219,6 +221,75 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Enables the Zone 3 preset matching <paramref name="presetId"/> synchronously.
+    /// </summary>
+    public bool EnablePresetById(string presetId)
+    {
+        if (string.IsNullOrWhiteSpace(presetId))
+        {
+            return false;
+        }
+
+        ServicePresetToggleItem? preset = FindPresetById(presetId);
+        if (preset is null)
+        {
+            return false;
+        }
+
+        if (!preset.IsEnabled)
+        {
+            preset.IsEnabled = true;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Enables the Zone 3 preset matching <paramref name="presetId"/> and pushes the updated router configuration.
+    /// </summary>
+    public async Task<bool> EnablePresetByIdAsync(string presetId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(presetId))
+        {
+            return false;
+        }
+
+        ServicePresetToggleItem? preset = FindPresetById(presetId);
+        if (preset is null)
+        {
+            return false;
+        }
+
+        if (!preset.IsEnabled)
+        {
+            _suppressPresetPush = true;
+            try
+            {
+                preset.IsEnabled = true;
+            }
+            finally
+            {
+                _suppressPresetPush = false;
+            }
+        }
+
+        await PushRouterConfigurationAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    private ServicePresetToggleItem? FindPresetById(string presetId)
+    {
+        string normalized = presetId.Trim().ToUpperInvariant() switch
+        {
+            "GEMINI" or "AISTUDIO" => "google_ai_studio",
+            "CHATGPT" => "openai",
+            _ => presetId.Trim()
+        };
+
+        return ServicePresets.FirstOrDefault(p => string.Equals(p.Id, normalized, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
     /// Appends a telemetry event while enforcing the strict 2000-row in-memory cap.
     /// </summary>
     public void AddTelemetryEvent(DnsQueryTelemetryEvent telemetryEvent)
@@ -426,6 +497,7 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
 
     public async Task PushRouterConfigurationAsync(CancellationToken cancellationToken = default)
     {
+        HashSet<string> seenDomains = new(StringComparer.OrdinalIgnoreCase);
         List<GeoUnlockRule> geoRules = [];
         foreach (ServicePresetToggleItem preset in ServicePresets)
         {
@@ -434,16 +506,13 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
                 continue;
             }
 
-            if (preset.Id == "custom")
+            IEnumerable<string> sourceDomains = preset.Id == "custom"
+                ? _customGeoUnlockDomains
+                : preset.Domains;
+
+            foreach (string domain in sourceDomains)
             {
-                foreach (string domain in _customGeoUnlockDomains)
-                {
-                    geoRules.Add(new GeoUnlockRule(domain));
-                }
-            }
-            else
-            {
-                foreach (string domain in preset.Domains)
+                if (!string.IsNullOrWhiteSpace(domain) && seenDomains.Add(domain))
                 {
                     geoRules.Add(new GeoUnlockRule(domain));
                 }
@@ -597,11 +666,7 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
     private void InitializeServicePresets()
     {
         AddPreset("google_ai_studio", "Routing_Preset_GoogleAiStudio",
-        [
-            "gemini.google.com", "aistudio.google.com", "ai.studio",
-            "alkalimakersuite-pa.clients6.google.com", "generativelanguage.googleapis.com",
-            "notebooklm.google.com", "labs.google", "deepmind.google"
-        ], enabled: true);
+            BuiltInCatalogPresets.BuiltinAiDomains, enabled: true);
 
         AddPreset("openai", "Routing_Preset_OpenAi",
         [
@@ -664,6 +729,13 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
 
     private void OnTelemetryReceived(object? sender, DnsQueryTelemetryEventArgs e)
     {
+        Dispatcher? dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            _ = dispatcher.BeginInvoke(() => AddTelemetryEvent(e.TelemetryEvent));
+            return;
+        }
+
         AddTelemetryEvent(e.TelemetryEvent);
     }
 

@@ -62,6 +62,18 @@ public sealed class PulseAppSettings
 
     public bool UseLocalDohEndpoint { get; set; }
 
+    public bool DismissedBrowserDohBanner { get; set; }
+
+    public bool DismissedPort53Banner { get; set; }
+
+    public bool DismissedVpnBanner { get; set; }
+
+    public bool DismissedAntiCheatBanner { get; set; }
+
+    public string SelectedQuickServiceId { get; set; } = "google_ai_studio";
+
+    public string LastVerifiedTargetDomain { get; set; } = "aistudio.google.com";
+
     /// <summary>
     /// Creates a deep copy of the settings instance.
     /// </summary>
@@ -93,7 +105,13 @@ public sealed class PulseAppSettings
             PoolStrategy = PoolStrategy,
             DnsRebindingProtectionEnabled = DnsRebindingProtectionEnabled,
             LanGatewayEnabled = LanGatewayEnabled,
-            UseLocalDohEndpoint = UseLocalDohEndpoint
+            UseLocalDohEndpoint = UseLocalDohEndpoint,
+            DismissedBrowserDohBanner = DismissedBrowserDohBanner,
+            DismissedPort53Banner = DismissedPort53Banner,
+            DismissedVpnBanner = DismissedVpnBanner,
+            DismissedAntiCheatBanner = DismissedAntiCheatBanner,
+            SelectedQuickServiceId = SelectedQuickServiceId,
+            LastVerifiedTargetDomain = LastVerifiedTargetDomain
         };
     }
 }

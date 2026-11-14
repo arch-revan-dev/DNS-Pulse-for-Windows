@@ -49,8 +49,127 @@
       <conv:QrMatrixToImageSourceConverter x:Key="QrMatrixToImageSourceConverter" PixelsPerModule="7" QuietZoneModules="4" />
       <conv:VerdictToBrushConverter x:Key="VerdictToBrushConverter" />
       <conv:TrustTierToBadgeBrushConverter x:Key="TrustTierToBadgeBrushConverter" />
+      <conv:CategoryToBadgeBrushConverter x:Key="CategoryToBadgeBrushConverter" />
+      <conv:CategoryToLabelConverter x:Key="CategoryToLabelConverter" />
+      <conv:EnumLocalizationConverter x:Key="EnumLocalizationConverter" />
       <conv:EqualityToBoolConverter x:Key="EqualityToBoolConverter" />
       <conv:LatencyFormatConverter x:Key="LatencyFormatConverter" />
+
+      <!-- Dark-Friendly Fluent 2 ListView, GridView, and DataGrid Styles -->
+      <Style x:Key="PulseDarkListViewItemStyle" TargetType="ListViewItem">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="4,2" />
+        <Setter Property="Margin" Value="0,0,0,2" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="ListViewItem">
+              <Border x:Name="ItemBorder"
+                      Padding="{TemplateBinding Padding}"
+                      Background="{TemplateBinding Background}"
+                      BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}"
+                      CornerRadius="6"
+                      SnapsToDevicePixels="True">
+                <Grid>
+                  <GridViewRowPresenter x:Name="GridRowPresenter"
+                                        Content="{TemplateBinding Content}"
+                                        Columns="{Binding View.Columns, RelativeSource={RelativeSource AncestorType=ListView}, FallbackValue={x:Null}}"
+                                        VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                        SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                  <ContentPresenter x:Name="DefaultPresenter"
+                                    Visibility="Collapsed"
+                                    HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                    VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                    SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                </Grid>
+              </Border>
+              <ControlTemplate.Triggers>
+                <DataTrigger Binding="{Binding View, RelativeSource={RelativeSource AncestorType=ListView}}" Value="{x:Null}">
+                  <Setter TargetName="GridRowPresenter" Property="Visibility" Value="Collapsed" />
+                  <Setter TargetName="DefaultPresenter" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <MultiTrigger>
+                  <MultiTrigger.Conditions>
+                    <Condition Property="IsMouseOver" Value="True" />
+                    <Condition Property="IsSelected" Value="False" />
+                  </MultiTrigger.Conditions>
+                  <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                </MultiTrigger>
+                <Trigger Property="IsSelected" Value="True">
+                  <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                  <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                  <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter TargetName="ItemBorder" Property="Opacity" Value="0.55" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <Style TargetType="ListViewItem" BasedOn="{StaticResource PulseDarkListViewItemStyle}" />
+
+      <Style x:Key="PulseDarkCardListViewStyle" TargetType="ListView">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+        <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+        <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+        <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+      </Style>
+
+      <Style TargetType="ListView">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+        <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+        <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+        <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+      </Style>
+
+      <Style x:Key="PulseDarkGridViewColumnHeaderStyle"
+             TargetType="GridViewColumnHeader"
+             BasedOn="{StaticResource UiGridViewColumnHeaderStyle}">
+        <Setter Property="Padding" Value="6,6" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+      </Style>
+
+      <Style TargetType="GridViewColumnHeader"
+             BasedOn="{StaticResource PulseDarkGridViewColumnHeaderStyle}" />
+
+      <Style x:Key="PulseDarkDataGridStyle"
+             TargetType="DataGrid"
+             BasedOn="{StaticResource DefaultUiDataGridStyle}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="RowBackground" Value="Transparent" />
+        <Setter Property="AlternatingRowBackground" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+        <Setter Property="HeadersVisibility" Value="Column" />
+        <Setter Property="GridLinesVisibility" Value="Horizontal" />
+        <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource DividerStrokeColorDefaultBrush}" />
+      </Style>
+
+      <Style TargetType="DataGrid"
+             BasedOn="{StaticResource PulseDarkDataGridStyle}" />
 
       <!-- Reusable Fluent 2 Chip Style -->
       <Style x:Key="PulseFilterChipStyle" TargetType="RadioButton">
@@ -74,14 +193,27 @@
                                   VerticalAlignment="Center" />
               </Border>
               <ControlTemplate.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
+                <MultiTrigger>
+                  <MultiTrigger.Conditions>
+                    <Condition Property="IsMouseOver" Value="True" />
+                    <Condition Property="IsChecked" Value="False" />
+                  </MultiTrigger.Conditions>
                   <Setter TargetName="ChipBorder" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
-                </Trigger>
+                </MultiTrigger>
                 <Trigger Property="IsChecked" Value="True">
                   <Setter TargetName="ChipBorder" Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                   <Setter TargetName="ChipBorder" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                   <Setter Property="Foreground" Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
                 </Trigger>
+                <MultiTrigger>
+                  <MultiTrigger.Conditions>
+                    <Condition Property="IsMouseOver" Value="True" />
+                    <Condition Property="IsChecked" Value="True" />
+                  </MultiTrigger.Conditions>
+                  <Setter TargetName="ChipBorder" Property="Background" Value="{DynamicResource AccentFillColorSecondaryBrush}" />
+                  <Setter TargetName="ChipBorder" Property="BorderBrush" Value="{DynamicResource AccentFillColorSecondaryBrush}" />
+                  <Setter Property="Foreground" Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                </MultiTrigger>
                 <Trigger Property="IsEnabled" Value="False">
                   <Setter TargetName="ChipBorder" Property="Opacity" Value="0.5" />
                 </Trigger>

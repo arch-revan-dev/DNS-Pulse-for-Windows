@@ -39,5 +39,7 @@ public sealed record PulseServiceOptions
 
     public bool EnableDohListener { get; init; } = true;
 
+    public string? ActiveGeoUnlockUpstreamId { get; init; }
+
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
 }

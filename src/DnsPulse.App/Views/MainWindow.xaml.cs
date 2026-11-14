@@ -159,6 +159,7 @@ public sealed partial class MainWindow : FluentWindow
             _viewModel.Routing.TelemetryEvents,
             _viewModel.Routing.FilteredTelemetryEvents,
             _viewModel.Servers.FilteredServers,
+            _viewModel.Servers.CategoryFilterOptions,
             _viewModel.Servers.Tier1Servers,
             _viewModel.Servers.Tier2Servers,
             _viewModel.Servers.Tier3Servers,

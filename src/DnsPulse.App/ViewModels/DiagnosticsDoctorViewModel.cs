@@ -3,6 +3,8 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using System.Windows;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DnsPulse.App.Data;
@@ -48,7 +50,7 @@ public sealed partial class DiagnosticsDoctorViewModel : ObservableObject, IDisp
     private DomainPresetItem? _selectedPreset;
 
     [ObservableProperty]
-    private string _customDomain = "gemini.google.com";
+    private string _customDomain = "aistudio.google.com";
 
     [ObservableProperty]
     private bool _isDiagnosing;
@@ -66,7 +68,7 @@ public sealed partial class DiagnosticsDoctorViewModel : ObservableObject, IDisp
     private string _labCustomCidr = string.Empty;
 
     [ObservableProperty]
-    private string _labTargetDomain = "gemini.google.com";
+    private string _labTargetDomain = "aistudio.google.com";
 
     [ObservableProperty]
     private bool _isScanningLab;
@@ -110,7 +112,9 @@ public sealed partial class DiagnosticsDoctorViewModel : ObservableObject, IDisp
         _localization.CultureChanged += OnCultureChanged;
 
         _selectedPresetGroup = BuiltInCatalogPresets.PresetGroups[0];
-        _selectedPreset = BuiltInCatalogPresets.AllPresets[0];
+        _selectedPreset = BuiltInCatalogPresets.AllPresets.FirstOrDefault(
+            static p => string.Equals(p.Id, "aistudio", StringComparison.OrdinalIgnoreCase))
+            ?? BuiltInCatalogPresets.AllPresets[0];
         LanIpAddress = DetectPrimaryLanIpv4();
     }
 
@@ -184,7 +188,7 @@ public sealed partial class DiagnosticsDoctorViewModel : ObservableObject, IDisp
         }
 
         string domain = string.IsNullOrWhiteSpace(CustomDomain)
-            ? (SelectedPreset?.Domain ?? "gemini.google.com")
+            ? (SelectedPreset?.Domain ?? "aistudio.google.com")
             : CustomDomain.Trim();
 
         DnsServerEntry upstream = _targetServerProvider()
@@ -224,14 +228,17 @@ public sealed partial class DiagnosticsDoctorViewModel : ObservableObject, IDisp
     public void ApplyReport(DiagnosticReport report)
     {
         ArgumentNullException.ThrowIfNull(report);
-        CurrentReport = report;
-        Layers.Clear();
-        foreach (DiagnosticLayerResult layer in report.Layers)
+        RunOnUiThread(() =>
         {
-            Layers.Add(layer);
-        }
+            CurrentReport = report;
+            Layers.Clear();
+            foreach (DiagnosticLayerResult layer in report.Layers)
+            {
+                Layers.Add(layer);
+            }
 
-        NotifyVerdictPropertiesChanged();
+            NotifyVerdictPropertiesChanged();
+        });
     }
 
     [RelayCommand]
@@ -296,7 +303,7 @@ public sealed partial class DiagnosticsDoctorViewModel : ObservableObject, IDisp
 
             SubnetScanRequest request = new()
             {
-                TargetDomain = string.IsNullOrWhiteSpace(LabTargetDomain) ? "gemini.google.com" : LabTargetDomain.Trim(),
+                TargetDomain = string.IsNullOrWhiteSpace(LabTargetDomain) ? "aistudio.google.com" : LabTargetDomain.Trim(),
                 UserOptedIn = HasAcceptedLabDisclaimer,
                 CandidateTargets = candidates,
                 MaxConcurrency = 8
@@ -311,7 +318,7 @@ public sealed partial class DiagnosticsDoctorViewModel : ObservableObject, IDisp
                 if (progress.AcceptedNode is not null)
                 {
                     DnsServerEntry tier4Node = progress.AcceptedNode with { TrustTier = TrustTier.Tier4ExperimentalLab };
-                    LabDiscoveredNodes.Add(tier4Node);
+                    RunOnUiThread(() => LabDiscoveredNodes.Add(tier4Node));
                     await _repository.UpsertServerAsync(tier4Node, _labCts.Token).ConfigureAwait(false);
                 }
             }
@@ -385,6 +392,18 @@ public sealed partial class DiagnosticsDoctorViewModel : ObservableObject, IDisp
     partial void OnIsLanGatewayEnabledChanged(bool value)
     {
         RefreshLanGateway();
+    }
+
+    private static void RunOnUiThread(Action action)
+    {
+        Dispatcher? dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            dispatcher.Invoke(action);
+            return;
+        }
+
+        action();
     }
 
     private void NotifyVerdictPropertiesChanged()

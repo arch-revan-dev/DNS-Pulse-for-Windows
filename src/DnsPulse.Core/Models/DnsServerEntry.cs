@@ -107,6 +107,15 @@ public sealed record DnsServerEntry
     public bool IsEligibleForDefaultInternet => TrustTierPolicy.CanServeDefaultInternet(TrustTier, Protocol);
 
     [JsonIgnore]
+    public ServerDisplayCategory DisplayCategory => ServerCategoryClassifier.Classify(this);
+
+    [JsonIgnore]
+    public bool SupportsAiUnlock => ServerCategoryClassifier.SupportsAiDomain(this);
+
+    [JsonIgnore]
+    public bool IsGamingOnlyGeo => ServerCategoryClassifier.IsGamingOnlyGeoServer(this);
+
+    [JsonIgnore]
     public string ProtocolBadge => Protocol == DnsProtocol.SniProxy ? "443" : Protocol.ToString();
 
     [JsonIgnore]

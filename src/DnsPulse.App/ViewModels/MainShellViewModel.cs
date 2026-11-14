@@ -79,6 +79,11 @@ public sealed partial class MainShellViewModel : ObservableObject
     private readonly BrowserDohInspector _browserDohInspector;
     private readonly Func<(bool IsActive, IReadOnlyList<string> Names)> _antiCheatDetector;
 
+    private bool _dismissedBrowserDohBanner;
+    private bool _dismissedPort53Banner;
+    private bool _dismissedVpnBanner;
+    private bool _dismissedAntiCheatBanner;
+
     [ObservableProperty]
     private ShellPageKind _selectedPage = ShellPageKind.Overview;
 
@@ -199,12 +204,22 @@ public sealed partial class MainShellViewModel : ObservableObject
         _localization["Banner_AntiCheat_Desc"],
         AntiCheatNamesText);
 
+    public int DismissedBannerCount =>
+        (_dismissedBrowserDohBanner ? 1 : 0) +
+        (_dismissedPort53Banner ? 1 : 0) +
+        (_dismissedVpnBanner ? 1 : 0) +
+        (_dismissedAntiCheatBanner ? 1 : 0);
+
+    public bool HasDismissedBanners => DismissedBannerCount > 0;
+
     public async Task InitializeAsync(
         CliLaunchOptions? cliOptions = null,
         CancellationToken cancellationToken = default)
     {
         PulseAppSettings loadedSettings = await _settingsStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         Settings.LoadFromSettings(loadedSettings);
+        ApplyLoadedBannerFlags(loadedSettings);
+        Overview.LoadPersistedQuickService(loadedSettings);
 
         bool skipDirtyRestore = cliOptions is not null && (cliOptions.ApplyTunnel || !string.IsNullOrWhiteSpace(cliOptions.ConnectServerId));
         if (!skipDirtyRestore)
@@ -214,6 +229,11 @@ public sealed partial class MainShellViewModel : ObservableObject
 
         await _catalogRepository.InitializeAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
         await Servers.LoadCatalogAsync(cancellationToken).ConfigureAwait(false);
+        if (_runtimeService is HybridPulseRuntimeService hybridRuntime)
+        {
+            hybridRuntime.SetCatalogSnapshot(Servers.AllServers);
+        }
+
         Overview.EnsureDefaultUpstreamsSelected(Servers.AllServers);
 
         await Routing.PushRouterConfigurationAsync(cancellationToken).ConfigureAwait(false);
@@ -250,7 +270,7 @@ public sealed partial class MainShellViewModel : ObservableObject
         if (health.DetectedBrowserDohBypassBrowsers.Count > 0)
         {
             BrowserDohBrowsersText = string.Join(", ", health.DetectedBrowserDohBypassBrowsers);
-            ShowBrowserDohBanner = true;
+            ShowBrowserDohBanner = !_dismissedBrowserDohBanner;
             OnPropertyChanged(nameof(BrowserDohBannerMessage));
         }
         else
@@ -263,7 +283,7 @@ public sealed partial class MainShellViewModel : ObservableObject
         {
             Port53OccupantName = string.IsNullOrWhiteSpace(health.Port53OccupantName) ? "System" : health.Port53OccupantName;
             Port53OccupantProcessId = health.Port53OccupantProcessId;
-            ShowPort53ConflictBanner = true;
+            ShowPort53ConflictBanner = !_dismissedPort53Banner;
             OnPropertyChanged(nameof(Port53ConflictBannerMessage));
         }
         else
@@ -271,13 +291,14 @@ public sealed partial class MainShellViewModel : ObservableObject
             ShowPort53ConflictBanner = false;
         }
 
-        ShowVpnAdvisoryBanner = !health.IsSmhnrDisabled && health.ActiveInterfaceNames.Count > 1;
+        bool hasVpnAdvisory = !health.IsSmhnrDisabled && health.ActiveInterfaceNames.Count > 1;
+        ShowVpnAdvisoryBanner = hasVpnAdvisory && !_dismissedVpnBanner;
 
         (bool antiCheatActive, IReadOnlyList<string> antiCheatNames) = _antiCheatDetector();
         if (antiCheatActive && Settings.SelectedInterceptionMode == InterceptionMode.WfpDivertPlugin)
         {
             AntiCheatNamesText = string.Join(", ", antiCheatNames);
-            ShowAntiCheatBanner = true;
+            ShowAntiCheatBanner = !_dismissedAntiCheatBanner;
             OnPropertyChanged(nameof(AntiCheatBannerMessage));
         }
         else
@@ -291,6 +312,12 @@ public sealed partial class MainShellViewModel : ObservableObject
     {
         _browserDohInspector.SetBrowserDohPoliciesDisabled(apply: true);
         ShowBrowserDohBanner = false;
+        if (_dismissedBrowserDohBanner)
+        {
+            _dismissedBrowserDohBanner = false;
+            await PersistBannerDismissalFlagsAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         await RefreshHostAdvisoriesAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -303,21 +330,90 @@ public sealed partial class MainShellViewModel : ObservableObject
     }
 
     [RelayCommand]
-    public void DismissVpnAdvisory()
+    public async Task DismissBrowserDohBannerAsync(CancellationToken cancellationToken = default)
     {
-        ShowVpnAdvisoryBanner = false;
+        ShowBrowserDohBanner = false;
+        _dismissedBrowserDohBanner = true;
+        await PersistBannerDismissalFlagsAsync(cancellationToken).ConfigureAwait(false);
     }
 
     [RelayCommand]
-    public void DismissAntiCheatBanner()
+    public async Task DismissPort53ConflictBannerAsync(CancellationToken cancellationToken = default)
+    {
+        ShowPort53ConflictBanner = false;
+        _dismissedPort53Banner = true;
+        await PersistBannerDismissalFlagsAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    [RelayCommand]
+    public async Task DismissVpnAdvisoryBannerAsync(CancellationToken cancellationToken = default)
+    {
+        ShowVpnAdvisoryBanner = false;
+        _dismissedVpnBanner = true;
+        await PersistBannerDismissalFlagsAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    [RelayCommand]
+    public Task DismissVpnAdvisoryAsync(CancellationToken cancellationToken = default)
+    {
+        return DismissVpnAdvisoryBannerAsync(cancellationToken);
+    }
+
+    [RelayCommand]
+    public async Task DismissAntiCheatBannerAsync(CancellationToken cancellationToken = default)
     {
         ShowAntiCheatBanner = false;
+        _dismissedAntiCheatBanner = true;
+        await PersistBannerDismissalFlagsAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    [RelayCommand]
+    public async Task RestoreDismissedBannersAsync(CancellationToken cancellationToken = default)
+    {
+        _dismissedBrowserDohBanner = false;
+        _dismissedPort53Banner = false;
+        _dismissedVpnBanner = false;
+        _dismissedAntiCheatBanner = false;
+        await PersistBannerDismissalFlagsAsync(cancellationToken).ConfigureAwait(false);
+        await RefreshHostAdvisoriesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     [RelayCommand]
     public void DismissDirtyRecoveryBanner()
     {
         ShowDirtyRecoveryBanner = false;
+    }
+
+    private void ApplyLoadedBannerFlags(PulseAppSettings settings)
+    {
+        _dismissedBrowserDohBanner = settings.DismissedBrowserDohBanner;
+        _dismissedPort53Banner = settings.DismissedPort53Banner;
+        _dismissedVpnBanner = settings.DismissedVpnBanner;
+        _dismissedAntiCheatBanner = settings.DismissedAntiCheatBanner;
+        NotifyDismissedBannerCountChanged();
+    }
+
+    private async Task PersistBannerDismissalFlagsAsync(CancellationToken cancellationToken)
+    {
+        NotifyDismissedBannerCountChanged();
+        Settings.SyncPreservedBannerFlags(
+            _dismissedBrowserDohBanner,
+            _dismissedPort53Banner,
+            _dismissedVpnBanner,
+            _dismissedAntiCheatBanner);
+
+        PulseAppSettings current = await _settingsStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        current.DismissedBrowserDohBanner = _dismissedBrowserDohBanner;
+        current.DismissedPort53Banner = _dismissedPort53Banner;
+        current.DismissedVpnBanner = _dismissedVpnBanner;
+        current.DismissedAntiCheatBanner = _dismissedAntiCheatBanner;
+        await _settingsStore.SaveAsync(current, cancellationToken).ConfigureAwait(false);
+    }
+
+    private void NotifyDismissedBannerCountChanged()
+    {
+        OnPropertyChanged(nameof(DismissedBannerCount));
+        OnPropertyChanged(nameof(HasDismissedBanners));
     }
 
     [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Startup dirty-crash recovery must remain non-fatal even when unprivileged.")]
@@ -374,6 +470,26 @@ public sealed partial class MainShellViewModel : ObservableObject
         Overview.ConfigureContextProviders(
             () => Servers.AllServers,
             () => Settings.BuildNormalizedSettings());
+
+        Overview.ConfigureOverviewCoordinators(
+            ensureRoutingPresetHandler: async (presetId, customDomain, ct) =>
+            {
+                await Routing.EnablePresetByIdAsync(presetId, ct).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(customDomain))
+                {
+                    await Routing.AddCustomGeoUnlockDomainAsync(customDomain, ct).ConfigureAwait(false);
+                }
+            },
+            fixBrowserDohHandler: FixBrowserDohAsync,
+            persistQuickServiceHandler: async (serviceId, domain, ct) =>
+            {
+                Settings.SyncPreservedQuickService(serviceId, domain);
+                PulseAppSettings current = await _settingsStore.LoadAsync(ct).ConfigureAwait(false);
+                current.SelectedQuickServiceId = serviceId;
+                current.LastVerifiedTargetDomain = domain;
+                await _settingsStore.SaveAsync(current, ct).ConfigureAwait(false);
+            },
+            catalogEntryUpdatedHandler: Servers.ApplyProbedServerUpdate);
 
         Overview.StrategyProfileApplied += async (_, e) =>
         {

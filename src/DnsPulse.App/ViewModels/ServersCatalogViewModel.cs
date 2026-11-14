@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Windows;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DnsPulse.App.Data;
@@ -63,6 +65,46 @@ public sealed class TrustTierSectionInfo
 }
 
 /// <summary>
+/// Localized task-category chip metadata for the unified server catalog filter bar.
+/// </summary>
+public sealed partial class ServerCategoryFilterOption : ObservableObject
+{
+    [ObservableProperty]
+    private string _title = string.Empty;
+
+    [ObservableProperty]
+    private string _description = string.Empty;
+
+    [ObservableProperty]
+    private int _count;
+
+    public ServerCategoryFilterOption(
+        ServerDisplayCategory? category,
+        string titleResourceKey,
+        string descriptionResourceKey,
+        string title,
+        string description,
+        int count = 0)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(titleResourceKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptionResourceKey);
+
+        Category = category;
+        TitleResourceKey = titleResourceKey;
+        DescriptionResourceKey = descriptionResourceKey;
+        _title = title;
+        _description = description;
+        _count = count;
+    }
+
+    public ServerDisplayCategory? Category { get; }
+
+    public string TitleResourceKey { get; }
+
+    public string DescriptionResourceKey { get; }
+}
+
+/// <summary>
 /// ViewModel for Servers &amp; Catalog: 4-tier trust categorization, section BenchmarkRunner,
 /// <c>sdns://</c>/profile import, Self-Hosted VPS Wizard, and Signed Feed Sync.
 /// </summary>
@@ -81,6 +123,24 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
 
     [ObservableProperty]
     private TrustTier? _selectedTrustTierFilter;
+
+    [ObservableProperty]
+    private ServerDisplayCategory? _selectedCategoryFilter;
+
+    [ObservableProperty]
+    private int _allCount;
+
+    [ObservableProperty]
+    private int _aiGeoCount;
+
+    [ObservableProperty]
+    private int _fastEncryptedCount;
+
+    [ObservableProperty]
+    private int _streamingGamingCount;
+
+    [ObservableProperty]
+    private int _customCount;
 
     [ObservableProperty]
     private bool _showFavoritesOnly;
@@ -107,7 +167,7 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
     private int _benchmarkTotalCount;
 
     [ObservableProperty]
-    private string _benchmarkTargetDomain = "gemini.google.com";
+    private string _benchmarkTargetDomain = "aistudio.google.com";
 
     [ObservableProperty]
     private string _importInputText = string.Empty;
@@ -171,6 +231,7 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
         _localization = localization;
 
         _localization.CultureChanged += OnCultureChanged;
+        InitializeCategoryFilterOptions();
         RebuildTierSections();
     }
 
@@ -183,6 +244,17 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
     public IReadOnlyList<DnsServerEntry> AllServers => _allServers;
 
     public ObservableCollection<DnsServerEntry> FilteredServers { get; } = [];
+
+    public ObservableCollection<ServerCategoryFilterOption> CategoryFilterOptions { get; } = [];
+
+    public string ActiveCategoryDescription => SelectedCategoryFilter switch
+    {
+        ServerDisplayCategory.AiAndGeoUnlock => _localization["Servers_Category_AiGeo_Desc"],
+        ServerDisplayCategory.FastEncrypted => _localization["Servers_Category_FastEncrypted_Desc"],
+        ServerDisplayCategory.StreamingAndGaming => _localization["Servers_Category_StreamingGaming_Desc"],
+        ServerDisplayCategory.CustomAndDiscovered => _localization["Servers_Category_Custom_Desc"],
+        _ => _localization["Servers_Category_All"]
+    };
 
     public ObservableCollection<DnsServerEntry> Tier1Servers { get; } = [];
 
@@ -207,12 +279,52 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
         IReadOnlyList<DnsServerEntry> loaded = await _repository.GetAllAsync(cancellationToken).ConfigureAwait(false);
         _allServers.Clear();
         _allServers.AddRange(loaded);
+        if (_runtimeService is HybridPulseRuntimeService hybridRuntime)
+        {
+            hybridRuntime.SetCatalogSnapshot(_allServers);
+        }
+
         ApplyFilterAndSort();
+    }
+
+    public void ApplyProbedServerUpdate(DnsServerEntry updatedServer)
+    {
+        ArgumentNullException.ThrowIfNull(updatedServer);
+        UpsertInMemory(updatedServer);
+        ApplyFilterAndSort();
+    }
+
+    [RelayCommand]
+    public Task RefreshFromRepositoryAsync(CancellationToken cancellationToken = default)
+    {
+        return LoadCatalogAsync(cancellationToken);
+    }
+
+    [RelayCommand]
+    public void SelectCategory(ServerDisplayCategory? category)
+    {
+        bool hadTierFilter = SelectedTrustTierFilter is not null;
+        SelectedTrustTierFilter = null;
+        if (SelectedCategoryFilter == category && hadTierFilter)
+        {
+            ApplyFilterAndSort();
+            return;
+        }
+
+        SelectedCategoryFilter = category;
     }
 
     [RelayCommand]
     public void SelectTrustTierFilter(TrustTier? tier)
     {
+        bool hadCategoryFilter = SelectedCategoryFilter is not null;
+        SelectedCategoryFilter = null;
+        if (SelectedTrustTierFilter == tier && hadCategoryFilter)
+        {
+            ApplyFilterAndSort();
+            return;
+        }
+
         SelectedTrustTierFilter = tier;
     }
 
@@ -316,14 +428,19 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
         BenchmarkTotalCount = targets.Count;
         BenchmarkProgressPercent = 0;
 
-        string domain = string.IsNullOrWhiteSpace(BenchmarkTargetDomain) ? "gemini.google.com" : BenchmarkTargetDomain.Trim();
+        string domain = string.IsNullOrWhiteSpace(BenchmarkTargetDomain) ? "aistudio.google.com" : BenchmarkTargetDomain.Trim();
         PulseAppSettings effectiveSettings = settings ?? new PulseAppSettings();
+        bool runFullSixLayer = SelectedCategoryFilter is ServerDisplayCategory.AiAndGeoUnlock
+            or ServerDisplayCategory.StreamingAndGaming
+            or ServerDisplayCategory.CustomAndDiscovered
+            || (SelectedCategoryFilter is null && targets.Any(static s => s.SupportsBypass));
+
         BenchmarkOptions options = new()
         {
             MaxConcurrency = Math.Clamp(effectiveSettings.BenchmarkConcurrency, 2, 16),
             SamplesPerServer = 3,
             ProbeTimeout = TimeSpan.FromMilliseconds(Math.Clamp(effectiveSettings.ProbeTimeoutMs, 1000, 6000)),
-            RunFullSixLayerDiagnostics = false
+            RunFullSixLayerDiagnostics = runFullSixLayer
         };
 
         try
@@ -483,42 +600,129 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
 
         List<DnsServerEntry> sortedAll = [.. SortEntries(baseQuery)];
 
-        FilteredServers.Clear();
-        Tier1Servers.Clear();
-        Tier2Servers.Clear();
-        Tier3Servers.Clear();
-        Tier4Servers.Clear();
-        foreach (TrustTierSectionInfo section in TrustTierSections)
-        {
-            section.Servers.Clear();
-        }
+        int aiGeoCount = 0;
+        int fastEncryptedCount = 0;
+        int streamingGamingCount = 0;
+        int customCount = 0;
+
+        List<DnsServerEntry> nextFiltered = [];
+        List<DnsServerEntry> nextTier1 = [];
+        List<DnsServerEntry> nextTier2 = [];
+        List<DnsServerEntry> nextTier3 = [];
+        List<DnsServerEntry> nextTier4 = [];
 
         foreach (DnsServerEntry entry in sortedAll)
         {
+            ServerDisplayCategory displayCategory = ServerCategoryClassifier.Classify(entry);
+            switch (displayCategory)
+            {
+                case ServerDisplayCategory.AiAndGeoUnlock:
+                    aiGeoCount++;
+                    break;
+                case ServerDisplayCategory.FastEncrypted:
+                    fastEncryptedCount++;
+                    break;
+                case ServerDisplayCategory.StreamingAndGaming:
+                    streamingGamingCount++;
+                    break;
+                case ServerDisplayCategory.CustomAndDiscovered:
+                    customCount++;
+                    break;
+            }
+
             switch (entry.TrustTier)
             {
                 case TrustTier.Tier1EncryptedTrusted:
-                    Tier1Servers.Add(entry);
+                    nextTier1.Add(entry);
                     break;
                 case TrustTier.Tier2VerifiedGeoUnlock:
-                    Tier2Servers.Add(entry);
+                    nextTier2.Add(entry);
                     break;
                 case TrustTier.Tier3CustomOrSelfHosted:
-                    Tier3Servers.Add(entry);
+                    nextTier3.Add(entry);
                     break;
                 case TrustTier.Tier4ExperimentalLab:
-                    Tier4Servers.Add(entry);
+                    nextTier4.Add(entry);
                     break;
             }
 
-            TrustTierSectionInfo? section = TrustTierSections.FirstOrDefault(s => s.Tier == entry.TrustTier);
-            section?.Servers.Add(entry);
+            bool matchesCategory = SelectedCategoryFilter is not ServerDisplayCategory categoryFilter || displayCategory == categoryFilter;
+            bool matchesTier = SelectedCategoryFilter is not null || SelectedTrustTierFilter is not TrustTier tierFilter || entry.TrustTier == tierFilter;
+            if (matchesCategory && matchesTier)
+            {
+                nextFiltered.Add(entry);
+            }
+        }
 
-            if (SelectedTrustTierFilter is not TrustTier tierFilter || entry.TrustTier == tierFilter)
+        RunOnUiThread(() =>
+        {
+            FilteredServers.Clear();
+            foreach (DnsServerEntry entry in nextFiltered)
             {
                 FilteredServers.Add(entry);
             }
+
+            Tier1Servers.Clear();
+            foreach (DnsServerEntry entry in nextTier1)
+            {
+                Tier1Servers.Add(entry);
+            }
+
+            Tier2Servers.Clear();
+            foreach (DnsServerEntry entry in nextTier2)
+            {
+                Tier2Servers.Add(entry);
+            }
+
+            Tier3Servers.Clear();
+            foreach (DnsServerEntry entry in nextTier3)
+            {
+                Tier3Servers.Add(entry);
+            }
+
+            Tier4Servers.Clear();
+            foreach (DnsServerEntry entry in nextTier4)
+            {
+                Tier4Servers.Add(entry);
+            }
+
+            foreach (TrustTierSectionInfo section in TrustTierSections)
+            {
+                section.Servers.Clear();
+                List<DnsServerEntry> bucket = section.Tier switch
+                {
+                    TrustTier.Tier1EncryptedTrusted => nextTier1,
+                    TrustTier.Tier2VerifiedGeoUnlock => nextTier2,
+                    TrustTier.Tier3CustomOrSelfHosted => nextTier3,
+                    TrustTier.Tier4ExperimentalLab => nextTier4,
+                    _ => []
+                };
+
+                foreach (DnsServerEntry entry in bucket)
+                {
+                    section.Servers.Add(entry);
+                }
+            }
+
+            AllCount = sortedAll.Count;
+            AiGeoCount = aiGeoCount;
+            FastEncryptedCount = fastEncryptedCount;
+            StreamingGamingCount = streamingGamingCount;
+            CustomCount = customCount;
+            UpdateCategoryFilterCounts();
+        });
+    }
+
+    private static void RunOnUiThread(Action action)
+    {
+        Dispatcher? dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            dispatcher.Invoke(action);
+            return;
         }
+
+        action();
     }
 
     private IOrderedEnumerable<DnsServerEntry> SortEntries(IEnumerable<DnsServerEntry> query)
@@ -527,13 +731,21 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
         {
             ServerSortOrder.P50Latency => query
                 .OrderByDescending(static s => s.IsFavorite)
+                .ThenBy(static s => s.Verdict switch
+                {
+                    DiagnosticVerdict.Healthy => 0,
+                    DiagnosticVerdict.TlsSniDpiReset => 1,
+                    DiagnosticVerdict.Unknown => 2,
+                    _ => 3
+                })
                 .ThenBy(static s => s.LatencyP50Ms ?? s.LastLatencyMs ?? double.MaxValue)
                 .ThenBy(static s => s.Name, StringComparer.OrdinalIgnoreCase),
             ServerSortOrder.Protocol => query
                 .OrderBy(static s => s.Protocol.ToString(), StringComparer.OrdinalIgnoreCase)
                 .ThenBy(static s => s.LatencyP50Ms ?? s.LastLatencyMs ?? double.MaxValue),
             ServerSortOrder.TrustTier => query
-                .OrderBy(static s => (int)s.TrustTier)
+                .OrderBy(static s => (int)ServerCategoryClassifier.Classify(s))
+                .ThenBy(static s => (int)s.TrustTier)
                 .ThenBy(static s => s.LatencyP50Ms ?? s.LastLatencyMs ?? double.MaxValue),
             _ => query.OrderBy(static s => s.Name, StringComparer.OrdinalIgnoreCase)
         };
@@ -555,6 +767,12 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
 
     partial void OnSelectedTrustTierFilterChanged(TrustTier? value) => ApplyFilterAndSort();
 
+    partial void OnSelectedCategoryFilterChanged(ServerDisplayCategory? value)
+    {
+        ApplyFilterAndSort();
+        OnPropertyChanged(nameof(ActiveCategoryDescription));
+    }
+
     partial void OnShowFavoritesOnlyChanged(bool value) => ApplyFilterAndSort();
 
     partial void OnSearchQueryChanged(string value) => ApplyFilterAndSort();
@@ -571,6 +789,62 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
         else
         {
             _allServers.Add(entry);
+        }
+
+        if (_runtimeService is HybridPulseRuntimeService hybridRuntime)
+        {
+            hybridRuntime.SetCatalogSnapshot(_allServers);
+        }
+    }
+
+    private void InitializeCategoryFilterOptions()
+    {
+        CategoryFilterOptions.Clear();
+        CategoryFilterOptions.Add(new ServerCategoryFilterOption(
+            null,
+            "Servers_Category_All",
+            "Servers_Category_All",
+            _localization["Servers_Category_All"],
+            _localization["Servers_Category_All"]));
+        CategoryFilterOptions.Add(new ServerCategoryFilterOption(
+            ServerDisplayCategory.AiAndGeoUnlock,
+            "Servers_Category_AiGeo",
+            "Servers_Category_AiGeo_Desc",
+            _localization["Servers_Category_AiGeo"],
+            _localization["Servers_Category_AiGeo_Desc"]));
+        CategoryFilterOptions.Add(new ServerCategoryFilterOption(
+            ServerDisplayCategory.FastEncrypted,
+            "Servers_Category_FastEncrypted",
+            "Servers_Category_FastEncrypted_Desc",
+            _localization["Servers_Category_FastEncrypted"],
+            _localization["Servers_Category_FastEncrypted_Desc"]));
+        CategoryFilterOptions.Add(new ServerCategoryFilterOption(
+            ServerDisplayCategory.StreamingAndGaming,
+            "Servers_Category_StreamingGaming",
+            "Servers_Category_StreamingGaming_Desc",
+            _localization["Servers_Category_StreamingGaming"],
+            _localization["Servers_Category_StreamingGaming_Desc"]));
+        CategoryFilterOptions.Add(new ServerCategoryFilterOption(
+            ServerDisplayCategory.CustomAndDiscovered,
+            "Servers_Category_Custom",
+            "Servers_Category_Custom_Desc",
+            _localization["Servers_Category_Custom"],
+            _localization["Servers_Category_Custom_Desc"]));
+    }
+
+    private void UpdateCategoryFilterCounts()
+    {
+        foreach (ServerCategoryFilterOption option in CategoryFilterOptions)
+        {
+            option.Count = option.Category switch
+            {
+                null => AllCount,
+                ServerDisplayCategory.AiAndGeoUnlock => AiGeoCount,
+                ServerDisplayCategory.FastEncrypted => FastEncryptedCount,
+                ServerDisplayCategory.StreamingAndGaming => StreamingGamingCount,
+                ServerDisplayCategory.CustomAndDiscovered => CustomCount,
+                _ => 0
+            };
         }
     }
 
@@ -599,6 +873,13 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
 
     private void OnCultureChanged(object? sender, CultureChangedEventArgs e)
     {
+        foreach (ServerCategoryFilterOption option in CategoryFilterOptions)
+        {
+            option.Title = _localization[option.TitleResourceKey];
+            option.Description = _localization[option.DescriptionResourceKey];
+        }
+
+        OnPropertyChanged(nameof(ActiveCategoryDescription));
         RebuildTierSections();
     }
 }

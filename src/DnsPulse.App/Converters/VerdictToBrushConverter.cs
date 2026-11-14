@@ -9,15 +9,15 @@ namespace DnsPulse.App.Converters;
 
 /// <summary>
 /// Maps <see cref="DiagnosticVerdict"/>, <see cref="DiagnosticLayerStatus"/>, and <see cref="HeroConnectionState"/>
-/// to semantic high-contrast status brushes.
+/// to WCAG-AA accessible semantic status brushes suitable for pairing with white foreground icons/text.
 /// </summary>
 public sealed class VerdictToBrushConverter : IValueConverter
 {
-    private static readonly SolidColorBrush SuccessBrush = CreateFrozenBrush(0x10, 0xB9, 0x81);
-    private static readonly SolidColorBrush InfoBrush = CreateFrozenBrush(0x3B, 0x82, 0xF6);
-    private static readonly SolidColorBrush WarningBrush = CreateFrozenBrush(0xF5, 0x9E, 0x0B);
-    private static readonly SolidColorBrush ErrorBrush = CreateFrozenBrush(0xEF, 0x44, 0x44);
-    private static readonly SolidColorBrush NeutralBrush = CreateFrozenBrush(0x64, 0x74, 0x8B);
+    private static readonly SolidColorBrush SuccessBrush = CreateFrozenBrush(0x15, 0x80, 0x3D);
+    private static readonly SolidColorBrush InfoBrush = CreateFrozenBrush(0x1D, 0x4E, 0xD8);
+    private static readonly SolidColorBrush WarningBrush = CreateFrozenBrush(0xB4, 0x53, 0x09);
+    private static readonly SolidColorBrush ErrorBrush = CreateFrozenBrush(0xB9, 0x1C, 0x1C);
+    private static readonly SolidColorBrush NeutralBrush = CreateFrozenBrush(0x47, 0x55, 0x69);
 
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {

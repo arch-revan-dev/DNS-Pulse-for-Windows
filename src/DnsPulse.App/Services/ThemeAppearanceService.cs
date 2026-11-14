@@ -1,5 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Wpf.Ui.Appearance;
 using Wpf.Ui.Controls;
@@ -25,6 +27,12 @@ public enum ThemeAccentPreset
 /// </summary>
 public sealed class ThemeAppearanceService : ObservableObject
 {
+    private readonly record struct AccentPalette(
+        MediaColor Primary,
+        MediaColor Hover,
+        MediaColor Pressed,
+        MediaColor DarkTextAccent);
+
     private readonly Func<bool> _highContrastProvider;
     private readonly Func<int> _windowsBuildProvider;
 
@@ -79,9 +87,8 @@ public sealed class ThemeAppearanceService : ObservableObject
 
     /// <summary>
     /// Applies theme, accent preset, backdrop (Win11 Mica / Win10 solid fallback), and high-contrast compliance.
-    /// Safe to invoke when <see cref="Application.Current"/> is null (e.g., headless unit tests).
+    /// Dispatches synchronously onto the WPF UI thread when invoked from a background thread.
     /// </summary>
-    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Headless/non-STA test hosts without WPF dispatcher resources should still update observable theme state cleanly.")]
     public void ApplyTheme(bool isDarkTheme, string? accentPresetName)
     {
         bool highContrast = SafeEvaluateHighContrast();
@@ -96,19 +103,19 @@ public sealed class ThemeAppearanceService : ObservableObject
         _currentTheme = targetTheme;
         _currentBackdrop = backdrop;
 
-        if (System.Windows.Application.Current is not null)
+        if (System.Windows.Application.Current is { } app)
         {
-            try
+            Dispatcher? dispatcher = app.Dispatcher;
+            if (dispatcher is not null && !dispatcher.HasShutdownStarted && !dispatcher.HasShutdownFinished)
             {
-                ApplicationThemeManager.Apply(targetTheme, backdrop, updateAccent: !highContrast);
-                if (!highContrast)
+                if (dispatcher.CheckAccess())
                 {
-                    ApplicationAccentColorManager.Apply(GetAccentColor(preset), targetTheme, false, false);
+                    ApplyWpfResources(app, targetTheme, backdrop, preset, highContrast);
                 }
-            }
-            catch (Exception)
-            {
-                // Ignore WPF resource dictionary errors if invoked prior to Application resource initialization.
+                else
+                {
+                    dispatcher.Invoke(() => ApplyWpfResources(app, targetTheme, backdrop, preset, highContrast));
+                }
             }
         }
 
@@ -149,17 +156,130 @@ public sealed class ThemeAppearanceService : ObservableObject
     }
 
     /// <summary>
-    /// Maps a <see cref="ThemeAccentPreset"/> to its primary UI accent color.
+    /// Maps a <see cref="ThemeAccentPreset"/> to its primary WCAG-AA accessible UI accent color.
     /// </summary>
     public static MediaColor GetAccentColor(ThemeAccentPreset preset)
     {
+        return GetAccentPalette(preset).Primary;
+    }
+
+    private static void ApplyWpfResources(
+        System.Windows.Application app,
+        ApplicationTheme targetTheme,
+        WindowBackdropType backdrop,
+        ThemeAccentPreset preset,
+        bool highContrast)
+    {
+        // Never pass updateAccent: true — Wpf.Ui would pull the Windows OS accent color (often washed-out purple/pink).
+        ApplicationThemeManager.Apply(targetTheme, backdrop, updateAccent: false);
+        if (highContrast)
+        {
+            return;
+        }
+
+        AccentPalette palette = GetAccentPalette(preset);
+        ApplicationAccentColorManager.Apply(palette.Primary, targetTheme, false, false);
+        ApplyAccessibleAccentOverrides(app.Resources, palette, targetTheme);
+    }
+
+    private static void ApplyAccessibleAccentOverrides(
+        ResourceDictionary resources,
+        AccentPalette palette,
+        ApplicationTheme targetTheme)
+    {
+        bool isDark = targetTheme == ApplicationTheme.Dark;
+        MediaColor textAccentColor = isDark ? palette.DarkTextAccent : palette.Primary;
+        MediaColor textAccentSecondaryColor = isDark ? palette.DarkTextAccent : palette.Hover;
+        MediaColor textAccentTertiaryColor = isDark ? palette.DarkTextAccent : palette.Pressed;
+        MediaColor white = MediaColor.FromRgb(0xFF, 0xFF, 0xFF);
+        MediaColor whiteSecondary = MediaColor.FromArgb(0xE6, 0xFF, 0xFF, 0xFF);
+
+        // Override Wpf.Ui 4.3.0 pastel dark-mode accent computation so primary buttons and checked chips
+        // always render crisp saturated fills paired with high-contrast #FFFFFFFF white text.
+        SetColorAndBrush(resources, "AccentFillColorDefault", "AccentFillColorDefaultBrush", palette.Primary);
+        SetColorAndBrush(resources, "AccentFillColorSecondary", "AccentFillColorSecondaryBrush", palette.Hover);
+        SetColorAndBrush(resources, "AccentFillColorTertiary", "AccentFillColorTertiaryBrush", palette.Pressed);
+        SetBrush(resources, "AccentFillColorSelectedTextBackgroundBrush", palette.Primary);
+
+        SetBrush(resources, "AccentButtonBackground", palette.Primary);
+        SetBrush(resources, "AccentButtonBackgroundPointerOver", palette.Hover);
+        SetBrush(resources, "AccentButtonBackgroundPressed", palette.Pressed);
+        SetBrush(resources, "AccentButtonForeground", white);
+        SetBrush(resources, "AccentButtonForegroundPointerOver", white);
+        SetBrush(resources, "AccentButtonForegroundPressed", whiteSecondary);
+
+        SetColorAndBrush(resources, "TextOnAccentFillColorPrimary", "TextOnAccentFillColorPrimaryBrush", white);
+        SetColorAndBrush(resources, "TextOnAccentFillColorSecondary", "TextOnAccentFillColorSecondaryBrush", whiteSecondary);
+        SetColorAndBrush(resources, "TextOnAccentFillColorSelectedText", "TextOnAccentFillColorSelectedTextBrush", white);
+
+        SetColorAndBrush(resources, "SystemAccentColor", "SystemAccentBrush", palette.Primary);
+        SetColorAndBrush(resources, "SystemAccentColorPrimary", "SystemAccentColorPrimaryBrush", textAccentColor);
+        SetColorAndBrush(resources, "SystemAccentColorSecondary", "SystemAccentColorSecondaryBrush", palette.Hover);
+        SetColorAndBrush(resources, "SystemAccentColorTertiary", "SystemAccentColorTertiaryBrush", palette.Pressed);
+
+        SetBrush(resources, "AccentTextFillColorPrimaryBrush", textAccentColor);
+        SetBrush(resources, "AccentTextFillColorSecondaryBrush", textAccentSecondaryColor);
+        SetBrush(resources, "AccentTextFillColorTertiaryBrush", textAccentTertiaryColor);
+        SetBrush(resources, "SystemFillColorAttentionBrush", textAccentColor);
+
+        SetBrush(resources, "ToggleButtonBackgroundChecked", palette.Primary);
+        SetBrush(resources, "ToggleButtonBackgroundCheckedPointerOver", palette.Hover);
+        SetBrush(resources, "ToggleButtonBackgroundCheckedPressed", palette.Pressed);
+        SetBrush(resources, "ToggleButtonForegroundChecked", white);
+        SetBrush(resources, "ToggleButtonForegroundCheckedPointerOver", white);
+        SetBrush(resources, "ToggleButtonForegroundCheckedPressed", whiteSecondary);
+        SetBrush(resources, "ListViewItemPillFillBrush", textAccentColor);
+    }
+
+    private static void SetColorAndBrush(
+        ResourceDictionary resources,
+        string colorKey,
+        string brushKey,
+        MediaColor color)
+    {
+        resources[colorKey] = color;
+        SetBrush(resources, brushKey, color);
+    }
+
+    private static void SetBrush(
+        ResourceDictionary resources,
+        string brushKey,
+        MediaColor color)
+    {
+        SolidColorBrush brush = new(color);
+        brush.Freeze();
+        resources[brushKey] = brush;
+    }
+
+    private static AccentPalette GetAccentPalette(ThemeAccentPreset preset)
+    {
         return preset switch
         {
-            ThemeAccentPreset.Azure => MediaColor.FromRgb(0x3B, 0x82, 0xF6),
-            ThemeAccentPreset.Violet => MediaColor.FromRgb(0x8B, 0x5C, 0xF6),
-            ThemeAccentPreset.Amber => MediaColor.FromRgb(0xF5, 0x9E, 0x0B),
-            ThemeAccentPreset.Rose => MediaColor.FromRgb(0xF4, 0x3F, 0x5E),
-            _ => MediaColor.FromRgb(0x10, 0xB9, 0x81)
+            ThemeAccentPreset.Azure => new AccentPalette(
+                Primary: MediaColor.FromRgb(0x25, 0x63, 0xEB),
+                Hover: MediaColor.FromRgb(0x1D, 0x4E, 0xD8),
+                Pressed: MediaColor.FromRgb(0x1E, 0x40, 0xAF),
+                DarkTextAccent: MediaColor.FromRgb(0x60, 0xA5, 0xFA)),
+            ThemeAccentPreset.Violet => new AccentPalette(
+                Primary: MediaColor.FromRgb(0x7C, 0x3A, 0xED),
+                Hover: MediaColor.FromRgb(0x6D, 0x28, 0xD9),
+                Pressed: MediaColor.FromRgb(0x5B, 0x21, 0xB6),
+                DarkTextAccent: MediaColor.FromRgb(0xA7, 0x8B, 0xFA)),
+            ThemeAccentPreset.Amber => new AccentPalette(
+                Primary: MediaColor.FromRgb(0xB4, 0x53, 0x09),
+                Hover: MediaColor.FromRgb(0x92, 0x40, 0x0E),
+                Pressed: MediaColor.FromRgb(0x78, 0x35, 0x0F),
+                DarkTextAccent: MediaColor.FromRgb(0xFB, 0xBF, 0x24)),
+            ThemeAccentPreset.Rose => new AccentPalette(
+                Primary: MediaColor.FromRgb(0xE1, 0x1D, 0x48),
+                Hover: MediaColor.FromRgb(0xBE, 0x12, 0x3C),
+                Pressed: MediaColor.FromRgb(0x9F, 0x12, 0x39),
+                DarkTextAccent: MediaColor.FromRgb(0xFB, 0x71, 0x85)),
+            _ => new AccentPalette(
+                Primary: MediaColor.FromRgb(0x04, 0x78, 0x57),
+                Hover: MediaColor.FromRgb(0x05, 0x96, 0x69),
+                Pressed: MediaColor.FromRgb(0x06, 0x5F, 0x46),
+                DarkTextAccent: MediaColor.FromRgb(0x34, 0xD3, 0x99))
         };
     }
 

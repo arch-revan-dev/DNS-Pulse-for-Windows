@@ -218,12 +218,39 @@
           <ui:SymbolIcon Symbol="Globe24" />
         </ui:CardExpander.Icon>
         <StackPanel>
-          <ui:InfoBar IsOpen="True"
-                      IsClosable="False"
-                      Severity="Warning"
-                      Margin="0,0,0,12"
-                      Title="{conv:Localization Diag_Lab_Title}"
-                      Message="{conv:Localization Diag_Lab_Disclaimer}" />
+          <Border Margin="0,0,0,12"
+                  Padding="12,10"
+                  CornerRadius="8"
+                  Background="#1C212A"
+                  BorderBrush="#D97706"
+                  BorderThickness="1">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Border Grid.Column="0"
+                      Width="26"
+                      Height="26"
+                      CornerRadius="13"
+                      Margin="0,0,12,0"
+                      VerticalAlignment="Top"
+                      Background="#B45309">
+                <ui:SymbolIcon Symbol="Warning24" FontSize="14" Foreground="White" />
+              </Border>
+              <StackPanel Grid.Column="1">
+                <TextBlock FontSize="13"
+                           FontWeight="SemiBold"
+                           Foreground="#F8FAFC"
+                           Text="{conv:Localization Diag_Lab_Title}" />
+                <TextBlock Margin="0,3,0,0"
+                           FontSize="12"
+                           Foreground="#CBD5E1"
+                           Text="{conv:Localization Diag_Lab_Disclaimer}"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+            </Grid>
+          </Border>
 
           <CheckBox Margin="0,0,0,12"
                     IsChecked="{Binding HasAcceptedLabDisclaimer, Mode=TwoWay}"
@@ -234,7 +261,7 @@
           <WrapPanel Orientation="Horizontal" Margin="0,0,0,8">
             <ui:TextBox Width="220"
                         Margin="0,0,8,8"
-                        PlaceholderText="CIDR (e.g. 203.0.113.0/24)"
+                        PlaceholderText="CIDR (203.0.113.0/24)"
                         Text="{Binding LabCustomCidr, UpdateSourceTrigger=PropertyChanged}"
                         AutomationProperties.Name="{conv:Localization Diag_Lab_Title}"
                         AutomationProperties.HelpText="{conv:Localization Diag_Lab_Disclaimer}" />
@@ -274,17 +301,49 @@
                         Text="{Binding LabProgressText}"
                         Visibility="{Binding LabProgressText, Converter={StaticResource NullToVisibilityConverter}}" />
 
-          <ListView MaxHeight="180"
+          <ListView MaxHeight="190"
+                    Style="{StaticResource PulseDarkCardListViewStyle}"
+                    ItemContainerStyle="{StaticResource PulseDarkListViewItemStyle}"
                     ItemsSource="{Binding LabDiscoveredNodes}"
                     Visibility="{Binding LabDiscoveredNodes.Count, Converter={StaticResource NullToVisibilityConverter}}"
                     AutomationProperties.Name="{conv:Localization Diag_Lab_Title}">
             <ListView.ItemTemplate>
               <DataTemplate>
-                <StackPanel Orientation="Horizontal" Margin="4,2">
-                  <ui:TextBlock FontTypography="BodyStrong" Text="{Binding Name}" />
-                  <ui:TextBlock Margin="12,0,0,0" Appearance="Secondary" Text="{Binding EndpointLabel}" />
-                  <ui:TextBlock Margin="12,0,0,0" Text="{Binding LatencyP50Ms, Converter={StaticResource LatencyFormatConverter}}" />
-                </StackPanel>
+                <Border Padding="10,7"
+                        Margin="0,0,0,4"
+                        CornerRadius="6"
+                        Background="#1C212A"
+                        BorderBrush="#2D3545"
+                        BorderThickness="1">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="#F8FAFC"
+                               VerticalAlignment="Center"
+                               Text="{Binding Name}"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Column="1"
+                               Margin="12,0,0,0"
+                               FontSize="12"
+                               Foreground="#94A3B8"
+                               VerticalAlignment="Center"
+                               Text="{Binding EndpointLabel}"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Column="2"
+                               Margin="12,0,0,0"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="#CBD5E1"
+                               VerticalAlignment="Center"
+                               Text="{Binding LatencyP50Ms, Converter={StaticResource LatencyFormatConverter}}" />
+                  </Grid>
+                </Border>
               </DataTemplate>
             </ListView.ItemTemplate>
           </ListView>
@@ -316,27 +375,27 @@
           <WrapPanel Orientation="Horizontal" Margin="0,0,0,12">
             <ui:TextBox Width="170"
                         Margin="0,0,8,8"
-                        PlaceholderText="LAN IP"
+                        PlaceholderText="{conv:Localization Diag_Lan_IpPlaceholder}"
                         Text="{Binding LanIpAddress, UpdateSourceTrigger=PropertyChanged}"
-                        AutomationProperties.Name="{conv:Localization Diag_Lan_Title}"
+                        AutomationProperties.Name="{conv:Localization Diag_Lan_IpPlaceholder}"
                         AutomationProperties.HelpText="{conv:Localization Diag_Lan_Enable}" />
-            <ui:TextBox Width="90"
+            <ui:TextBox Width="110"
                         Margin="0,0,8,8"
-                        PlaceholderText="DNS Port"
+                        PlaceholderText="{conv:Localization Diag_Lan_DnsPort}"
                         Text="{Binding LanDnsPort, UpdateSourceTrigger=PropertyChanged}"
-                        AutomationProperties.Name="DNS Port"
+                        AutomationProperties.Name="{conv:Localization Diag_Lan_DnsPort}"
                         AutomationProperties.HelpText="{conv:Localization Diag_Lan_Title}" />
-            <ui:TextBox Width="90"
+            <ui:TextBox Width="110"
                         Margin="0,0,8,8"
-                        PlaceholderText="PAC Port"
+                        PlaceholderText="{conv:Localization Diag_Lan_PacPort}"
                         Text="{Binding LanPacPort, UpdateSourceTrigger=PropertyChanged}"
-                        AutomationProperties.Name="PAC Port"
+                        AutomationProperties.Name="{conv:Localization Diag_Lan_PacPort}"
                         AutomationProperties.HelpText="{conv:Localization Diag_Lan_Title}" />
-            <ui:TextBox Width="90"
+            <ui:TextBox Width="110"
                         Margin="0,0,8,8"
-                        PlaceholderText="Proxy Port"
+                        PlaceholderText="{conv:Localization Diag_Lan_ProxyPort}"
                         Text="{Binding LanProxyPort, UpdateSourceTrigger=PropertyChanged}"
-                        AutomationProperties.Name="Proxy Port"
+                        AutomationProperties.Name="{conv:Localization Diag_Lan_ProxyPort}"
                         AutomationProperties.HelpText="{conv:Localization Diag_Lan_Title}" />
             <ui:Button Margin="0,0,0,8"
                        Content="{conv:Localization Diag_Lan_Refresh}"
@@ -370,7 +429,7 @@
             </Border>
 
             <StackPanel Grid.Column="1" VerticalAlignment="Center">
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="DNS Endpoint" />
+              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Diag_Lan_DnsEndpoint}" />
               <StackPanel Orientation="Horizontal" Margin="0,2,0,10">
                 <ui:TextBlock FontFamily="Consolas"
                               FontTypography="BodyStrong"
@@ -380,13 +439,14 @@
                            Padding="8,4"
                            Tag="{Binding LanGateway.DnsEndpoint}"
                            Click="OnCopyEndpointClick"
-                           AutomationProperties.Name="Copy DNS Endpoint"
+                           ToolTip="{conv:Localization Diag_Lan_CopyDns}"
+                           AutomationProperties.Name="{conv:Localization Diag_Lan_CopyDns}"
                            AutomationProperties.HelpText="{Binding LanGateway.DnsEndpoint}">
                   <ui:SymbolIcon Symbol="Copy24" />
                 </ui:Button>
               </StackPanel>
 
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="PAC URL" />
+              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Diag_Lan_PacUrl}" />
               <StackPanel Orientation="Horizontal" Margin="0,2,0,10">
                 <ui:TextBlock FontFamily="Consolas"
                               FontTypography="BodyStrong"
@@ -396,13 +456,14 @@
                            Padding="8,4"
                            Tag="{Binding LanGateway.PacUrl}"
                            Click="OnCopyEndpointClick"
-                           AutomationProperties.Name="Copy PAC URL"
+                           ToolTip="{conv:Localization Diag_Lan_CopyPac}"
+                           AutomationProperties.Name="{conv:Localization Diag_Lan_CopyPac}"
                            AutomationProperties.HelpText="{Binding LanGateway.PacUrl}">
                   <ui:SymbolIcon Symbol="Copy24" />
                 </ui:Button>
               </StackPanel>
 
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="Proxy Endpoint" />
+              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Diag_Lan_ProxyEndpoint}" />
               <ui:TextBlock Margin="0,2,0,0"
                             FontFamily="Consolas"
                             FontTypography="BodyStrong"

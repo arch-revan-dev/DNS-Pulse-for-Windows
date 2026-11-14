@@ -13,70 +13,91 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="App_Title" xml:space="preserve"><value>DNS Pulse — PulseCore</value></data>
-  <data name="App_Subtitle" xml:space="preserve"><value>Движок Split-DNS, Geo-Unlock и Anti-DPI</value></data>
+  <data name="App_Subtitle" xml:space="preserve"><value>Умный шифрованный DNS и доступ к сервисам</value></data>
   <data name="Nav_Overview" xml:space="preserve"><value>Обзор</value></data>
-  <data name="Nav_Routing" xml:space="preserve"><value>Маршруты и инспектор</value></data>
+  <data name="Nav_Routing" xml:space="preserve"><value>Сервисы и журнал</value></data>
   <data name="Nav_Servers" xml:space="preserve"><value>Серверы и каталог</value></data>
   <data name="Nav_Diagnostics" xml:space="preserve"><value>Диагностика</value></data>
   <data name="Nav_Settings" xml:space="preserve"><value>Настройки и защита</value></data>
-  <data name="Auto_Nav_Overview" xml:space="preserve"><value>Перейти на панель обзора</value></data>
-  <data name="Auto_Nav_Routing" xml:space="preserve"><value>Перейти к правилам маршрутизации и инспектору DNS-запросов</value></data>
+  <data name="Auto_Nav_Overview" xml:space="preserve"><value>Перейти на главный экран обзора</value></data>
+  <data name="Auto_Nav_Routing" xml:space="preserve"><value>Перейти к выбору сервисов и журналу DNS-запросов</value></data>
   <data name="Auto_Nav_Servers" xml:space="preserve"><value>Перейти к каталогу DNS-серверов и мастеру VPS</value></data>
-  <data name="Auto_Nav_Diagnostics" xml:space="preserve"><value>Перейти к 6-уровневой диагностике и LAN-шлюзу</value></data>
-  <data name="Auto_Nav_Settings" xml:space="preserve"><value>Перейти к настройкам, защите от утечек и экстренному восстановлению</value></data>
-  <data name="Auto_HeroConnectButton" xml:space="preserve"><value>Переключить подключение DNS Pulse</value></data>
+  <data name="Auto_Nav_Diagnostics" xml:space="preserve"><value>Перейти к проверке доступа и обмену по локальной сети</value></data>
+  <data name="Auto_Nav_Settings" xml:space="preserve"><value>Перейти к настройкам, защите приватности и сбросу сети</value></data>
+  <data name="Auto_HeroConnectButton" xml:space="preserve"><value>Включить или выключить DNS Pulse</value></data>
   <data name="Auto_EmergencyRestoreButton" xml:space="preserve"><value>Выполнить экстренное восстановление сети Windows</value></data>
-  <data name="Auto_ExportBundleButton" xml:space="preserve"><value>Экспортировать обезличенный диагностический ZIP-архив</value></data>
-  <data name="Auto_RunDiagnosticsButton" xml:space="preserve"><value>Запустить 6-уровневую диагностику сети и TLS</value></data>
+  <data name="Auto_ExportBundleButton" xml:space="preserve"><value>Сохранить обезличенный диагностический ZIP-архив</value></data>
+  <data name="Auto_RunDiagnosticsButton" xml:space="preserve"><value>Запустить 6-шаговую проверку соединения и доступа</value></data>
   <data name="Auto_ApplyRemediationButton" xml:space="preserve"><value>Применить рекомендуемое исправление в 1 клик</value></data>
-  <data name="Auto_SearchInput" xml:space="preserve"><value>Поиск доменов или серверов</value></data>
-  <data name="Banner_DirtyRecovery_Title" xml:space="preserve"><value>Предыдущий сеанс завершился некорректно — сеть восстановлена</value></data>
-  <data name="Banner_DirtyRecovery_Desc" xml:space="preserve"><value>Отказоустойчивый журнал обнаружил незакрытый снимок DNS и автоматически восстановил параметры адаптеров Windows.</value></data>
-  <data name="Banner_BrowserDoh_Title" xml:space="preserve"><value>Обнаружен встроенный DoH-обход в браузере</value></data>
-  <data name="Banner_BrowserDoh_Desc" xml:space="preserve"><value>Браузеры ({0}) могут обходить Split-DNS PulseCore через собственный шифрованный DNS.</value></data>
-  <data name="Banner_BrowserDoh_Fix" xml:space="preserve"><value>Отключить встроенный DoH браузера</value></data>
-  <data name="Banner_Port53_Title" xml:space="preserve"><value>Обнаружен конфликт на локальном порту 53</value></data>
-  <data name="Banner_Port53_Desc" xml:space="preserve"><value>Процесс «{0}» (PID {1}) занимает порт 53. PulseCore переключится на альтернативный loopback или PAC-режим.</value></data>
-  <data name="Banner_Port53_Fix" xml:space="preserve"><value>Переключиться на безопасный Loopback / PAC</value></data>
-  <data name="Banner_VpnAdvisory_Title" xml:space="preserve"><value>Предупреждение о многоинтерфейсном DNS Windows / VPN</value></data>
-  <data name="Banner_VpnAdvisory_Desc" xml:space="preserve"><value>Служба SMHNR активна; включите защиту адаптера или NRPT для предотвращения утечек DNS.</value></data>
-  <data name="Banner_AntiCheat_Title" xml:space="preserve"><value>Обнаружен античит уровня ядра</value></data>
-  <data name="Banner_AntiCheat_Desc" xml:space="preserve"><value>Активный античит ({0}) блокирует захват пакетов WFP/WinDivert. Используйте DNS адаптера, NRPT или PAC.</value></data>
+  <data name="Auto_SearchInput" xml:space="preserve"><value>Поиск сайтов или серверов</value></data>
+  <data name="Banner_DirtyRecovery_Title" xml:space="preserve"><value>Прошлый сеанс завершился некорректно — сеть восстановлена</value></data>
+  <data name="Banner_DirtyRecovery_Desc" xml:space="preserve"><value>Система восстановления обнаружила незакрытое подключение и автоматически вернула исходные настройки сети Windows.</value></data>
+  <data name="Banner_BrowserDoh_Title" xml:space="preserve"><value>Внимание: браузер использует свой DoH</value></data>
+  <data name="Banner_BrowserDoh_Desc" xml:space="preserve"><value>Браузеры ({0}) используют собственный шифрованный DNS и могут обходить правила DNS Pulse.</value></data>
+  <data name="Banner_BrowserDoh_Fix" xml:space="preserve"><value>Исправить автоматически</value></data>
+  <data name="Banner_Port53_Title" xml:space="preserve"><value>Порт 53 занят другой программой</value></data>
+  <data name="Banner_Port53_Desc" xml:space="preserve"><value>Программа «{0}» (PID {1}) использует порт 53. DNS Pulse безопасно переключится на запасной адрес или локальный прокси.</value></data>
+  <data name="Banner_Port53_Fix" xml:space="preserve"><value>Включить безопасный режим</value></data>
+  <data name="Banner_VpnAdvisory_Title" xml:space="preserve"><value>Обнаружено несколько сетевых подключений</value></data>
+  <data name="Banner_VpnAdvisory_Desc" xml:space="preserve"><value>Когда активно несколько сетей или VPN, Windows может отправлять часть DNS-запросов мимо туннеля. Оставьте защиту адаптера включённой.</value></data>
+  <data name="Banner_AntiCheat_Title" xml:space="preserve"><value>Обнаружен игровой античит</value></data>
+  <data name="Banner_AntiCheat_Desc" xml:space="preserve"><value>Активный античит ({0}) блокирует перехват пакетов. Используйте стандартный DNS адаптера или локальный прокси.</value></data>
   <data name="Banner_Dismiss" xml:space="preserve"><value>Скрыть</value></data>
-  <data name="Overview_State_Protected" xml:space="preserve"><value>Защищено</value></data>
-  <data name="Overview_State_Protected_Sub" xml:space="preserve"><value>Шифрованный доверенный DNS активен для всего базового интернет-трафика.</value></data>
-  <data name="Overview_State_SmartBypass" xml:space="preserve"><value>Умный обход активен</value></data>
-  <data name="Overview_State_SmartBypass_Sub" xml:space="preserve"><value>Split-DNS и Geo-Unlock активны с жёстким закреплением критичных доменов.</value></data>
+  <data name="Banner_ShowNotifications" xml:space="preserve"><value>Показать уведомления</value></data>
+  <data name="Banner_HideNotifications" xml:space="preserve"><value>Скрыть уведомления</value></data>
+  <data name="Overview_State_Protected" xml:space="preserve"><value>Защита включена</value></data>
+  <data name="Overview_State_Protected_Sub" xml:space="preserve"><value>Быстрый шифрованный DNS активен для всего обычного интернет-трафика.</value></data>
+  <data name="Overview_State_SmartBypass" xml:space="preserve"><value>Умный доступ активен</value></data>
+  <data name="Overview_State_SmartBypass_Sub" xml:space="preserve"><value>Выбранные сервисы открываются автоматически, а банки и локальные сайты надёжно защищены.</value></data>
   <data name="Overview_State_Degraded" xml:space="preserve"><value>Ограниченный режим</value></data>
-  <data name="Overview_State_Degraded_Sub" xml:space="preserve"><value>Туннель активен с предупреждениями или резервным перехватом; проверьте диагностику.</value></data>
+  <data name="Overview_State_Degraded_Sub" xml:space="preserve"><value>Подключение работает с предупреждениями или в резервном режиме; откройте диагностику.</value></data>
   <data name="Overview_State_Disconnected" xml:space="preserve"><value>Отключено</value></data>
-  <data name="Overview_State_Disconnected_Sub" xml:space="preserve"><value>Система использует стандартный DNS провайдера или роутера без защиты PulseCore.</value></data>
+  <data name="Overview_State_Disconnected_Sub" xml:space="preserve"><value>Система использует обычный DNS провайдера или роутера без защиты DNS Pulse.</value></data>
   <data name="Overview_CTA_Connect" xml:space="preserve"><value>Подключить</value></data>
   <data name="Overview_CTA_Disconnect" xml:space="preserve"><value>Отключить</value></data>
   <data name="Overview_CTA_Connecting" xml:space="preserve"><value>Подключение...</value></data>
   <data name="Overview_CTA_Disconnecting" xml:space="preserve"><value>Отключение...</value></data>
-  <data name="Overview_Profile_Label" xml:space="preserve"><value>Профиль стратегии</value></data>
+  <data name="Overview_QuickConnect_Title" xml:space="preserve"><value>Что нужно открыть?</value></data>
+  <data name="Overview_QuickConnect_Subtitle" xml:space="preserve"><value>Выберите сервис — DNS Pulse сам подберёт рабочий сервер, подключится и проверит доступ.</value></data>
+  <data name="Overview_QuickConnect_Button" xml:space="preserve"><value>Подобрать и подключить</value></data>
+  <data name="Overview_QuickConnect_VerifyButton" xml:space="preserve"><value>Проверить доступ</value></data>
+  <data name="Overview_QuickConnect_OpenBrowser" xml:space="preserve"><value>Открыть в браузере</value></data>
+  <data name="Overview_QuickConnect_TargetLabel" xml:space="preserve"><value>Проверяемый сайт</value></data>
+  <data name="Overview_Step_FindingDns" xml:space="preserve"><value>Подбираем рабочий DNS...</value></data>
+  <data name="Overview_Step_Connecting" xml:space="preserve"><value>Применяем настройки и подключаемся...</value></data>
+  <data name="Overview_Step_Verifying" xml:space="preserve"><value>Проверяем доступ...</value></data>
+  <data name="Overview_Step_Success" xml:space="preserve"><value>Доступ открыт!</value></data>
+  <data name="Overview_Step_Failed" xml:space="preserve"><value>Не удалось подтвердить доступ — откройте диагностику</value></data>
+  <data name="Overview_QuickService_AiStudio" xml:space="preserve"><value>Google AI Studio и Gemini</value></data>
+  <data name="Overview_QuickService_ChatGpt" xml:space="preserve"><value>OpenAI / ChatGPT</value></data>
+  <data name="Overview_QuickService_Claude" xml:space="preserve"><value>Anthropic Claude</value></data>
+  <data name="Overview_QuickService_YouTube" xml:space="preserve"><value>YouTube</value></data>
+  <data name="Overview_QuickService_Discord" xml:space="preserve"><value>Discord</value></data>
+  <data name="Overview_QuickService_Spotify" xml:space="preserve"><value>Spotify</value></data>
+  <data name="Overview_QuickService_Gaming" xml:space="preserve"><value>Xbox / PlayStation / Игры</value></data>
+  <data name="Overview_QuickService_Custom" xml:space="preserve"><value>Другой сайт</value></data>
+  <data name="Overview_Profile_Label" xml:space="preserve"><value>Режим работы</value></data>
   <data name="Overview_Profile_EncryptedOnly" xml:space="preserve"><value>Только шифрованный DNS</value></data>
-  <data name="Overview_Profile_EncryptedOnly_Desc" xml:space="preserve"><value>Направляет все запросы через проверенные резолверы Уровня 1 без Geo-Unlock обхода.</value></data>
-  <data name="Overview_Profile_SmartSplitGeo" xml:space="preserve"><value>Умный Split-DNS + Geo</value></data>
-  <data name="Overview_Profile_SmartSplitGeo_Desc" xml:space="preserve"><value>Оставляет банки и ОС на Уровне 1, а выбранные сервисы направляет через Geo-Unlock.</value></data>
-  <data name="Overview_Profile_AntiDpiHybrid" xml:space="preserve"><value>Anti-DPI Гибрид</value></data>
-  <data name="Overview_Profile_AntiDpiHybrid_Desc" xml:space="preserve"><value>Сочетает Split-DNS с фрагментацией TLS ClientHello SNI и перезаписью SVCB/HTTPS.</value></data>
-  <data name="Overview_Profile_Custom" xml:space="preserve"><value>Пользовательский</value></data>
-  <data name="Overview_Profile_Custom_Desc" xml:space="preserve"><value>Использует ваши ручные переключатели сервисов, правила и выбранные апстримы.</value></data>
-  <data name="Overview_Metric_TrustedUpstream" xml:space="preserve"><value>Доверенный апстрим</value></data>
-  <data name="Overview_Metric_GeoUpstream" xml:space="preserve"><value>Geo-Unlock апстрим</value></data>
-  <data name="Overview_Metric_LatencyP50" xml:space="preserve"><value>Задержка p50</value></data>
+  <data name="Overview_Profile_EncryptedOnly_Desc" xml:space="preserve"><value>Быстрый и приватный DNS для всех сайтов без обхода региональных ограничений.</value></data>
+  <data name="Overview_Profile_SmartSplitGeo" xml:space="preserve"><value>Умный доступ и приватность</value></data>
+  <data name="Overview_Profile_SmartSplitGeo_Desc" xml:space="preserve"><value>Банки и обычные сайты работают через надёжный DNS, а выбранные сервисы открываются автоматически.</value></data>
+  <data name="Overview_Profile_AntiDpiHybrid" xml:space="preserve"><value>Усиленный обход (Anti-DPI)</value></data>
+  <data name="Overview_Profile_AntiDpiHybrid_Desc" xml:space="preserve"><value>Дополнительно защищает HTTPS-соединение, если провайдер обрывает прямой доступ к сайтам.</value></data>
+  <data name="Overview_Profile_Custom" xml:space="preserve"><value>Свои настройки</value></data>
+  <data name="Overview_Profile_Custom_Desc" xml:space="preserve"><value>Использует ваши ручные переключатели сервисов, свои правила и выбранные серверы.</value></data>
+  <data name="Overview_Metric_TrustedUpstream" xml:space="preserve"><value>Основной шифрованный DNS</value></data>
+  <data name="Overview_Metric_GeoUpstream" xml:space="preserve"><value>DNS для открытия сервисов</value></data>
+  <data name="Overview_Metric_LatencyP50" xml:space="preserve"><value>Обычная задержка</value></data>
   <data name="Overview_Metric_CacheHit" xml:space="preserve"><value>Попадания в кэш %</value></data>
   <data name="Overview_Metric_QueriesPerMin" xml:space="preserve"><value>Запросов / мин</value></data>
-  <data name="Overview_Metric_InterceptionMode" xml:space="preserve"><value>Режим перехвата</value></data>
+  <data name="Overview_Metric_InterceptionMode" xml:space="preserve"><value>Способ подключения</value></data>
   <data name="Overview_Metric_RuntimeMode" xml:space="preserve"><value>Среда запуска</value></data>
-  <data name="Overview_Runtime_Service" xml:space="preserve"><value>Служба Windows (IPC)</value></data>
+  <data name="Overview_Runtime_Service" xml:space="preserve"><value>Служба Windows (в фоне)</value></data>
   <data name="Overview_Runtime_Portable" xml:space="preserve"><value>Портативный режим</value></data>
-  <data name="Overview_Action_Rotate" xml:space="preserve"><value>Сменить апстрим</value></data>
+  <data name="Overview_Action_Rotate" xml:space="preserve"><value>Сменить сервер</value></data>
   <data name="Overview_Action_Refresh" xml:space="preserve"><value>Обновить</value></data>
-  <data name="Overview_NoneSelected" xml:space="preserve"><value>Не выбрано</value></data>
-  <data name="Routing_Presets_Title" xml:space="preserve"><value>Пресеты Geo-Unlock сервисов</value></data>
+  <data name="Overview_NoneSelected" xml:space="preserve"><value>Не выбран</value></data>
+  <data name="Routing_Presets_Title" xml:space="preserve"><value>Какие сервисы открывать</value></data>
   <data name="Routing_Preset_GoogleAiStudio" xml:space="preserve"><value>Google AI Studio и Gemini</value></data>
   <data name="Routing_Preset_OpenAi" xml:space="preserve"><value>OpenAI / ChatGPT</value></data>
   <data name="Routing_Preset_Claude" xml:space="preserve"><value>Anthropic Claude</value></data>
@@ -90,137 +111,194 @@
   <data name="Routing_Rules_Title" xml:space="preserve"><value>Импорт и экспорт своих правил</value></data>
   <data name="Routing_Rules_Format" xml:space="preserve"><value>Формат правил</value></data>
   <data name="Routing_Format_Json" xml:space="preserve"><value>JSON</value></data>
-  <data name="Routing_Format_AdGuard" xml:space="preserve"><value>Фильтр AdGuard</value></data>
+  <data name="Routing_Format_AdGuard" xml:space="preserve"><value>Список AdGuard</value></data>
   <data name="Routing_Format_Hosts" xml:space="preserve"><value>Файл HOSTS</value></data>
   <data name="Routing_Rules_Import" xml:space="preserve"><value>Импортировать</value></data>
   <data name="Routing_Rules_Export" xml:space="preserve"><value>Экспортировать</value></data>
   <data name="Routing_Rules_ImportSuccess" xml:space="preserve"><value>Импортировано правил: {0} (формат {1}).</value></data>
   <data name="Routing_Rules_ImportError" xml:space="preserve"><value>Ошибка разбора правил: {0}</value></data>
-  <data name="Routing_Telemetry_Title" xml:space="preserve"><value>Инспектор запросов в памяти (макс. 2000)</value></data>
+  <data name="Routing_Telemetry_Title" xml:space="preserve"><value>Журнал DNS-запросов (только в памяти)</value></data>
   <data name="Routing_Chip_All" xml:space="preserve"><value>Все</value></data>
-  <data name="Routing_Chip_GeoUnlocked" xml:space="preserve"><value>GeoUnlock</value></data>
-  <data name="Routing_Chip_DpiSplit" xml:space="preserve"><value>DPI-Split</value></data>
+  <data name="Routing_Chip_GeoUnlocked" xml:space="preserve"><value>С обходом</value></data>
+  <data name="Routing_Chip_DpiSplit" xml:space="preserve"><value>Защита HTTPS</value></data>
   <data name="Routing_Chip_Blocked" xml:space="preserve"><value>Заблокировано</value></data>
   <data name="Routing_Chip_Errors" xml:space="preserve"><value>Ошибки</value></data>
-  <data name="Routing_Search_Placeholder" xml:space="preserve"><value>Фильтр по домену, апстриму или заметке...</value></data>
+  <data name="Routing_Search_Placeholder" xml:space="preserve"><value>Поиск по сайту, серверу или заметке...</value></data>
   <data name="Routing_Telemetry_Clear" xml:space="preserve"><value>Очистить</value></data>
-  <data name="Routing_Col_Time" xml:space="preserve"><value>Время (UTC)</value></data>
-  <data name="Routing_Col_Domain" xml:space="preserve"><value>Домен</value></data>
+  <data name="Routing_Col_Time" xml:space="preserve"><value>Время</value></data>
+  <data name="Routing_Col_Domain" xml:space="preserve"><value>Сайт</value></data>
   <data name="Routing_Col_Type" xml:space="preserve"><value>Тип</value></data>
-  <data name="Routing_Col_Zone" xml:space="preserve"><value>Зона</value></data>
-  <data name="Routing_Col_Upstream" xml:space="preserve"><value>Апстрим</value></data>
+  <data name="Routing_Col_Zone" xml:space="preserve"><value>Маршрут</value></data>
+  <data name="Routing_Col_Upstream" xml:space="preserve"><value>Сервер</value></data>
   <data name="Routing_Col_Protocol" xml:space="preserve"><value>Протокол</value></data>
-  <data name="Routing_Col_Latency" xml:space="preserve"><value>RTT (мс)</value></data>
+  <data name="Routing_Col_Latency" xml:space="preserve"><value>Задержка (мс)</value></data>
   <data name="Routing_Col_Result" xml:space="preserve"><value>Статус</value></data>
-  <data name="Routing_Col_Note" xml:space="preserve"><value>Решение</value></data>
-  <data name="Servers_Tier1_Title" xml:space="preserve"><value>Уровень 1: Проверенные шифрованные резолверы</value></data>
-  <data name="Servers_Tier1_Desc" xml:space="preserve"><value>Надёжные DoH/DoT/DoQ/DNSCrypt/ODoH резолверы без подмены ответов для базового интернета.</value></data>
-  <data name="Servers_Tier2_Title" xml:space="preserve"><value>Уровень 2: Проверенный Smart-DNS / Geo-Unlock</value></data>
-  <data name="Servers_Tier2_Desc" xml:space="preserve"><value>Резолверы разблокировки, строго ограниченные выбранными доменами Зоны 3.</value></data>
-  <data name="Servers_Tier3_Title" xml:space="preserve"><value>Уровень 3: Свои и личные VPS</value></data>
-  <data name="Servers_Tier3_Desc" xml:space="preserve"><value>Импортированные пользователем резолверы, sdns:// штампы и приватные VPS-узлы.</value></data>
-  <data name="Servers_Tier4_Title" xml:space="preserve"><value>Уровень 4: Экспериментальная лаборатория</value></data>
-  <data name="Servers_Tier4_Desc" xml:space="preserve"><value>Узлы SNI-443 и находки сканера подсетей; никогда не используются для обычного DNS.</value></data>
-  <data name="Servers_Filter_AllTiers" xml:space="preserve"><value>Все уровни доверия</value></data>
+  <data name="Routing_Col_Note" xml:space="preserve"><value>Подробности</value></data>
+  <data name="Zone_None" xml:space="preserve"><value>Обычный</value></data>
+  <data name="Zone_Zone1LocalBypass" xml:space="preserve"><value>Локальная сеть</value></data>
+  <data name="Zone_Zone2BlockOrProtect" xml:space="preserve"><value>Защищённый</value></data>
+  <data name="Zone_Zone3GeoUnlock" xml:space="preserve"><value>Обход</value></data>
+  <data name="Zone_Zone4EncryptedTrusted" xml:space="preserve"><value>Шифрованный</value></data>
+  <data name="RCode_NoError" xml:space="preserve"><value>Успешно</value></data>
+  <data name="RCode_NxDomain" xml:space="preserve"><value>Не найден</value></data>
+  <data name="RCode_ServFail" xml:space="preserve"><value>Ошибка сервера</value></data>
+  <data name="RCode_Refused" xml:space="preserve"><value>Отклонено</value></data>
+  <data name="RCode_FormErr" xml:space="preserve"><value>Неверный запрос</value></data>
+  <data name="RCode_NotImp" xml:space="preserve"><value>Не поддерживается</value></data>
+  <data name="RCode_Other" xml:space="preserve"><value>Ошибка</value></data>
+  <data name="Servers_Category_All" xml:space="preserve"><value>Все серверы</value></data>
+  <data name="Servers_Category_AiGeo" xml:space="preserve"><value>Обход ИИ и гео-блоков</value></data>
+  <data name="Servers_Category_AiGeo_Desc" xml:space="preserve"><value>Проверенные серверы для доступа к Google AI Studio, Gemini, ChatGPT, Claude и другим сервисам с геоблокировкой.</value></data>
+  <data name="Servers_Category_AiGeo_Short" xml:space="preserve"><value>ИИ и обход</value></data>
+  <data name="Servers_Category_FastEncrypted" xml:space="preserve"><value>Быстрый шифрованный DNS</value></data>
+  <data name="Servers_Category_FastEncrypted_Desc" xml:space="preserve"><value>Быстрые и приватные шифрованные серверы для обычного интернета без подмены адресов.</value></data>
+  <data name="Servers_Category_FastEncrypted_Short" xml:space="preserve"><value>Шифрованный</value></data>
+  <data name="Servers_Category_StreamingGaming" xml:space="preserve"><value>Стриминг и игры</value></data>
+  <data name="Servers_Category_StreamingGaming_Desc" xml:space="preserve"><value>Серверы, настроенные для Xbox, PlayStation, Brawl Stars, Spotify, Twitch и игровых регионов.</value></data>
+  <data name="Servers_Category_StreamingGaming_Short" xml:space="preserve"><value>Игры и медиа</value></data>
+  <data name="Servers_Category_Custom" xml:space="preserve"><value>Свои / Найденные</value></data>
+  <data name="Servers_Category_Custom_Desc" xml:space="preserve"><value>Добавленные вами серверы, личные VPS и узлы, найденные при ручном сканировании.</value></data>
+  <data name="Servers_Category_Custom_Short" xml:space="preserve"><value>Свой</value></data>
+  <data name="Servers_Badge_Trust_Fast" xml:space="preserve"><value>Шифрованный</value></data>
+  <data name="Servers_Badge_Trust_Geo" xml:space="preserve"><value>Обход блоков</value></data>
+  <data name="Servers_Badge_Trust_Custom" xml:space="preserve"><value>Свой</value></data>
+  <data name="Servers_Badge_Trust_Lab" xml:space="preserve"><value>Тестовый</value></data>
+  <data name="Servers_Tier1_Title" xml:space="preserve"><value>Быстрый шифрованный DNS</value></data>
+  <data name="Servers_Tier1_Desc" xml:space="preserve"><value>Быстрые и приватные шифрованные серверы для всего обычного интернета.</value></data>
+  <data name="Servers_Tier2_Title" xml:space="preserve"><value>Обход ИИ и гео-блоков</value></data>
+  <data name="Servers_Tier2_Desc" xml:space="preserve"><value>Серверы разблокировки, работающие только для выбранных вами сервисов.</value></data>
+  <data name="Servers_Tier3_Title" xml:space="preserve"><value>Свои и личные VPS</value></data>
+  <data name="Servers_Tier3_Desc" xml:space="preserve"><value>Добавленные пользователем адреса, DNS-штампы и приватные VPS-серверы.</value></data>
+  <data name="Servers_Tier4_Title" xml:space="preserve"><value>Найденные / Экспериментальные</value></data>
+  <data name="Servers_Tier4_Desc" xml:space="preserve"><value>Реле и узлы из ручного поиска; не используются для банков и обычного DNS.</value></data>
+  <data name="Servers_Filter_AllTiers" xml:space="preserve"><value>Все серверы</value></data>
   <data name="Servers_Filter_FavoritesOnly" xml:space="preserve"><value>Только избранные</value></data>
-  <data name="Servers_Sort_P50" xml:space="preserve"><value>Сортировка: p50 RTT</value></data>
-  <data name="Servers_Sort_Protocol" xml:space="preserve"><value>Сортировка: Протокол</value></data>
-  <data name="Servers_Sort_Trust" xml:space="preserve"><value>Сортировка: Уровень доверия</value></data>
-  <data name="Servers_Sort_Name" xml:space="preserve"><value>Сортировка: Имя</value></data>
-  <data name="Servers_Benchmark_Run" xml:space="preserve"><value>Замерить раздел</value></data>
-  <data name="Servers_Benchmark_Cancel" xml:space="preserve"><value>Остановить замер</value></data>
-  <data name="Servers_Benchmark_Target" xml:space="preserve"><value>Домен проверки</value></data>
-  <data name="Servers_Import_Title" xml:space="preserve"><value>Импорт sdns:// штампа или адреса</value></data>
+  <data name="Servers_Sort_P50" xml:space="preserve"><value>Сортировка: По скорости</value></data>
+  <data name="Servers_Sort_Protocol" xml:space="preserve"><value>Сортировка: По протоколу</value></data>
+  <data name="Servers_Sort_Trust" xml:space="preserve"><value>Сортировка: По категории</value></data>
+  <data name="Servers_Sort_Name" xml:space="preserve"><value>Сортировка: По имени</value></data>
+  <data name="Servers_Benchmark_Run" xml:space="preserve"><value>Проверить скорость и доступ</value></data>
+  <data name="Servers_Benchmark_Cancel" xml:space="preserve"><value>Остановить проверку</value></data>
+  <data name="Servers_Benchmark_Target" xml:space="preserve"><value>Сайт для проверки</value></data>
+  <data name="Servers_Import_Title" xml:space="preserve"><value>Добавить свой сервер или DNS-штамп</value></data>
   <data name="Servers_Import_Placeholder" xml:space="preserve"><value>sdns://..., https://.../dns-query, tls://... или IP</value></data>
-  <data name="Servers_Import_Button" xml:space="preserve"><value>Добавить / Импорт</value></data>
+  <data name="Servers_Import_Button" xml:space="preserve"><value>Добавить сервер</value></data>
   <data name="Servers_Select_Button" xml:space="preserve"><value>Выбрать</value></data>
   <data name="Servers_Favorite_Tooltip" xml:space="preserve"><value>Добавить или убрать из избранного</value></data>
   <data name="Servers_Vps_Title" xml:space="preserve"><value>Мастер личного VPS</value></data>
-  <data name="Servers_Vps_Desc" xml:space="preserve"><value>Создаёт защищённый пакет Docker + Nginx + CoreDNS/AdGuard + UFW с белым списком IP и 256-битным токеном.</value></data>
+  <data name="Servers_Vps_Desc" xml:space="preserve"><value>Создаёт защищённую конфигурацию Docker + Nginx + CoreDNS/AdGuard + UFW с белым списком IP и 256-битным токеном доступа.</value></data>
   <data name="Servers_Vps_HostName" xml:space="preserve"><value>Доменное имя VPS (FQDN)</value></data>
   <data name="Servers_Vps_ServerIp" xml:space="preserve"><value>Публичный IP VPS</value></data>
-  <data name="Servers_Vps_AllowedCidrs" xml:space="preserve"><value>Разрешённые CIDR клиентов (через запятую, без 0.0.0.0/0)</value></data>
-  <data name="Servers_Vps_GeoDomains" xml:space="preserve"><value>Домены Geo-Unlock (через запятую)</value></data>
-  <data name="Servers_Vps_Generate" xml:space="preserve"><value>Сгенерировать защищённый пакет</value></data>
+  <data name="Servers_Vps_AllowedCidrs" xml:space="preserve"><value>Разрешённые IP / CIDR клиентов (без 0.0.0.0/0)</value></data>
+  <data name="Servers_Vps_GeoDomains" xml:space="preserve"><value>Сайты для разблокировки (через запятую)</value></data>
+  <data name="Servers_Vps_Generate" xml:space="preserve"><value>Создать конфигурацию</value></data>
   <data name="Servers_Vps_AddToCatalog" xml:space="preserve"><value>Добавить VPS в каталог</value></data>
-  <data name="Servers_Feeds_Title" xml:space="preserve"><value>Синхронизация подписанных списков</value></data>
+  <data name="Servers_Copy_DockerCompose" xml:space="preserve"><value>Копировать docker-compose.yml</value></data>
+  <data name="Servers_Copy_NginxConf" xml:space="preserve"><value>Копировать nginx.conf</value></data>
+  <data name="Servers_Copy_SdnsStamp" xml:space="preserve"><value>Копировать sdns:// штамп</value></data>
+  <data name="Servers_Feeds_Title" xml:space="preserve"><value>Обновление списков серверов</value></data>
   <data name="Servers_Feeds_Sync" xml:space="preserve"><value>Обновить списки</value></data>
   <data name="Servers_Feeds_AllowUnsigned" xml:space="preserve"><value>Разрешить неподписанные списки сообщества (вручную)</value></data>
-  <data name="Diag_Title" xml:space="preserve"><value>6-уровневая диагностика</value></data>
-  <data name="Diag_Run" xml:space="preserve"><value>Запустить 6-уровневую проверку</value></data>
+  <data name="Diag_Title" xml:space="preserve"><value>6-шаговая диагностика доступа</value></data>
+  <data name="Diag_Run" xml:space="preserve"><value>Проверить доступ</value></data>
   <data name="Diag_Cancel" xml:space="preserve"><value>Отмена</value></data>
-  <data name="Diag_TargetDomain" xml:space="preserve"><value>Целевой домен</value></data>
+  <data name="Diag_TargetDomain" xml:space="preserve"><value>Проверяемый сайт</value></data>
   <data name="Diag_ApplyFix" xml:space="preserve"><value>Применить исправление</value></data>
-  <data name="Diag_Layer1" xml:space="preserve"><value>Уровень 1: Состояние хоста</value></data>
-  <data name="Diag_Layer2" xml:space="preserve"><value>Уровень 2: Транспорт и RTT</value></data>
-  <data name="Diag_Layer3" xml:space="preserve"><value>Уровень 3: Целостность DNS и ECH</value></data>
-  <data name="Diag_Layer4" xml:space="preserve"><value>Уровень 4: TLS-сертификат и SAN</value></data>
-  <data name="Diag_Layer5" xml:space="preserve"><value>Уровень 5: HTTP и Companion API</value></data>
-  <data name="Diag_Layer6" xml:space="preserve"><value>Уровень 6: Вердикт и решение</value></data>
+  <data name="Diag_Layer1" xml:space="preserve"><value>Шаг 1: Система и браузер</value></data>
+  <data name="Diag_Layer2" xml:space="preserve"><value>Шаг 2: Скорость сервера</value></data>
+  <data name="Diag_Layer3" xml:space="preserve"><value>Шаг 3: Проверка адреса сайта</value></data>
+  <data name="Diag_Layer4" xml:space="preserve"><value>Шаг 4: Сертификат безопасности</value></data>
+  <data name="Diag_Layer5" xml:space="preserve"><value>Шаг 5: Открытие сайта и API</value></data>
+  <data name="Diag_Layer6" xml:space="preserve"><value>Шаг 6: Итог и решение</value></data>
   <data name="Diag_Verdict_Unknown" xml:space="preserve"><value>Не проверялся</value></data>
-  <data name="Diag_Verdict_Healthy" xml:space="preserve"><value>Исправно — все 6 уровней пройдены</value></data>
-  <data name="Diag_Verdict_LocalPort53Conflict" xml:space="preserve"><value>Конфликт локального порта 53</value></data>
-  <data name="Diag_Verdict_DnsPoisoned" xml:space="preserve"><value>Подмена DNS или богон-заглушка</value></data>
-  <data name="Diag_Verdict_EncryptedDnsDpiBlocked" xml:space="preserve"><value>Шифрованный DNS блокируется DPI</value></data>
-  <data name="Diag_Verdict_TlsSniDpiReset" xml:space="preserve"><value>Сброс TLS SNI / вмешательство DPI</value></data>
-  <data name="Diag_Verdict_IpBlockedByIsp" xml:space="preserve"><value>Целевой IP заблокирован провайдером</value></data>
-  <data name="Diag_Verdict_GeoBlockedByService" xml:space="preserve"><value>Геоблокировка сервиса (HTTP 403/451)</value></data>
-  <data name="Diag_Verdict_TlsMitmRejected" xml:space="preserve"><value>Отклонён TLS-сертификат / MITM</value></data>
-  <data name="Diag_Verdict_BrowserDohBypass" xml:space="preserve"><value>Обход через встроенный DoH браузера</value></data>
+  <data name="Diag_Verdict_Healthy" xml:space="preserve"><value>Работает — все 6 проверок пройдены</value></data>
+  <data name="Diag_Verdict_LocalPort53Conflict" xml:space="preserve"><value>Порт 53 занят другой программой</value></data>
+  <data name="Diag_Verdict_DnsPoisoned" xml:space="preserve"><value>Подменённый или заблокированный DNS-адрес</value></data>
+  <data name="Diag_Verdict_EncryptedDnsDpiBlocked" xml:space="preserve"><value>Шифрованный DNS блокируется провайдером</value></data>
+  <data name="Diag_Verdict_TlsSniDpiReset" xml:space="preserve"><value>HTTPS-соединение сбрасывается провайдером</value></data>
+  <data name="Diag_Verdict_IpBlockedByIsp" xml:space="preserve"><value>IP-адрес сервиса заблокирован провайдером</value></data>
+  <data name="Diag_Verdict_GeoBlockedByService" xml:space="preserve"><value>Доступ ограничен самим сервисом (HTTP 403/451)</value></data>
+  <data name="Diag_Verdict_TlsMitmRejected" xml:space="preserve"><value>Ненадёжный сертификат безопасности</value></data>
+  <data name="Diag_Verdict_BrowserDohBypass" xml:space="preserve"><value>Браузер использует собственный DNS</value></data>
   <data name="Diag_Rem_None" xml:space="preserve"><value>Исправление не требуется</value></data>
-  <data name="Diag_Rem_SwitchToDoQOrFragmentedDoh" xml:space="preserve"><value>Переключиться на DoQ или фрагментированный DoH</value></data>
-  <data name="Diag_Rem_EnableTlsSplitPacForDomain" xml:space="preserve"><value>Включить TLS ClientHello Split PAC для этого домена</value></data>
-  <data name="Diag_Rem_RouteViaVerifiedGeoUnlock" xml:space="preserve"><value>Направить домен через проверенный Geo-Unlock (Уровень 2)</value></data>
-  <data name="Diag_Rem_FixLocalPort53Conflict" xml:space="preserve"><value>Решить конфликт порта 53 через 127.0.53.x / PAC</value></data>
-  <data name="Diag_Rem_DisableBrowserDohOverride" xml:space="preserve"><value>Отключить встроенный DoH-обход браузера</value></data>
+  <data name="Diag_Rem_SwitchToDoQOrFragmentedDoh" xml:space="preserve"><value>Переключиться на быстрый DoQ или защищённый DoH-сервер</value></data>
+  <data name="Diag_Rem_EnableTlsSplitPacForDomain" xml:space="preserve"><value>Включить защиту HTTPS-соединения для этого сайта</value></data>
+  <data name="Diag_Rem_RouteViaVerifiedGeoUnlock" xml:space="preserve"><value>Открывать этот сайт через сервер обхода ИИ и гео-блоков</value></data>
+  <data name="Diag_Rem_FixLocalPort53Conflict" xml:space="preserve"><value>Переключиться на запасной адрес или локальный прокси</value></data>
+  <data name="Diag_Rem_DisableBrowserDohOverride" xml:space="preserve"><value>Отключить встроенный DNS в браузере</value></data>
   <data name="Diag_Rem_DeploySelfHostedVps" xml:space="preserve"><value>Развернуть личный VPS через Мастер</value></data>
-  <data name="Diag_Lab_Title" xml:space="preserve"><value>Лаборатория сетей (только вручную)</value></data>
-  <data name="Diag_Lab_Disclaimer" xml:space="preserve"><value>Предупреждение: сканирование подсетей отправляет ограниченные по частоте TLS-пробы в публичные диапазоны IPv4 и отключено по умолчанию. Сканируйте только разрешённые диапазоны. Найденные узлы остаются на Уровне 4.</value></data>
+  <data name="Diag_Lab_Title" xml:space="preserve"><value>Лаборатория поиска серверов (только вручную)</value></data>
+  <data name="Diag_Lab_Disclaimer" xml:space="preserve"><value>Предупреждение: сканирование подсетей отправляет ограниченные по частоте проверки в публичные диапазоны IPv4 и отключено по умолчанию. Сканируйте только разрешённые диапазоны. Найденные узлы попадают в раздел «Свои / Найденные».</value></data>
   <data name="Diag_Lab_Accept" xml:space="preserve"><value>Я понимаю риски и включаю ручное сканирование подсетей</value></data>
   <data name="Diag_Lab_Start" xml:space="preserve"><value>Начать ручное сканирование</value></data>
   <data name="Diag_Lab_Stop" xml:space="preserve"><value>Остановить сканирование</value></data>
-  <data name="Diag_Lan_Title" xml:space="preserve"><value>Режим LAN-шлюза (Телефон / Консоль)</value></data>
-  <data name="Diag_Lan_Enable" xml:space="preserve"><value>Включить параметры LAN-шлюза</value></data>
+  <data name="Diag_Lan_Title" xml:space="preserve"><value>Доступ для телефона или консоли (LAN)</value></data>
+  <data name="Diag_Lan_Enable" xml:space="preserve"><value>Включить общий доступ по локальной сети</value></data>
   <data name="Diag_Lan_Refresh" xml:space="preserve"><value>Обновить QR и адреса</value></data>
+  <data name="Diag_Lan_IpPlaceholder" xml:space="preserve"><value>Локальный IP</value></data>
+  <data name="Diag_Lan_DnsPort" xml:space="preserve"><value>Порт DNS</value></data>
+  <data name="Diag_Lan_PacPort" xml:space="preserve"><value>Порт PAC</value></data>
+  <data name="Diag_Lan_ProxyPort" xml:space="preserve"><value>Порт прокси</value></data>
+  <data name="Diag_Lan_DnsEndpoint" xml:space="preserve"><value>Адрес DNS</value></data>
+  <data name="Diag_Lan_PacUrl" xml:space="preserve"><value>Ссылка автонастройки (PAC)</value></data>
+  <data name="Diag_Lan_ProxyEndpoint" xml:space="preserve"><value>Адрес прокси</value></data>
+  <data name="Diag_Lan_CopyDns" xml:space="preserve"><value>Скопировать адрес DNS</value></data>
+  <data name="Diag_Lan_CopyPac" xml:space="preserve"><value>Скопировать ссылку PAC</value></data>
   <data name="Settings_Startup_Title" xml:space="preserve"><value>Автозапуск и системный трей</value></data>
   <data name="Settings_StartWithWindows" xml:space="preserve"><value>Запускать DNS Pulse вместе с Windows</value></data>
   <data name="Settings_StartMinimized" xml:space="preserve"><value>Запускать свёрнутым в трей</value></data>
   <data name="Settings_MinimizeOnClose" xml:space="preserve"><value>Сворачивать в трей при закрытии окна</value></data>
-  <data name="Settings_Interception_Title" xml:space="preserve"><value>Режим перехвата Windows</value></data>
-  <data name="Settings_Mode_AdapterDns" xml:space="preserve"><value>DNS адаптера (стандартные сетевые карты Windows)</value></data>
-  <data name="Settings_Mode_SplitNrpt" xml:space="preserve"><value>Split NRPT (таблица политик разрешения имён Windows)</value></data>
-  <data name="Settings_Mode_LocalProxyPacOnly" xml:space="preserve"><value>Только локальный прокси / PAC (без прав администратора)</value></data>
-  <data name="Settings_Mode_WfpDivertPlugin" xml:space="preserve"><value>Плагин WFP / WinDivert (отключается при запуске античита)</value></data>
-  <data name="Settings_AntiCheat_StatusOk" xml:space="preserve"><value>Конфликтующие античиты ядра не обнаружены.</value></data>
-  <data name="Settings_AntiCheat_Detected" xml:space="preserve"><value>Обнаружен активный античит: {0}. Перехват WFP/WinDivert заблокирован для безопасности.</value></data>
-  <data name="Settings_Privacy_Title" xml:space="preserve"><value>Приватность и защита от утечек DNS</value></data>
-  <data name="Settings_Ipv6Guard" xml:space="preserve"><value>IPv6 AAAA-защита (подавлять AAAA при Geo-Unlock обходе)</value></data>
-  <data name="Settings_PerRouteSvcb" xml:space="preserve"><value>Помаршрутный HTTPS/SVCB (убирать ECH на Geo-Unlock, сохранять на Уровне 1)</value></data>
-  <data name="Settings_RebindingGuard" xml:space="preserve"><value>Защита от DNS Rebinding (блокировать локальные IP в публичных ответах)</value></data>
-  <data name="Settings_ZeroDiskLogging" xml:space="preserve"><value>Нулевое дисковое логирование запросов (домены хранятся только в ОЗУ)</value></data>
-  <data name="Settings_Appearance_Title" xml:space="preserve"><value>Язык, тема и доступность</value></data>
+  <data name="Settings_Interception_Title" xml:space="preserve"><value>Способ подключения и маршрутизации</value></data>
+  <data name="Settings_Mode_AdapterDns" xml:space="preserve"><value>DNS сетевого адаптера (рекомендуется)</value></data>
+  <data name="Settings_Mode_SplitNrpt" xml:space="preserve"><value>Политика маршрутизации Windows (NRPT)</value></data>
+  <data name="Settings_Mode_LocalProxyPacOnly" xml:space="preserve"><value>Локальный прокси / PAC (без прав администратора)</value></data>
+  <data name="Settings_Mode_WfpDivertPlugin" xml:space="preserve"><value>Драйвер пакетов (отключается при античите)</value></data>
+  <data name="Settings_RefreshAntiCheat" xml:space="preserve"><value>Проверить античит</value></data>
+  <data name="Settings_PoolStrategy" xml:space="preserve"><value>Выбор сервера из списка</value></data>
+  <data name="Settings_PoolStrategy_Fastest" xml:space="preserve"><value>Самый быстрый</value></data>
+  <data name="Settings_PoolStrategy_Parallel" xml:space="preserve"><value>Параллельный опрос</value></data>
+  <data name="Settings_PoolStrategy_Failover" xml:space="preserve"><value>Основной и резервный</value></data>
+  <data name="Settings_PoolStrategy_LoadBalance" xml:space="preserve"><value>Распределение нагрузки</value></data>
+  <data name="Settings_BootstrapDns" xml:space="preserve"><value>Начальный DNS</value></data>
+  <data name="Settings_Bootstrap_Auto" xml:space="preserve"><value>Автоматически</value></data>
+  <data name="Settings_ProbeTimeoutMs" xml:space="preserve"><value>Таймаут проверки (мс)</value></data>
+  <data name="Settings_BenchmarkConcurrency" xml:space="preserve"><value>Потоков проверки</value></data>
+  <data name="Settings_GitHubTokenPlaceholder" xml:space="preserve"><value>Токен GitHub (необязательно)</value></data>
+  <data name="Settings_AntiCheat_StatusOk" xml:space="preserve"><value>Конфликтующие игровые античиты не обнаружены.</value></data>
+  <data name="Settings_AntiCheat_Detected" xml:space="preserve"><value>Обнаружен активный античит: {0}. Драйвер перехвата пакетов отключён для безопасности.</value></data>
+  <data name="Settings_Privacy_Title" xml:space="preserve"><value>Приватность и защита от утечек</value></data>
+  <data name="Settings_Ipv6Guard" xml:space="preserve"><value>Блокировать утечки через IPv6 при открытии сервисов</value></data>
+  <data name="Settings_PerRouteSvcb" xml:space="preserve"><value>Адаптивные параметры HTTPS для маршрутов обхода</value></data>
+  <data name="Settings_RebindingGuard" xml:space="preserve"><value>Блокировать подмену публичных сайтов на локальные IP</value></data>
+  <data name="Settings_ZeroDiskLogging" xml:space="preserve"><value>Не сохранять историю сайтов на диск (только в памяти)</value></data>
+  <data name="Settings_Appearance_Title" xml:space="preserve"><value>Язык, тема и оформление</value></data>
   <data name="Settings_Language" xml:space="preserve"><value>Язык интерфейса</value></data>
   <data name="Settings_DarkTheme" xml:space="preserve"><value>Тёмная тема</value></data>
   <data name="Settings_AccentPreset" xml:space="preserve"><value>Акцентный цвет</value></data>
+  <data name="Accent_Emerald" xml:space="preserve"><value>Изумрудный</value></data>
+  <data name="Accent_Azure" xml:space="preserve"><value>Синий кобальт</value></data>
+  <data name="Accent_Violet" xml:space="preserve"><value>Фиолетовый</value></data>
+  <data name="Accent_Amber" xml:space="preserve"><value>Янтарный</value></data>
+  <data name="Accent_Rose" xml:space="preserve"><value>Малиновый</value></data>
   <data name="Settings_CompactMode" xml:space="preserve"><value>Компактный режим интерфейса</value></data>
   <data name="Settings_Backdrop_Mica" xml:space="preserve"><value>Фон Windows 11 Mica</value></data>
   <data name="Settings_Backdrop_Solid" xml:space="preserve"><value>Сплошной фон (Windows 10 / высокая контрастность)</value></data>
-  <data name="Settings_Updates_Title" xml:space="preserve"><value>Проверенные обновления</value></data>
+  <data name="Settings_Updates_Title" xml:space="preserve"><value>Обновления</value></data>
   <data name="Settings_UpdateChannel" xml:space="preserve"><value>Канал обновлений</value></data>
   <data name="Settings_Channel_Stable" xml:space="preserve"><value>Стабильный (Stable)</value></data>
   <data name="Settings_Channel_Beta" xml:space="preserve"><value>Бета (Beta)</value></data>
   <data name="Settings_AutoCheckUpdates" xml:space="preserve"><value>Автоматически проверять обновления</value></data>
   <data name="Settings_CheckUpdatesNow" xml:space="preserve"><value>Проверить обновления</value></data>
   <data name="Settings_Safety_Title" xml:space="preserve"><value>Экстренное восстановление и диагностика</value></data>
-  <data name="Settings_EmergencyRestore" xml:space="preserve"><value>Экстренное восстановление сети</value></data>
-  <data name="Settings_ExportBundle" xml:space="preserve"><value>Экспортировать обезличенный пакет диагностики (.zip)</value></data>
+  <data name="Settings_EmergencyRestore" xml:space="preserve"><value>Восстановить стандартные настройки сети</value></data>
+  <data name="Settings_ExportBundle" xml:space="preserve"><value>Сохранить обезличенный архив диагностики (.zip)</value></data>
   <data name="Settings_Save" xml:space="preserve"><value>Сохранить настройки</value></data>
   <data name="Settings_Saved" xml:space="preserve"><value>Настройки сохранены и применены.</value></data>
   <data name="Tray_Connect" xml:space="preserve"><value>Подключить</value></data>
   <data name="Tray_Disconnect" xml:space="preserve"><value>Отключить</value></data>
-  <data name="Tray_RotateUpstream" xml:space="preserve"><value>Сменить апстрим</value></data>
-  <data name="Tray_EmergencyRestore" xml:space="preserve"><value>Экстренное восстановление сети</value></data>
-  <data name="Tray_Open" xml:space="preserve"><value>Открыть PulseCore</value></data>
+  <data name="Tray_RotateUpstream" xml:space="preserve"><value>Сменить сервер</value></data>
+  <data name="Tray_EmergencyRestore" xml:space="preserve"><value>Восстановить настройки сети</value></data>
+  <data name="Tray_Open" xml:space="preserve"><value>Открыть DNS Pulse</value></data>
   <data name="Tray_Exit" xml:space="preserve"><value>Выход</value></data>
   <data name="Error_InvalidInput" xml:space="preserve"><value>Некорректные данные: {0}</value></data>
   <data name="Error_ConnectionFailed" xml:space="preserve"><value>Ошибка подключения: {0}</value></data>

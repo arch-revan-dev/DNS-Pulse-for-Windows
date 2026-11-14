@@ -150,4 +150,8 @@ public sealed record ServiceStatusSnapshot
     public bool DirtyRecoveryPending { get; init; }
 
     public string? LastErrorMessage { get; init; }
+
+    public double? LatencyP50Ms { get; init; }
+
+    public string? ActiveGeoUnlockUpstreamId { get; init; }
 }

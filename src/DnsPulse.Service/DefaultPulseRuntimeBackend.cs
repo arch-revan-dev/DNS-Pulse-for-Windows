@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using DnsPulse.Core.Wire;
 using DnsPulse.Engine.Cache;
 using DnsPulse.Engine.Contracts;
 using DnsPulse.Engine.Hosting;
@@ -52,6 +53,7 @@ public sealed class DefaultPulseRuntimeBackend : IPulseRuntimeBackend, IAsyncDis
     private readonly Func<string, CancellationToken, Task<IReadOnlyList<IPAddress>>> _sidecarHostResolver;
     private readonly IReadOnlyList<string> _splitDomains;
     private readonly Func<IPEndPoint, CancellationToken, Task<bool>>? _healthProbeOverride;
+    private readonly Func<string?>? _activeGeoUnlockUpstreamIdProvider;
     private readonly ILogger<DefaultPulseRuntimeBackend> _logger;
     private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
 
@@ -59,6 +61,7 @@ public sealed class DefaultPulseRuntimeBackend : IPulseRuntimeBackend, IAsyncDis
     private LocalDohHttpListener? _dohListener;
     private TlsFragmentationProxyServer? _proxyServer;
     private AutoPacServer? _pacServer;
+    private string? _activeGeoUnlockUpstreamId;
     private bool _isConnected;
     private bool _isHealthy;
     private bool _dirtyRecoveryPending;
@@ -75,7 +78,8 @@ public sealed class DefaultPulseRuntimeBackend : IPulseRuntimeBackend, IAsyncDis
         Func<string, CancellationToken, Task<IReadOnlyList<IPAddress>>>? sidecarHostResolver = null,
         IReadOnlyList<string>? initialSplitDomains = null,
         Func<IPEndPoint, CancellationToken, Task<bool>>? healthProbeOverride = null,
-        ILogger<DefaultPulseRuntimeBackend>? logger = null)
+        ILogger<DefaultPulseRuntimeBackend>? logger = null,
+        Func<string?>? activeGeoUnlockUpstreamIdProvider = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(dnsEngine);
@@ -89,11 +93,28 @@ public sealed class DefaultPulseRuntimeBackend : IPulseRuntimeBackend, IAsyncDis
         _sidecarHostResolver = sidecarHostResolver ?? ResolveHostFallbackAsync;
         _splitDomains = initialSplitDomains ?? [];
         _healthProbeOverride = healthProbeOverride;
+        _activeGeoUnlockUpstreamIdProvider = activeGeoUnlockUpstreamIdProvider;
+        _activeGeoUnlockUpstreamId = options.ActiveGeoUnlockUpstreamId;
         _logger = logger ?? NullLogger<DefaultPulseRuntimeBackend>.Instance;
+    }
+
+    /// <summary>
+    /// Updates the active Zone 3 Geo-Unlock upstream identifier surfaced in <see cref="GetStatus"/>.
+    /// </summary>
+    public void SetActiveGeoUnlockUpstreamId(string? upstreamId)
+    {
+        string? normalized = string.IsNullOrWhiteSpace(upstreamId) ? null : upstreamId.Trim();
+        Volatile.Write(ref _activeGeoUnlockUpstreamId, normalized);
     }
 
     public ServiceStatusSnapshot GetStatus()
     {
+        double? p50LatencyMs = _dnsEngine.Telemetry.Count > 0
+            ? _dnsEngine.Telemetry.P50LatencyMs
+            : null;
+        string? activeGeoUpstreamId = Volatile.Read(ref _activeGeoUnlockUpstreamId)
+            ?? _activeGeoUnlockUpstreamIdProvider?.Invoke();
+
         return new ServiceStatusSnapshot
         {
             IsConnected = Volatile.Read(ref _isConnected),
@@ -108,7 +129,9 @@ public sealed class DefaultPulseRuntimeBackend : IPulseRuntimeBackend, IAsyncDis
             QueriesPerMinute = _dnsEngine.Telemetry.QueriesPerMinute,
             ActiveUpstreamsCount = _poolManager?.Zone4Servers.Count ?? 0,
             DirtyRecoveryPending = Volatile.Read(ref _dirtyRecoveryPending),
-            LastErrorMessage = Volatile.Read(ref _lastErrorMessage)
+            LastErrorMessage = Volatile.Read(ref _lastErrorMessage),
+            LatencyP50Ms = p50LatencyMs,
+            ActiveGeoUnlockUpstreamId = activeGeoUpstreamId
         };
     }
 
@@ -160,7 +183,7 @@ public sealed class DefaultPulseRuntimeBackend : IPulseRuntimeBackend, IAsyncDis
                             BindAddress = _options.SidecarLoopbackAddress,
                             Port = _options.ProxyPort
                         },
-                        _sidecarHostResolver);
+                        ResolveSidecarHostAsync);
                     await proxyServer.StartAsync(cancellationToken).ConfigureAwait(false);
 
                     int activeProxyPort = proxyServer.BoundEndPoint?.Port ?? _options.ProxyPort;
@@ -459,6 +482,97 @@ public sealed class DefaultPulseRuntimeBackend : IPulseRuntimeBackend, IAsyncDis
         {
             LogNonFatalTeardownError(_logger, ex);
         }
+    }
+
+    private async Task<IReadOnlyList<IPAddress>> ResolveSidecarHostAsync(
+        string host,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return [];
+        }
+
+        string trimmed = host.Trim();
+        if (IPAddress.TryParse(trimmed, out IPAddress? literalIp))
+        {
+            return [literalIp];
+        }
+
+        // Route proxy host resolution through PulseCoreDnsEngine so SplitNamespaceRouter and
+        // Zone 3 Smart-DNS / Zone 2 blocklist rules apply instead of bypassing via bootstrap DNS.
+        DnsMessage queryA = DnsMessage.CreateQuery(1, trimmed, DnsRecordType.A);
+        DnsMessage responseA = await _dnsEngine.ResolveAsync(queryA, cancellationToken).ConfigureAwait(false);
+
+        if (responseA.EffectiveResponseCode == DnsResponseCode.NoError)
+        {
+            List<IPAddress> ipv4 = ExtractNonSinkholeAddresses(responseA);
+            if (ipv4.Count > 0)
+            {
+                return ipv4;
+            }
+
+            if (ContainsNullSinkholeAddress(responseA))
+            {
+                return [];
+            }
+
+            DnsMessage queryAaaa = DnsMessage.CreateQuery(2, trimmed, DnsRecordType.AAAA);
+            DnsMessage responseAaaa = await _dnsEngine.ResolveAsync(queryAaaa, cancellationToken).ConfigureAwait(false);
+            if (responseAaaa.EffectiveResponseCode == DnsResponseCode.NoError)
+            {
+                List<IPAddress> ipv6 = ExtractNonSinkholeAddresses(responseAaaa);
+                if (ipv6.Count > 0)
+                {
+                    return ipv6;
+                }
+            }
+
+            return [];
+        }
+
+        // Fall back to bootstrap/system resolver only when the engine has no upstream configured (ServFail),
+        // never when a domain was blocked (NxDomain).
+        if (responseA.EffectiveResponseCode == DnsResponseCode.ServFail)
+        {
+            return await _sidecarHostResolver(trimmed, cancellationToken).ConfigureAwait(false);
+        }
+
+        return [];
+    }
+
+    private static List<IPAddress> ExtractNonSinkholeAddresses(DnsMessage message)
+    {
+        List<IPAddress> addresses = [];
+        foreach (DnsResourceRecord record in message.Answers)
+        {
+            if (record.RecordType is DnsRecordType.A or DnsRecordType.AAAA &&
+                record.Address is not null &&
+                !IPAddress.Any.Equals(record.Address) &&
+                !IPAddress.IPv6Any.Equals(record.Address) &&
+                !IPAddress.IPv6None.Equals(record.Address))
+            {
+                addresses.Add(record.Address);
+            }
+        }
+
+        return addresses;
+    }
+
+    private static bool ContainsNullSinkholeAddress(DnsMessage message)
+    {
+        foreach (DnsResourceRecord record in message.Answers)
+        {
+            if (record.Address is not null &&
+                (IPAddress.Any.Equals(record.Address) ||
+                 IPAddress.IPv6Any.Equals(record.Address) ||
+                 IPAddress.IPv6None.Equals(record.Address)))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static async Task<IReadOnlyList<IPAddress>> ResolveHostFallbackAsync(

@@ -9,10 +9,15 @@ using DnsPulse.App.Localization;
 using DnsPulse.App.Services;
 using DnsPulse.App.ViewModels;
 using DnsPulse.Core.Models;
+using DnsPulse.Core.Routing;
+using DnsPulse.Core.Wire;
+using DnsPulse.Engine.Contracts;
 using DnsPulse.Engine.Diagnostics;
 using DnsPulse.Engine.Sidecar;
 using DnsPulse.Platform.Windows.Autostart;
+using DnsPulse.Platform.Windows.Contracts;
 using DnsPulse.Platform.Windows.Recovery;
+using DnsPulse.Platform.Windows.Updates;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -114,6 +119,8 @@ public sealed class ConvertersAndDiTests : IDisposable
     [Fact]
     public void SemanticConverters_MapVerdictsTrustTiersAndLocalizationCleanly()
     {
+        LocalizationSource.Instance.Service.SetLanguage("en-US", updateThreadCulture: false);
+
         VerdictToBrushConverter verdictConverter = new();
         SolidColorBrush healthyBrush = verdictConverter.Convert(DiagnosticVerdict.Healthy, typeof(System.Windows.Media.Brush), null, CultureInfo.InvariantCulture)
             .Should().BeOfType<SolidColorBrush>().Subject;
@@ -123,7 +130,13 @@ public sealed class ConvertersAndDiTests : IDisposable
 
         TrustTierToBadgeBrushConverter tierConverter = new();
         tierConverter.Convert(TrustTier.Tier1EncryptedTrusted, typeof(string), "Label", CultureInfo.InvariantCulture)
-            .Should().Be("Tier 1");
+            .Should().Be("Encrypted");
+        tierConverter.Convert(TrustTier.Tier2VerifiedGeoUnlock, typeof(string), "Label", CultureInfo.InvariantCulture)
+            .Should().Be("Geo-Unblock");
+        tierConverter.Convert(TrustTier.Tier3CustomOrSelfHosted, typeof(string), "Label", CultureInfo.InvariantCulture)
+            .Should().Be("Custom");
+        tierConverter.Convert(TrustTier.Tier4ExperimentalLab, typeof(string), "Label", CultureInfo.InvariantCulture)
+            .Should().Be("Test Node");
         tierConverter.Convert(TrustTier.Tier4ExperimentalLab, typeof(System.Windows.Media.Brush), null, CultureInfo.InvariantCulture)
             .Should().BeOfType<SolidColorBrush>();
 
@@ -136,6 +149,121 @@ public sealed class ConvertersAndDiTests : IDisposable
         locConverter.Convert(localization, typeof(string), "Nav_Overview", CultureInfo.InvariantCulture).Should().Be("Overview");
         localization.SetLanguage("ru-RU", updateThreadCulture: false);
         locConverter.Convert(localization, typeof(string), "Nav_Overview", CultureInfo.InvariantCulture).Should().Be("Обзор");
+    }
+
+    [Fact]
+    public void LatencyFormatConverter_FormatsPositiveValues_AndRendersDashForNonPositiveOrInvalid()
+    {
+        LatencyFormatConverter converter = new();
+
+        converter.Convert(0.0, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("—");
+        converter.Convert(-1.5, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("—");
+        converter.Convert(null, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("—");
+        converter.Convert(double.NaN, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("—");
+        converter.Convert(double.PositiveInfinity, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("—");
+        converter.Convert(double.NegativeInfinity, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("—");
+        converter.Convert(TimeSpan.Zero, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("—");
+
+        converter.Convert(42.3, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("42.3 ms");
+        converter.Convert(15.75f, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("15.8 ms");
+        converter.Convert(TimeSpan.FromMilliseconds(0.5), typeof(string), null, CultureInfo.InvariantCulture).Should().Be("<1 ms");
+        converter.Convert(TimeSpan.FromMilliseconds(18), typeof(string), null, CultureInfo.InvariantCulture).Should().Be("18 ms");
+    }
+
+    [Fact]
+    public void CategoryConverters_MapCategoriesAndServersToLocalizedLabelsAndBrushes()
+    {
+        LocalizationSource.Instance.Service.SetLanguage("en-US", updateThreadCulture: false);
+
+        CategoryToLabelConverter labelConverter = new();
+        CategoryToBadgeBrushConverter brushConverter = new();
+
+        labelConverter.Convert((object?)null, typeof(string), null, CultureInfo.InvariantCulture)
+            .Should().Be("All Servers");
+        labelConverter.Convert(ServerDisplayCategory.AiAndGeoUnlock, typeof(string), null, CultureInfo.InvariantCulture)
+            .Should().Be("AI & Geo-Unblock");
+        labelConverter.Convert(ServerDisplayCategory.AiAndGeoUnlock, typeof(string), "Short", CultureInfo.InvariantCulture)
+            .Should().Be("AI & Geo");
+        labelConverter.Convert(ServerDisplayCategory.FastEncrypted, typeof(string), null, CultureInfo.InvariantCulture)
+            .Should().Be("Fast Encrypted DNS");
+        labelConverter.Convert(ServerDisplayCategory.FastEncrypted, typeof(string), "Short", CultureInfo.InvariantCulture)
+            .Should().Be("Encrypted");
+        labelConverter.Convert(ServerDisplayCategory.StreamingAndGaming, typeof(string), null, CultureInfo.InvariantCulture)
+            .Should().Be("Streaming & Gaming");
+        labelConverter.Convert(ServerDisplayCategory.StreamingAndGaming, typeof(string), "Short", CultureInfo.InvariantCulture)
+            .Should().Be("Games & Media");
+        labelConverter.Convert(ServerDisplayCategory.CustomAndDiscovered, typeof(string), null, CultureInfo.InvariantCulture)
+            .Should().Be("Custom / Discovered");
+        labelConverter.Convert(ServerDisplayCategory.CustomAndDiscovered, typeof(string), "Short", CultureInfo.InvariantCulture)
+            .Should().Be("Custom");
+
+        IReadOnlyList<DnsServerEntry> flagships = BuiltInCatalogPresets.BuildFlagshipServers();
+        DnsServerEntry xboxServer = flagships.Single(static s => s.Id == "smart_xbox_dns_udp");
+        DnsServerEntry comssServer = flagships.Single(static s => s.Id == "smart_comss_doh");
+
+        labelConverter.Convert(xboxServer, typeof(string), "Short", CultureInfo.InvariantCulture)
+            .Should().Be("Games & Media");
+        labelConverter.Convert(comssServer, typeof(string), "Short", CultureInfo.InvariantCulture)
+            .Should().Be("AI & Geo");
+        labelConverter.Convert([comssServer], typeof(string), null, CultureInfo.InvariantCulture)
+            .Should().Be("AI & Geo-Unblock");
+
+        SolidColorBrush aiBrush = brushConverter.Convert(ServerDisplayCategory.AiAndGeoUnlock, typeof(System.Windows.Media.Brush), null, CultureInfo.InvariantCulture)
+            .Should().BeOfType<SolidColorBrush>().Subject;
+        SolidColorBrush fastBrush = brushConverter.Convert(ServerDisplayCategory.FastEncrypted, typeof(System.Windows.Media.Brush), null, CultureInfo.InvariantCulture)
+            .Should().BeOfType<SolidColorBrush>().Subject;
+        SolidColorBrush gamingBrush = brushConverter.Convert(xboxServer, typeof(System.Windows.Media.Brush), null, CultureInfo.InvariantCulture)
+            .Should().BeOfType<SolidColorBrush>().Subject;
+        SolidColorBrush customBrush = brushConverter.Convert(ServerDisplayCategory.CustomAndDiscovered, typeof(System.Windows.Media.Brush), null, CultureInfo.InvariantCulture)
+            .Should().BeOfType<SolidColorBrush>().Subject;
+
+        aiBrush.IsFrozen.Should().BeTrue();
+        System.Windows.Media.Color[] distinctColors = [aiBrush.Color, fastBrush.Color, gamingBrush.Color, customBrush.Color];
+        distinctColors.Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public void EnumLocalizationConverter_LocalizesZonesRcodesSortOrdersAndModes()
+    {
+        LocalizationSource.Instance.Service.SetLanguage("en-US", updateThreadCulture: false);
+        EnumLocalizationConverter converter = new();
+
+        converter.Convert((object?)null, typeof(string), null, CultureInfo.InvariantCulture).Should().Be(string.Empty);
+
+        // Route zones
+        converter.Convert(RouteZone.None, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Default");
+        converter.Convert(RouteZone.Zone1LocalBypass, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Local / LAN");
+        converter.Convert(RouteZone.Zone2BlockOrProtect, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Protected");
+        converter.Convert(RouteZone.Zone3GeoUnlock, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Unblock");
+        converter.Convert(RouteZone.Zone4EncryptedTrusted, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Encrypted");
+
+        // DNS response codes
+        converter.Convert(DnsResponseCode.NoError, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("OK");
+        converter.Convert(DnsResponseCode.NxDomain, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Not found");
+        converter.Convert(DnsResponseCode.ServFail, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Server error");
+        converter.Convert(DnsResponseCode.Refused, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Refused");
+        converter.Convert(DnsResponseCode.FormErr, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Bad query");
+        converter.Convert(DnsResponseCode.NotImp, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Unsupported");
+        converter.Convert(DnsResponseCode.NotAuth, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Error");
+
+        // Sort orders
+        converter.Convert(ServerSortOrder.P50Latency, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Sort: Speed (Fastest)");
+        converter.Convert(ServerSortOrder.Protocol, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Sort: Protocol");
+        converter.Convert(ServerSortOrder.TrustTier, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Sort: Category");
+        converter.Convert(ServerSortOrder.Name, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Sort: Name");
+
+        // Interception modes & settings enums
+        converter.Convert(InterceptionMode.AdapterDns, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Adapter DNS (Recommended)");
+        converter.Convert(InterceptionMode.SplitNrpt, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Windows Routing Policy (NRPT)");
+        converter.Convert(InterceptionMode.LocalProxyPacOnly, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Local Proxy / PAC (No Admin Rights)");
+        converter.Convert(InterceptionMode.WfpDivertPlugin, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Packet Driver (Disabled during Anti-Cheat)");
+        converter.Convert(InterceptionMode.None, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Disconnected");
+
+        converter.Convert(PoolSelectionStrategy.Fastest, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Fastest response");
+        converter.Convert(UpdateChannel.Beta, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Beta");
+        converter.Convert(RuleFormatKind.AdGuard, typeof(string), null, CultureInfo.InvariantCulture).Should().Be("AdGuard List");
+        converter.Convert("Azure", typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Cobalt Blue");
+        converter.Convert("Auto", typeof(string), null, CultureInfo.InvariantCulture).Should().Be("Automatic");
     }
 
     [Fact]

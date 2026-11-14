@@ -7,6 +7,7 @@ using System.Security.Principal;
 using System.Text.Json;
 using DnsPulse.Core.Models;
 using DnsPulse.Core.Routing;
+using DnsPulse.Core.Wire;
 using DnsPulse.Engine.Bootstrap;
 using DnsPulse.Engine.Cache;
 using DnsPulse.Engine.Contracts;
@@ -53,6 +54,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
     private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
 
     private LocalDnsServer? _localDnsServer;
+    private IPEndPoint? _localDnsEndPoint;
     private LocalDohHttpListener? _localDohListener;
     private TlsFragmentationProxyServer? _localProxyServer;
     private AutoPacServer? _localPacServer;
@@ -60,6 +62,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
     private ServiceStatusSnapshot _currentStatus = new();
     private DnsServerEntry? _activeTrustedUpstream;
     private DnsServerEntry? _activeGeoUnlockUpstream;
+    private IReadOnlyList<DnsServerEntry> _catalogSnapshot = BuiltInCatalogPresets.BuildFlagshipServers();
     private IReadOnlyList<string> _activeSplitDomains;
     private PulseAppSettings _lastSettings = new();
     private bool _isServiceMode;
@@ -120,6 +123,34 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
     public BenchmarkRunner CreateBenchmarkRunner()
     {
         return new BenchmarkRunner(CreateDiagnosticEngine());
+    }
+
+    public void SetCatalogSnapshot(IReadOnlyList<DnsServerEntry> catalog)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        _catalogSnapshot = [.. catalog];
+    }
+
+    public async Task<DiagnosticReport> ResolveEffectiveQuickProbeAsync(
+        DnsServerEntry upstream,
+        string targetDomain,
+        DiagnosticProbeOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(upstream);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetDomain);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        SixLayerDiagnosticEngine engine = CreateDiagnosticEngine();
+        DiagnosticProbeOptions effectiveOptions = options ?? new DiagnosticProbeOptions
+        {
+            TransportProbeSamples = 2,
+            ProbeTimeout = TimeSpan.FromMilliseconds(Math.Clamp(_lastSettings.ProbeTimeoutMs, 1200, 6000)),
+            IncludeTlsAndApplicationProbes = true,
+            ProbeCompanionDomains = true
+        };
+
+        return await engine.DiagnoseAsync(targetDomain.Trim(), upstream, effectiveOptions, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<ServiceStatusSnapshot> RefreshStatusAsync(CancellationToken cancellationToken = default)
@@ -385,6 +416,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         _localProxyServer = null;
         _localDohListener = null;
         _localDnsServer = null;
+        _localDnsEndPoint = null;
 
         _cache.Dispose();
         _bootstrapResolver.Dispose();
@@ -446,7 +478,44 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
             _activeGeoUnlockUpstream = geoUnlockUpstream;
         }
 
-        List<DnsServerEntry> geoList = _activeGeoUnlockUpstream is not null ? [_activeGeoUnlockUpstream] : [];
+        List<DnsServerEntry> geoList = [];
+        if (_activeGeoUnlockUpstream is not null)
+        {
+            geoList.Add(_activeGeoUnlockUpstream);
+        }
+
+        bool aiBypassActive = _activeSplitDomains.Any(ServerCategoryClassifier.IsAiDomain)
+            || (_activeGeoUnlockUpstream is not null && ServerCategoryClassifier.SupportsAiDomain(_activeGeoUnlockUpstream));
+
+        IEnumerable<DnsServerEntry> poolSource = fallbackPool is not null
+            ? fallbackPool.Concat(_catalogSnapshot)
+            : _catalogSnapshot;
+
+        IEnumerable<DnsServerEntry> geoFallbacks = poolSource
+            .Where(candidate =>
+                candidate is not null
+                && TrustTierPolicy.CanServeGeoUnlock(candidate.TrustTier)
+                && candidate.Protocol != DnsProtocol.SniProxy
+                && (!aiBypassActive || ServerCategoryClassifier.SupportsAiDomain(candidate))
+                && !geoList.Any(existing => string.Equals(existing.Id, candidate.Id, StringComparison.OrdinalIgnoreCase)))
+            .GroupBy(static candidate => candidate.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(static group => group.First())
+            .OrderBy(static candidate => candidate.Verdict switch
+            {
+                DiagnosticVerdict.Healthy => 0,
+                DiagnosticVerdict.TlsSniDpiReset => 1,
+                DiagnosticVerdict.Unknown => 2,
+                _ => 3
+            })
+            .ThenBy(static candidate => candidate.CompanionPassed == true ? 0 : 1)
+            .ThenBy(static candidate => candidate.IsEncrypted ? 0 : 1)
+            .ThenBy(candidate => aiBypassActive && ServerCategoryClassifier.HasExplicitAiTag(candidate) ? 0 : 1)
+            .ThenBy(static candidate => candidate.IsFavorite ? 0 : 1)
+            .ThenBy(static candidate => candidate.LatencyP50Ms ?? candidate.LastLatencyMs ?? double.MaxValue)
+            .Take(4);
+
+        geoList.AddRange(geoFallbacks);
+
         _dnsEngine.UpdateOptions(new PulseCoreEngineOptions
         {
             GeoUnlockUpstreams = geoList,
@@ -519,7 +588,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
                     BindAddress = IPAddress.Loopback,
                     Port = 0
                 },
-                (host, ct) => _bootstrapResolver.ResolveHostAsync(host, ct));
+                ResolveSidecarHostAsync);
             await proxyServer.StartAsync(cancellationToken).ConfigureAwait(false);
 
             int proxyPort = proxyServer.BoundEndPoint?.Port ?? 10808;
@@ -535,7 +604,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
             await pacServer.StartAsync(cancellationToken).ConfigureAwait(false);
 
             InterceptionMode effectiveMode = elevated ? settings.InterceptionMode : InterceptionMode.LocalProxyPacOnly;
-            if (dnsServer.BoundPort != 53 && effectiveMode is InterceptionMode.AdapterDns or InterceptionMode.SplitNrpt)
+            if (dnsServer.BoundPort != 53 && effectiveMode is InterceptionMode.AdapterDns or InterceptionMode.SplitNrpt or InterceptionMode.WfpDivertPlugin)
             {
                 effectiveMode = InterceptionMode.LocalProxyPacOnly;
             }
@@ -558,14 +627,36 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
                         cancellationToken).ConfigureAwait(false);
                 }
 
-                await interceptor.ActivateAsync(
-                    loopbackIp,
-                    dnsServer.BoundPort,
-                    _activeSplitDomains,
-                    cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await interceptor.ActivateAsync(
+                        loopbackIp,
+                        dnsServer.BoundPort,
+                        _activeSplitDomains,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && effectiveMode != InterceptionMode.LocalProxyPacOnly)
+                {
+                    Log.Warning(ex, "Portable mode {Mode} activation failed; falling back to LocalProxyPacOnly.", effectiveMode);
+                    try
+                    {
+                        await interceptor.DeactivateAsync(CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    interceptor = CreatePortableInterceptor(InterceptionMode.LocalProxyPacOnly, pacUrl, settings.BlockIpv6OnBypass)!;
+                    await interceptor.ActivateAsync(
+                        loopbackIp,
+                        dnsServer.BoundPort,
+                        _activeSplitDomains,
+                        cancellationToken).ConfigureAwait(false);
+                }
             }
 
             _localDnsServer = dnsServer;
+            _localDnsEndPoint = dnsServer.BoundTcpEndPoint ?? dnsServer.BoundUdpEndPoint ?? new IPEndPoint(loopbackIp, dnsServer.BoundPort);
             _localDohListener = dohListener;
             _localProxyServer = proxyServer;
             _localPacServer = pacServer;
@@ -608,6 +699,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         _localProxyServer = null;
         _localDohListener = null;
         _localDnsServer = null;
+        _localDnsEndPoint = null;
 
         await DisposePortableResourcesAsync(interceptor, pacServer, proxyServer, dohListener, dnsServer).ConfigureAwait(false);
 
@@ -716,7 +808,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
             IsConnected = connected,
             IsHealthy = connected,
             ActiveMode = connected ? (_activeInterceptor?.Mode ?? InterceptionMode.LocalProxyPacOnly) : InterceptionMode.None,
-            ActiveLoopbackIp = connected ? IPAddress.Loopback.ToString() : null,
+            ActiveLoopbackIp = connected ? (_localDnsEndPoint?.Address.ToString() ?? IPAddress.Loopback.ToString()) : null,
             BoundDnsPort = _localDnsServer?.BoundPort ?? 0,
             BoundDoHPort = _localDohListener?.BoundPort ?? 0,
             BoundProxyPort = _localProxyServer?.BoundEndPoint?.Port ?? 0,
@@ -725,8 +817,97 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
             QueriesPerMinute = _dnsEngine.Telemetry.QueriesPerMinute,
             ActiveUpstreamsCount = _poolManager.Zone4Servers.Count,
             DirtyRecoveryPending = false,
-            LastErrorMessage = lastError
+            LastErrorMessage = lastError,
+            LatencyP50Ms = _dnsEngine.Telemetry.Count > 0 ? _dnsEngine.Telemetry.P50LatencyMs : null,
+            ActiveGeoUnlockUpstreamId = _activeGeoUnlockUpstream?.Id
         };
+    }
+
+    private async Task<IReadOnlyList<IPAddress>> ResolveSidecarHostAsync(
+        string host,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return [];
+        }
+
+        string trimmed = host.Trim();
+        if (IPAddress.TryParse(trimmed, out IPAddress? literalIp))
+        {
+            return [literalIp];
+        }
+
+        DnsMessage queryA = DnsMessage.CreateQuery(1, trimmed, DnsRecordType.A);
+        DnsMessage responseA = await _dnsEngine.ResolveAsync(queryA, cancellationToken).ConfigureAwait(false);
+
+        if (responseA.EffectiveResponseCode == DnsResponseCode.NoError)
+        {
+            List<IPAddress> ipv4 = ExtractNonSinkholeAddresses(responseA);
+            if (ipv4.Count > 0)
+            {
+                return ipv4;
+            }
+
+            if (ContainsNullSinkholeAddress(responseA))
+            {
+                return [];
+            }
+
+            DnsMessage queryAaaa = DnsMessage.CreateQuery(2, trimmed, DnsRecordType.AAAA);
+            DnsMessage responseAaaa = await _dnsEngine.ResolveAsync(queryAaaa, cancellationToken).ConfigureAwait(false);
+            if (responseAaaa.EffectiveResponseCode == DnsResponseCode.NoError)
+            {
+                List<IPAddress> ipv6 = ExtractNonSinkholeAddresses(responseAaaa);
+                if (ipv6.Count > 0)
+                {
+                    return ipv6;
+                }
+            }
+
+            return [];
+        }
+
+        if (responseA.EffectiveResponseCode == DnsResponseCode.ServFail)
+        {
+            return await _bootstrapResolver.ResolveHostAsync(trimmed, cancellationToken).ConfigureAwait(false);
+        }
+
+        return [];
+    }
+
+    private static List<IPAddress> ExtractNonSinkholeAddresses(DnsMessage message)
+    {
+        List<IPAddress> addresses = [];
+        foreach (DnsResourceRecord record in message.Answers)
+        {
+            if (record.RecordType is DnsRecordType.A or DnsRecordType.AAAA &&
+                record.Address is not null &&
+                !IPAddress.Any.Equals(record.Address) &&
+                !IPAddress.IPv6Any.Equals(record.Address) &&
+                !IPAddress.IPv6None.Equals(record.Address))
+            {
+                addresses.Add(record.Address);
+            }
+        }
+
+        return addresses;
+    }
+
+    private static bool ContainsNullSinkholeAddress(DnsMessage message)
+    {
+        foreach (DnsResourceRecord record in message.Answers)
+        {
+            if (record.Address is not null &&
+                (IPAddress.Any.Equals(record.Address) ||
+                 IPAddress.IPv6Any.Equals(record.Address) ||
+                 IPAddress.IPv6None.Equals(record.Address)))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void UpdateSnapshot(ServiceStatusSnapshot snapshot)

@@ -133,6 +133,55 @@ public sealed class AutostartAndSettingsTests : IDisposable
     }
 
     [Fact]
+    public async Task AppSettingsStore_And_Clone_RoundTripBannerDismissalsAndQuickServiceSettings()
+    {
+        string primaryDir = Path.Combine(_tempDir, "DnsPulseV201");
+        string legacyDir = Path.Combine(_tempDir, "DnsPulseV201Legacy");
+        AppSettingsStore store = new(primaryDir, legacyDir);
+
+        PulseAppSettings defaults = await store.LoadAsync();
+        defaults.DismissedBrowserDohBanner.Should().BeFalse();
+        defaults.DismissedPort53Banner.Should().BeFalse();
+        defaults.DismissedVpnBanner.Should().BeFalse();
+        defaults.DismissedAntiCheatBanner.Should().BeFalse();
+        defaults.SelectedQuickServiceId.Should().Be("google_ai_studio");
+        defaults.LastVerifiedTargetDomain.Should().Be("aistudio.google.com");
+
+        PulseAppSettings customized = defaults.Clone();
+        customized.DismissedBrowserDohBanner = true;
+        customized.DismissedPort53Banner = true;
+        customized.DismissedVpnBanner = true;
+        customized.DismissedAntiCheatBanner = true;
+        customized.SelectedQuickServiceId = "  chatgpt  ";
+        customized.LastVerifiedTargetDomain = "  chatgpt.com  ";
+
+        PulseAppSettings cloned = customized.Clone();
+        cloned.DismissedBrowserDohBanner.Should().BeTrue();
+        cloned.DismissedPort53Banner.Should().BeTrue();
+        cloned.DismissedVpnBanner.Should().BeTrue();
+        cloned.DismissedAntiCheatBanner.Should().BeTrue();
+        cloned.SelectedQuickServiceId.Should().Be("  chatgpt  ");
+        cloned.LastVerifiedTargetDomain.Should().Be("  chatgpt.com  ");
+
+        await store.SaveAsync(customized);
+        PulseAppSettings reloaded = await store.LoadAsync();
+        reloaded.DismissedBrowserDohBanner.Should().BeTrue();
+        reloaded.DismissedPort53Banner.Should().BeTrue();
+        reloaded.DismissedVpnBanner.Should().BeTrue();
+        reloaded.DismissedAntiCheatBanner.Should().BeTrue();
+        reloaded.SelectedQuickServiceId.Should().Be("chatgpt");
+        reloaded.LastVerifiedTargetDomain.Should().Be("chatgpt.com");
+
+        // Blank quick-service values normalize back to AI Studio defaults.
+        reloaded.SelectedQuickServiceId = "   ";
+        reloaded.LastVerifiedTargetDomain = "";
+        await store.SaveAsync(reloaded);
+        PulseAppSettings normalized = await store.LoadAsync();
+        normalized.SelectedQuickServiceId.Should().Be("google_ai_studio");
+        normalized.LastVerifiedTargetDomain.Should().Be("aistudio.google.com");
+    }
+
+    [Fact]
     public async Task DiagnosticBundleExporter_RedactsTokensPathsAndZerosTelemetryUnlessOptedIn()
     {
         string logDir = Path.Combine(_tempDir, "logs");

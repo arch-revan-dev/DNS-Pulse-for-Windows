@@ -264,6 +264,14 @@ public sealed class AppSettingsStore
         {
             settings.PoolStrategy = PoolSelectionStrategy.Fastest;
         }
+
+        settings.SelectedQuickServiceId = string.IsNullOrWhiteSpace(settings.SelectedQuickServiceId)
+            ? "google_ai_studio"
+            : settings.SelectedQuickServiceId.Trim();
+
+        settings.LastVerifiedTargetDomain = string.IsNullOrWhiteSpace(settings.LastVerifiedTargetDomain)
+            ? "aistudio.google.com"
+            : settings.LastVerifiedTargetDomain.Trim();
     }
 
     private static bool TryReadSettings(string path, [NotNullWhen(true)] out PulseAppSettings? result)

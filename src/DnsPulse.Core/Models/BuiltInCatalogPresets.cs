@@ -213,7 +213,7 @@ public static class BuiltInCatalogPresets
                 dohUrl: "https://magicdns.ru/dns-query",
                 dotHost: "magicdns.ru",
                 country: "RU/EU",
-                tagsCsv: "smart-dns,magicdns,doh",
+                tagsCsv: "smart-dns,magicdns,ai,doh",
                 description: "Резервный эндпоинт MagicDNS (magicdns.ru)",
                 supportsBypass: true),
 
@@ -227,7 +227,7 @@ public static class BuiltInCatalogPresets
                 dohUrl: "https://us.geohide.ru/dns-query",
                 dotHost: "us.geohide.ru",
                 country: "US",
-                tagsCsv: "smart-dns,geohide,us,gemini,aistudio",
+                tagsCsv: "smart-dns,geohide,us,ai,gemini,aistudio",
                 description: "GeoHide US Smart-DNS шлюз (us.geohide.ru)",
                 supportsBypass: true),
             CreateBuiltin(
@@ -239,7 +239,7 @@ public static class BuiltInCatalogPresets
                 dohUrl: "https://eu.geohide.ru/dns-query",
                 dotHost: "eu.geohide.ru",
                 country: "EU",
-                tagsCsv: "smart-dns,geohide,eu,spotify",
+                tagsCsv: "smart-dns,geohide,eu,ai,gemini,aistudio,spotify",
                 description: "GeoHide EU Smart-DNS шлюз (eu.geohide.ru)",
                 supportsBypass: true),
 
@@ -255,7 +255,7 @@ public static class BuiltInCatalogPresets
                 dohUrl: "https://dns.malw.link/dns-query",
                 dotHost: "dns.malw.link",
                 country: "EU",
-                tagsCsv: "smart-dns,malw,gemini,chatgpt,spotify",
+                tagsCsv: "smart-dns,malw,ai,aistudio,gemini,chatgpt,spotify",
                 description: "Публичный Smart-DNS dns.malw.link с динамическим списком хостов",
                 supportsBypass: true),
             CreateBuiltin(
@@ -295,7 +295,7 @@ public static class BuiltInCatalogPresets
                 dohUrl: "https://dns.comss.one/dns-query",
                 dotHost: "dns.comss.one",
                 country: "RU/EU",
-                tagsCsv: "smart-dns,comss,ai,xbox,brawlstars",
+                tagsCsv: "smart-dns,comss,ai,gemini,aistudio,xbox,brawlstars",
                 description: "Comss.one Smart-DNS для AI, игр и стриминга",
                 supportsBypass: true),
             CreateBuiltin(
@@ -361,7 +361,7 @@ public static class BuiltInCatalogPresets
                 dohUrl: "https://dns.astracat.ru/dns-query",
                 dotHost: "dns.astracat.ru",
                 country: "RU/EU",
-                tagsCsv: "smart-dns,astracat,ai",
+                tagsCsv: "smart-dns,astracat,ai,gemini,aistudio",
                 description: "AstraCat Smart-DNS (185.236.104.104 / 135.106.217.200)",
                 supportsBypass: true),
             CreateBuiltin(
@@ -374,7 +374,7 @@ public static class BuiltInCatalogPresets
                 dohUrl: "https://dns.zapret.moe/dns-query",
                 dotHost: "dns.zapret.moe",
                 country: "EU",
-                tagsCsv: "smart-dns,zapret,ai",
+                tagsCsv: "smart-dns,zapret,ai,gemini,aistudio",
                 description: "Zapret.moe публичный DoH/UDP резолвер (83.217.211.149)",
                 supportsBypass: true),
 
@@ -682,7 +682,7 @@ public static class BuiltInCatalogPresets
                 dohUrl: string.Create(CultureInfo.InvariantCulture, $"https://gemini{index}.bezmezhau.com/dns-query"),
                 dotHost: string.Create(CultureInfo.InvariantCulture, $"gemini{index}.bezmezhau.com"),
                 country: "EU",
-                tagsCsv: "smart-dns,gemini,aistudio,chatgpt,bezmezhau",
+                tagsCsv: "smart-dns,ai,gemini,aistudio,chatgpt,bezmezhau",
                 description: string.Create(CultureInfo.InvariantCulture, $"Выделенный публичный узел gemini{index}.bezmezhau.com (без токена)"),
                 supportsBypass: true));
         }

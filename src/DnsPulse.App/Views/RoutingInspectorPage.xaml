@@ -4,11 +4,162 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:vm="clr-namespace:DnsPulse.App.ViewModels"
              xmlns:conv="clr-namespace:DnsPulse.App.Converters">
+  <UserControl.Resources>
+    <DataTemplate x:Key="TelemetryRowTemplate">
+      <Border Padding="10,7"
+              Margin="0,0,0,4"
+              CornerRadius="6"
+              Background="#1C212A"
+              BorderBrush="#2D3545"
+              BorderThickness="1">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="56" />
+            <ColumnDefinition Width="2.1*" />
+            <ColumnDefinition Width="90" />
+            <ColumnDefinition Width="1.4*" />
+            <ColumnDefinition Width="58" />
+            <ColumnDefinition Width="82" />
+            <ColumnDefinition Width="1.2*" />
+          </Grid.ColumnDefinitions>
+
+          <!-- Time -->
+          <TextBlock Grid.Column="0"
+                     FontSize="11"
+                     FontFamily="Consolas"
+                     Foreground="#94A3B8"
+                     VerticalAlignment="Center"
+                     Text="{Binding TimestampUtc, StringFormat={}{0:HH:mm:ss}}" />
+
+          <!-- Domain + Record Type -->
+          <Grid Grid.Column="1" Margin="6,0,8,0" VerticalAlignment="Center">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Foreground="#F8FAFC"
+                       VerticalAlignment="Center"
+                       Text="{Binding Domain}"
+                       TextTrimming="CharacterEllipsis"
+                       ToolTip="{Binding Domain}" />
+            <Border Grid.Column="1"
+                    Margin="6,0,0,0"
+                    Padding="5,1"
+                    CornerRadius="4"
+                    Background="#283140"
+                    VerticalAlignment="Center">
+              <TextBlock FontSize="10"
+                         FontWeight="SemiBold"
+                         Foreground="#CBD5E1"
+                         Text="{Binding RecordType}" />
+            </Border>
+          </Grid>
+
+          <!-- Localized Zone -->
+          <Border Grid.Column="2"
+                  Margin="0,0,8,0"
+                  Padding="6,2"
+                  CornerRadius="8"
+                  Background="#242C3A"
+                  HorizontalAlignment="Left"
+                  VerticalAlignment="Center">
+            <TextBlock FontSize="11"
+                       Foreground="#E2E8F0"
+                       TextTrimming="CharacterEllipsis">
+              <TextBlock.Text>
+                <MultiBinding Converter="{StaticResource EnumLocalizationConverter}">
+                  <Binding Path="Zone" />
+                  <Binding Path="[App_Title]" Source="{x:Static conv:LocalizationSource.Instance}" />
+                </MultiBinding>
+              </TextBlock.Text>
+              <TextBlock.ToolTip>
+                <MultiBinding Converter="{StaticResource EnumLocalizationConverter}">
+                  <Binding Path="Zone" />
+                  <Binding Path="[App_Title]" Source="{x:Static conv:LocalizationSource.Instance}" />
+                </MultiBinding>
+              </TextBlock.ToolTip>
+            </TextBlock>
+          </Border>
+
+          <!-- Upstream + Protocol -->
+          <Grid Grid.Column="3" Margin="0,0,8,0" VerticalAlignment="Center">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0"
+                       FontSize="12"
+                       Foreground="#E2E8F0"
+                       VerticalAlignment="Center"
+                       Text="{Binding UpstreamName}"
+                       TextTrimming="CharacterEllipsis"
+                       ToolTip="{Binding UpstreamName}" />
+            <Border Grid.Column="1"
+                    Margin="5,0,0,0"
+                    Padding="5,1"
+                    CornerRadius="4"
+                    Background="#1E3A5F"
+                    VerticalAlignment="Center">
+              <TextBlock FontSize="10"
+                         FontWeight="SemiBold"
+                         Foreground="#93C5FD"
+                         Text="{Binding Protocol}" />
+            </Border>
+          </Grid>
+
+          <!-- Latency -->
+          <TextBlock Grid.Column="4"
+                     Margin="0,0,8,0"
+                     FontSize="11"
+                     FontFamily="Consolas"
+                     Foreground="#CBD5E1"
+                     HorizontalAlignment="Right"
+                     VerticalAlignment="Center"
+                     Text="{Binding LatencyMs, Converter={StaticResource LatencyFormatConverter}}" />
+
+          <!-- Localized ResponseCode -->
+          <TextBlock Grid.Column="5"
+                     Margin="0,0,8,0"
+                     FontSize="11"
+                     FontWeight="SemiBold"
+                     Foreground="#E2E8F0"
+                     VerticalAlignment="Center"
+                     TextTrimming="CharacterEllipsis">
+            <TextBlock.Text>
+              <MultiBinding Converter="{StaticResource EnumLocalizationConverter}">
+                <Binding Path="ResponseCode" />
+                <Binding Path="[App_Title]" Source="{x:Static conv:LocalizationSource.Instance}" />
+              </MultiBinding>
+            </TextBlock.Text>
+            <TextBlock.ToolTip>
+              <MultiBinding Converter="{StaticResource EnumLocalizationConverter}">
+                <Binding Path="ResponseCode" />
+                <Binding Path="[App_Title]" Source="{x:Static conv:LocalizationSource.Instance}" />
+              </MultiBinding>
+            </TextBlock.ToolTip>
+          </TextBlock>
+
+          <!-- Decision Note -->
+          <TextBlock Grid.Column="6"
+                     FontSize="11"
+                     Foreground="#94A3B8"
+                     VerticalAlignment="Center"
+                     Text="{Binding DecisionNote}"
+                     TextTrimming="CharacterEllipsis"
+                     ToolTip="{Binding DecisionNote}" />
+        </Grid>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+
   <Grid Margin="20,16,20,20">
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="380" MinWidth="320" />
+      <ColumnDefinition Width="340" MinWidth="290" />
       <ColumnDefinition Width="16" />
-      <ColumnDefinition Width="*" MinWidth="420" />
+      <ColumnDefinition Width="*" MinWidth="440" />
     </Grid.ColumnDefinitions>
 
     <!-- Left Column: Service Preset Toggles & Rule Import/Export -->
@@ -69,7 +220,20 @@
                       SelectedItem="{Binding SelectedRuleFormat, Mode=TwoWay}"
                       Margin="0,0,0,8"
                       AutomationProperties.Name="{conv:Localization Routing_Rules_Format}"
-                      AutomationProperties.HelpText="{conv:Localization Routing_Rules_Title}" />
+                      AutomationProperties.HelpText="{conv:Localization Routing_Rules_Title}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock>
+                    <TextBlock.Text>
+                      <MultiBinding Converter="{StaticResource EnumLocalizationConverter}">
+                        <Binding />
+                        <Binding Path="[App_Title]" Source="{x:Static conv:LocalizationSource.Instance}" />
+                      </MultiBinding>
+                    </TextBlock.Text>
+                  </TextBlock>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
 
             <ui:TextBox MinHeight="110"
                         MaxHeight="200"
@@ -114,10 +278,11 @@
       </StackPanel>
     </ScrollViewer>
 
-    <!-- Right Column: Virtualized Live Query Telemetry Inspector -->
+    <!-- Right Column: Virtualized Responsive Dark Query Telemetry Inspector -->
     <ui:Card Grid.Column="2" Padding="16">
       <Grid>
         <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
@@ -201,45 +366,41 @@
                        AutomationProperties.HelpText="{conv:Localization Routing_Telemetry_Title}" />
         </WrapPanel>
 
-        <!-- Virtualized Telemetry ListView -->
-        <ListView Grid.Row="3"
+        <!-- Dark Responsive Column Header Row -->
+        <Border Grid.Row="3"
+                Padding="10,7"
+                Margin="0,2,0,4"
+                CornerRadius="6"
+                Background="#161B24"
+                BorderBrush="#2D3545"
+                BorderThickness="1">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="56" />
+              <ColumnDefinition Width="2.1*" />
+              <ColumnDefinition Width="90" />
+              <ColumnDefinition Width="1.4*" />
+              <ColumnDefinition Width="58" />
+              <ColumnDefinition Width="82" />
+              <ColumnDefinition Width="1.2*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" Text="{conv:Localization Routing_Col_Time}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="1" Margin="6,0,8,0" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" Text="{conv:Localization Routing_Col_Domain}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="2" Margin="0,0,8,0" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" Text="{conv:Localization Routing_Col_Zone}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="3" Margin="0,0,8,0" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" Text="{conv:Localization Routing_Col_Upstream}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="4" Margin="0,0,8,0" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" HorizontalAlignment="Right" Text="{conv:Localization Routing_Col_Latency}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="5" Margin="0,0,8,0" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" Text="{conv:Localization Routing_Col_Result}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="6" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" Text="{conv:Localization Routing_Col_Note}" TextTrimming="CharacterEllipsis" />
+          </Grid>
+        </Border>
+
+        <!-- Virtualized Dark Telemetry ListView -->
+        <ListView Grid.Row="4"
+                  Style="{StaticResource PulseDarkCardListViewStyle}"
+                  ItemContainerStyle="{StaticResource PulseDarkListViewItemStyle}"
                   ItemsSource="{Binding FilteredTelemetryEvents}"
-                  VirtualizingPanel.IsVirtualizing="True"
-                  VirtualizingPanel.VirtualizationMode="Recycling"
-                  ScrollViewer.CanContentScroll="True"
-                  AutomationProperties.Name="{conv:Localization Routing_Telemetry_Title}">
-          <ListView.View>
-            <GridView>
-              <GridViewColumn Width="76"
-                              Header="{conv:Localization Routing_Col_Time}"
-                              DisplayMemberBinding="{Binding TimestampUtc, StringFormat={}{0:HH:mm:ss}}" />
-              <GridViewColumn Width="180"
-                              Header="{conv:Localization Routing_Col_Domain}"
-                              DisplayMemberBinding="{Binding Domain}" />
-              <GridViewColumn Width="56"
-                              Header="{conv:Localization Routing_Col_Type}"
-                              DisplayMemberBinding="{Binding RecordType}" />
-              <GridViewColumn Width="120"
-                              Header="{conv:Localization Routing_Col_Zone}"
-                              DisplayMemberBinding="{Binding Zone}" />
-              <GridViewColumn Width="120"
-                              Header="{conv:Localization Routing_Col_Upstream}"
-                              DisplayMemberBinding="{Binding UpstreamName}" />
-              <GridViewColumn Width="72"
-                              Header="{conv:Localization Routing_Col_Protocol}"
-                              DisplayMemberBinding="{Binding Protocol}" />
-              <GridViewColumn Width="76"
-                              Header="{conv:Localization Routing_Col_Latency}"
-                              DisplayMemberBinding="{Binding LatencyMs, StringFormat={}{0:F1}}" />
-              <GridViewColumn Width="82"
-                              Header="{conv:Localization Routing_Col_Result}"
-                              DisplayMemberBinding="{Binding ResponseCode}" />
-              <GridViewColumn Width="180"
-                              Header="{conv:Localization Routing_Col_Note}"
-                              DisplayMemberBinding="{Binding DecisionNote}" />
-            </GridView>
-          </ListView.View>
-        </ListView>
+                  ItemTemplate="{StaticResource TelemetryRowTemplate}"
+                  AutomationProperties.Name="{conv:Localization Routing_Telemetry_Title}" />
       </Grid>
     </ui:Card>
   </Grid>
