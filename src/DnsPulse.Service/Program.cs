@@ -131,15 +131,26 @@ builder.Services.AddHostedService<DnsPulseWorkerService>();
 
 using IHost host = builder.Build();
 ILogger platformLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("DnsPulse.Platform");
+Action<ILogger, string, Exception?> logPlatformWarning = LoggerMessage.Define<string>(
+    LogLevel.Warning,
+    new EventId(1, "PlatformWarning"),
+    "{Message}");
+Action<ILogger, string, Exception?> logPlatformInfo = LoggerMessage.Define<string>(
+    LogLevel.Information,
+    new EventId(2, "PlatformInfo"),
+    "{Message}");
 PlatformDiagnosticLog.Configure((msg, ex) =>
 {
     if (ex is not null)
     {
-        platformLogger.LogWarning(ex, "{Message}", msg);
+        if (platformLogger.IsEnabled(LogLevel.Warning))
+        {
+            logPlatformWarning(platformLogger, msg, ex);
+        }
     }
-    else
+    else if (platformLogger.IsEnabled(LogLevel.Information))
     {
-        platformLogger.LogInformation("{Message}", msg);
+        logPlatformInfo(platformLogger, msg, null);
     }
 });
 
