@@ -157,7 +157,7 @@ jobs:
           Copy-Item "artifacts/sbom-${{ matrix.rid }}.cdx.json" "staged/" -Force
 
       - name: Upload staged artifacts (${{ matrix.rid }})
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.rid }}
           path: staged/*
@@ -197,7 +197,7 @@ jobs:
             release-assets/sbom-*.cdx.json
 
       - name: Upload combined release bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: DNS-Pulse-release-bundle
           path: release-assets/*
