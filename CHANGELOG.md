@@ -2,6 +2,23 @@
 
 Все значимые изменения в проекте **DNS Pulse** документируются в этом файле в формате [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
+## [2.0.1] - 2026-11-14
+
+### Исправлено и улучшено
+- **Тёмная тема, контрастность и списки (`ThemeAppearanceService`, `App.xaml`, конвертеры):**
+  - Исправлено отображение тёмной темы в `WPF-UI 4.3` (синхронное применение на UI-потоке, отключение наследования размытого системного акцента и принудительные контрастные акцентные палитры WCAG AA с белым текстом на кнопках и активных чипах).
+  - Убраны белые фоны `Aero2` у `ListView` и `GridViewColumnHeader` в каталоге серверов, инспекторе маршрутизации и диагностике (добавлены тёмные стили `PulseDarkCardListViewStyle`, `PulseDarkListViewItemStyle`, `PulseDarkGridViewColumnHeaderStyle`, `PulseDarkDataGridStyle`), а таблица инспектора переведена на адаптивную сетку без обрезания колонок.
+- **Закрываемые уведомления и понятный язык (`MainWindow`, `PulseAppSettings`, `Strings*.resx`):**
+  - Верхние баннеры (`Browser DoH`, `Port 53`, `SMHNR/VPN`, `Anti-Cheat`) заменены на компактные карточки с рабочими кнопками исправления, кнопкой закрытия `×`, сохранением состояния скрытия в `settings.json` и кнопкой возврата скрытых уведомлений в заголовке окна.
+  - Технический жаргон (`Tier 1..4`, `Уровень 1..4`, `SMHNR`, `ECH`, `SVCB`, непереведённые значения enum в выпадающих списках) заменён на понятные формулировки с полным паритетом ключей `en-US` / `ru-RU` (290/290).
+- **Категории серверов и автоподключение в 1 клик под Google AI Studio (`ServerCategoryClassifier`, `OverviewPage`, `ServersCatalogPage`):**
+  - Введены пользовательские категории `ServerDisplayCategory` (`Обход ИИ и гео-блоков`, `Быстрый шифрованный DNS`, `Стриминг и игры`, `Свои / Найденные`) при сохранении внутренних `TrustTier` для защиты Зоны 4; дублирующиеся фильтры и вкладки в каталоге объединены в одну панель категорий.
+  - Игровые узлы (`Xbox-DNS UDP 53`, `Xbox-DNS.ru`, `Electro Gaming DNS`, `Radar Game DNS`) отделены от AI-резолверов (`SupportsAiUnlock = false`), исправлена SQL-сортировка в `PulseCatalogRepository`, и на главном экране добавлен пошаговый 1-клик выбор сервиса (`Google AI Studio`, `Gemini`, `ChatGPT`, `Claude`, `YouTube`, `Discord`, `Spotify`, `Игры`, `Свой домен`) с автоподбором рабочего Geo-Unlock узла, включением всех 52 доменов AI-пресета и честной сквозной проверкой доступа.
+- **Живая телеметрия `p50` и исправления PAC / IPv6 (`ServiceStatusSnapshot`, `DefaultPulseRuntimeBackend`, `AdapterDnsInterceptor`):**
+  - В `ServiceStatusSnapshot` добавлены реальные `LatencyP50Ms` из `QueryTelemetryBuffer` и `ActiveGeoUnlockUpstreamId`; значения `<= 0` / `null` отображаются как `—` вместо `0.0 ms`.
+  - `TlsFragmentationProxyServer` теперь резолвит домены через `PulseCoreDnsEngine` / `SplitNamespaceRouter` (учитывая Зону 3 Smart-DNS и Зону 2 блокировки) с фолбэком на bootstrap DNS только при `ServFail`.
+  - В `AdapterDnsInterceptor` добавлена проверка занятости `[::1]:53` (например, при работе `ag_dns`) с перенаправлением IPv6-обхода на `100::1` во избежание утечки `AAAA`-запросов на конфликтующий порт 53.
+
 ## [2.0.0] - 2026-11-14
 
 ### Архитектура и основные изменения (PulseCore .NET 9)
