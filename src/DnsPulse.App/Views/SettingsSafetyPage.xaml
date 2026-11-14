@@ -313,11 +313,17 @@
 
       <!-- Verified Updates -->
       <ui:CardExpander Header="{conv:Localization Settings_Updates_Title}"
+                       IsExpanded="True"
                        Margin="0,0,0,16">
         <ui:CardExpander.Icon>
           <ui:SymbolIcon Symbol="ArrowDownload24" />
         </ui:CardExpander.Icon>
         <StackPanel>
+          <ui:TextBlock Margin="0,0,0,8"
+                        Appearance="Secondary"
+                        FontTypography="Caption"
+                        Text="{Binding CurrentAppVersionText}" />
+
           <WrapPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,8">
             <StackPanel Margin="0,0,16,8">
               <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_UpdateChannel}" />
@@ -356,11 +362,11 @@
                             AutomationProperties.Name="{conv:Localization Settings_GitHubTokenPlaceholder}"
                             AutomationProperties.HelpText="{conv:Localization Settings_Updates_Title}" />
 
-            <ui:Button Margin="0,12,0,8"
+            <ui:Button Margin="0,12,8,8"
                        Appearance="Primary"
                        Content="{conv:Localization Settings_CheckUpdatesNow}"
                        Command="{Binding CheckForUpdatesCommand}"
-                       IsEnabled="{Binding IsCheckingUpdates, Converter={StaticResource InverseBoolConverter}}"
+                       IsEnabled="{Binding IsUpdateBusy, Converter={StaticResource InverseBoolConverter}}"
                        AutomationProperties.Name="{conv:Localization Settings_CheckUpdatesNow}"
                        AutomationProperties.HelpText="{conv:Localization Settings_Updates_Title}">
               <ui:Button.Icon>
@@ -368,6 +374,52 @@
               </ui:Button.Icon>
             </ui:Button>
           </WrapPanel>
+
+          <Border Margin="0,4,0,8"
+                  Padding="12"
+                  CornerRadius="8"
+                  BorderThickness="1"
+                  BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                  Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
+                  Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <StackPanel>
+              <ui:TextBlock FontTypography="BodyStrong"
+                            Margin="0,0,0,8"
+                            Text="{Binding UpdateAvailableTitleText}" />
+
+              <WrapPanel Orientation="Horizontal">
+                <ui:Button Margin="0,0,10,4"
+                           Appearance="Success"
+                           Content="{conv:Localization Settings_DownloadInstallUpdate}"
+                           Command="{Binding DownloadAndInstallUpdateCommand}"
+                           IsEnabled="{Binding IsUpdateBusy, Converter={StaticResource InverseBoolConverter}}"
+                           AutomationProperties.Name="{conv:Localization Settings_DownloadInstallUpdate}"
+                           AutomationProperties.HelpText="{conv:Localization Settings_Updates_Title}">
+                  <ui:Button.Icon>
+                    <ui:SymbolIcon Symbol="ArrowDownload24" />
+                  </ui:Button.Icon>
+                </ui:Button>
+
+                <ui:Button Margin="0,0,0,4"
+                           Content="{conv:Localization Settings_OpenReleasePage}"
+                           Command="{Binding OpenReleasePageCommand}"
+                           Visibility="{Binding HasLatestRelease, Converter={StaticResource BooleanToVisibilityConverter}}"
+                           AutomationProperties.Name="{conv:Localization Settings_OpenReleasePage}"
+                           AutomationProperties.HelpText="{conv:Localization Settings_Updates_Title}">
+                  <ui:Button.Icon>
+                    <ui:SymbolIcon Symbol="Open24" />
+                  </ui:Button.Icon>
+                </ui:Button>
+              </WrapPanel>
+            </StackPanel>
+          </Border>
+
+          <ProgressBar Height="6"
+                       Margin="0,4,0,8"
+                       Minimum="0"
+                       Maximum="100"
+                       Value="{Binding UpdateProgressPercent, Mode=OneWay}"
+                       Visibility="{Binding IsUpdating, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
           <ui:TextBlock Appearance="Secondary"
                         FontTypography="Caption"

@@ -81,6 +81,7 @@ public sealed partial class MainWindow : FluentWindow
     {
         WindowBackdropType = _themeService.CurrentBackdrop;
         NavigateToSelectedPage();
+        _ = _viewModel.Settings.TryAutoCheckUpdatesOnStartupAsync();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

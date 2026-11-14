@@ -289,6 +289,15 @@
   <data name="Settings_Channel_Beta" xml:space="preserve"><value>Бета (Beta)</value></data>
   <data name="Settings_AutoCheckUpdates" xml:space="preserve"><value>Автоматически проверять обновления</value></data>
   <data name="Settings_CheckUpdatesNow" xml:space="preserve"><value>Проверить обновления</value></data>
+  <data name="Settings_UpdateCurrentVersion" xml:space="preserve"><value>Текущая версия: {0}</value></data>
+  <data name="Settings_UpdateAvailableTitle" xml:space="preserve"><value>Доступно обновление: {0}</value></data>
+  <data name="Settings_UpdateAvailableStatus" xml:space="preserve"><value>Доступна версия {0} (у вас: {1}). Нажмите «Скачать и установить».</value></data>
+  <data name="Settings_UpdateUpToDate" xml:space="preserve"><value>У вас установлена актуальная версия ({0}).</value></data>
+  <data name="Settings_DownloadInstallUpdate" xml:space="preserve"><value>Скачать и установить</value></data>
+  <data name="Settings_OpenReleasePage" xml:space="preserve"><value>Открыть на GitHub</value></data>
+  <data name="Settings_UpdateLaunchingInstaller" xml:space="preserve"><value>SHA-256 проверен. Запуск установщика и обновление...</value></data>
+  <data name="Settings_UpdateApplyingPortable" xml:space="preserve"><value>SHA-256 проверен. Установка обновления и перезапуск...</value></data>
+  <data name="Settings_UpdateFailed" xml:space="preserve"><value>Ошибка обновления: {0}</value></data>
   <data name="Settings_Safety_Title" xml:space="preserve"><value>Экстренное восстановление и диагностика</value></data>
   <data name="Settings_EmergencyRestore" xml:space="preserve"><value>Восстановить стандартные настройки сети</value></data>
   <data name="Settings_ExportBundle" xml:space="preserve"><value>Сохранить обезличенный архив диагностики (.zip)</value></data>

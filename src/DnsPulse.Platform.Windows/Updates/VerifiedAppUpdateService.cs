@@ -2,10 +2,12 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -27,6 +29,9 @@ public sealed class VerifiedAppUpdateService : IDisposable
     public const string RepoOwner = "arch-revan-dev";
     public const string RepoName = "DNS-Pulse-for-Windows";
     public const string SetupInstallerAssetName = "DNS-Pulse-win-x64-setup.exe";
+    public const string SetupInstallerArm64AssetName = "DNS-Pulse-win-arm64-setup.exe";
+    public const string PortableZipAssetName = "DNS-Pulse-win-x64-portable.zip";
+    public const string PortableZipArm64AssetName = "DNS-Pulse-win-arm64-portable.zip";
     public const string PortableExecutableAssetName = "DnsPulse.exe";
     public const string Sha256SumsAssetName = "SHA256SUMS.txt";
     public const string Sha256SumsSigAssetName = "SHA256SUMS.txt.sig";
@@ -420,10 +425,13 @@ public sealed class VerifiedAppUpdateService : IDisposable
                                 IsPrerelease: tag.Contains('-', StringComparison.Ordinal),
                                 ReleaseNotes: string.Empty,
                                 SetupExeUrl: string.Concat(dlBase, "/", SetupInstallerAssetName),
-                                PortableExeUrl: string.Concat(dlBase, "/", PortableExecutableAssetName),
+                                PortableExeUrl: null,
                                 Sha256SumsUrl: string.Concat(dlBase, "/", Sha256SumsAssetName),
                                 Sha256SumsSigUrl: string.Concat(dlBase, "/", Sha256SumsSigAssetName),
-                                HtmlUrl: string.Create(CultureInfo.InvariantCulture, $"https://github.com/{RepoOwner}/{RepoName}/releases/tag/{tag}"));
+                                HtmlUrl: string.Create(CultureInfo.InvariantCulture, $"https://github.com/{RepoOwner}/{RepoName}/releases/tag/{tag}"),
+                                SetupArm64ExeUrl: string.Concat(dlBase, "/", SetupInstallerArm64AssetName),
+                                PortableZipUrl: string.Concat(dlBase, "/", PortableZipAssetName),
+                                PortableArm64ZipUrl: string.Concat(dlBase, "/", PortableZipArm64AssetName));
                         }
                     }
                 }
@@ -488,22 +496,22 @@ public sealed class VerifiedAppUpdateService : IDisposable
         IProgress<(double Percent, string Status)>? progress = null,
         string? githubToken = null,
         bool requireSignature = false,
+        bool? installedEditionOverride = null,
+        Architecture? targetArchitectureOverride = null,
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(release);
 
-        bool useInstaller = IsInstalledEdition() && (!string.IsNullOrWhiteSpace(release.SetupExeUrl) || !string.IsNullOrWhiteSpace(release.SetupApiUrl));
-        string? assetUrl = useInstaller ? release.SetupExeUrl : (release.PortableExeUrl ?? release.SetupExeUrl);
-        string? assetApiUrl = useInstaller ? release.SetupApiUrl : (release.PortableApiUrl ?? release.SetupApiUrl);
+        bool isInstalled = installedEditionOverride ?? IsInstalledEdition();
+        Architecture arch = targetArchitectureOverride ?? RuntimeInformation.OSArchitecture;
+        (string? assetUrl, string? assetApiUrl, string fileName, bool actuallyInstaller) =
+            ResolveDownloadAsset(release, isInstalled, arch);
+
         if (string.IsNullOrWhiteSpace(assetUrl) && string.IsNullOrWhiteSpace(assetApiUrl))
         {
-            throw new InvalidOperationException("Release contains neither a Windows x64 installer nor a portable executable.");
+            throw new InvalidOperationException("Release contains neither a Windows installer nor a portable update package.");
         }
-
-        bool actuallyInstaller = useInstaller
-            || (assetUrl ?? string.Empty).EndsWith(SetupInstallerAssetName, StringComparison.OrdinalIgnoreCase);
-        string fileName = actuallyInstaller ? SetupInstallerAssetName : PortableExecutableAssetName;
 
         string safeTag = SanitizePathSegment(release.TagName);
         string rootDir = string.IsNullOrWhiteSpace(stagingRootDirectory)
@@ -709,6 +717,270 @@ public sealed class VerifiedAppUpdateService : IDisposable
         };
     }
 
+    /// <summary>
+    /// Creates a <see cref="ProcessStartInfo"/> used to relaunch <c>DnsPulse.exe</c> after an in-place portable update.
+    /// </summary>
+    public static ProcessStartInfo CreateRelaunchStartInfo(string targetExecutablePath, string? workingDirectory = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetExecutablePath);
+
+        string fullPath = Path.GetFullPath(targetExecutablePath);
+        return new ProcessStartInfo
+        {
+            FileName = fullPath,
+            UseShellExecute = true,
+            WorkingDirectory = string.IsNullOrWhiteSpace(workingDirectory)
+                ? (Path.GetDirectoryName(fullPath) ?? string.Empty)
+                : Path.GetFullPath(workingDirectory)
+        };
+    }
+
+    /// <summary>
+    /// Extracts a verified portable <c>.zip</c> archive (or copies a verified single <c>DnsPulse.exe</c>) into
+    /// <paramref name="targetDirectory"/>, moving currently locked binaries to <c>.old</c> backups in the same directory
+    /// so the updated executable can be relaunched cleanly without shell scripts.
+    /// </summary>
+    public static string ApplyPortableUpdate(string preparedFilePath, string? targetDirectory = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(preparedFilePath);
+
+        string sourceFullPath = Path.GetFullPath(preparedFilePath);
+        if (!File.Exists(sourceFullPath))
+        {
+            throw new FileNotFoundException("Verified update package does not exist.", sourceFullPath);
+        }
+
+        string appDir = Path.GetFullPath(string.IsNullOrWhiteSpace(targetDirectory)
+            ? GetTargetApplicationDirectory()
+            : targetDirectory);
+        Directory.CreateDirectory(appDir);
+
+        CleanupOldUpdateBackups(appDir);
+
+        string sourceDir;
+        string? tempExtractDir = null;
+
+        if (sourceFullPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            tempExtractDir = Path.Combine(
+                Path.GetDirectoryName(sourceFullPath) ?? Path.GetTempPath(),
+                string.Concat("extracted-", Path.GetFileNameWithoutExtension(sourceFullPath)));
+            if (Directory.Exists(tempExtractDir))
+            {
+                Directory.Delete(tempExtractDir, recursive: true);
+            }
+
+            Directory.CreateDirectory(tempExtractDir);
+            ExtractZipSafely(sourceFullPath, tempExtractDir);
+            sourceDir = tempExtractDir;
+        }
+        else
+        {
+            string targetExe = Path.Combine(appDir, PortableExecutableAssetName);
+            ReplaceFileWithOldBackup(sourceFullPath, targetExe);
+            return targetExe;
+        }
+
+        string rootWithSep = tempExtractDir.EndsWith(Path.DirectorySeparatorChar)
+            ? tempExtractDir
+            : string.Concat(tempExtractDir, Path.DirectorySeparatorChar);
+        string appRootWithSep = appDir.EndsWith(Path.DirectorySeparatorChar)
+            ? appDir
+            : string.Concat(appDir, Path.DirectorySeparatorChar);
+
+        try
+        {
+            foreach (string srcFile in Directory.EnumerateFiles(sourceDir, "*", SearchOption.AllDirectories))
+            {
+                string relativePath = Path.GetRelativePath(rootWithSep, srcFile);
+                string destFile = Path.GetFullPath(Path.Combine(appDir, relativePath));
+                if (!destFile.StartsWith(appRootWithSep, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidDataException("Extracted file path escapes the application directory.");
+                }
+
+                string? destParent = Path.GetDirectoryName(destFile);
+                if (!string.IsNullOrWhiteSpace(destParent))
+                {
+                    Directory.CreateDirectory(destParent);
+                }
+
+                ReplaceFileWithOldBackup(srcFile, destFile);
+            }
+
+            string updatedExe = Path.Combine(appDir, PortableExecutableAssetName);
+            if (!File.Exists(updatedExe))
+            {
+                throw new FileNotFoundException("Updated DnsPulse.exe was not found in the portable package.", updatedExe);
+            }
+
+            return updatedExe;
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(tempExtractDir) && Directory.Exists(tempExtractDir))
+            {
+                try
+                {
+                    Directory.Delete(tempExtractDir, recursive: true);
+                }
+                catch (IOException)
+                {
+                }
+                catch (UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Removes leftover <c>*.old</c> files created during previous in-place portable updates.
+    /// </summary>
+    public static void CleanupOldUpdateBackups(string? targetDirectory = null)
+    {
+        string appDir = string.IsNullOrWhiteSpace(targetDirectory)
+            ? GetTargetApplicationDirectory()
+            : Path.GetFullPath(targetDirectory);
+
+        if (!Directory.Exists(appDir))
+        {
+            return;
+        }
+
+        try
+        {
+            foreach (string oldFile in Directory.EnumerateFiles(appDir, "*.old", SearchOption.AllDirectories))
+            {
+                TryDeleteFile(oldFile);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Selects the preferred asset URL and canonical file name matching edition and OS architecture.
+    /// </summary>
+    internal static (string? AssetUrl, string? AssetApiUrl, string FileName, bool IsInstaller) ResolveDownloadAsset(
+        ReleaseInfo release,
+        bool isInstalled,
+        Architecture architecture)
+    {
+        bool isArm64 = architecture == Architecture.Arm64;
+
+        if (isInstalled)
+        {
+            if (isArm64 && (!string.IsNullOrWhiteSpace(release.SetupArm64ExeUrl) || !string.IsNullOrWhiteSpace(release.SetupArm64ApiUrl)))
+            {
+                return (release.SetupArm64ExeUrl, release.SetupArm64ApiUrl, SetupInstallerArm64AssetName, true);
+            }
+
+            if (!string.IsNullOrWhiteSpace(release.SetupExeUrl) || !string.IsNullOrWhiteSpace(release.SetupApiUrl))
+            {
+                return (release.SetupExeUrl, release.SetupApiUrl, SetupInstallerAssetName, true);
+            }
+        }
+
+        if (isArm64 && (!string.IsNullOrWhiteSpace(release.PortableArm64ZipUrl) || !string.IsNullOrWhiteSpace(release.PortableArm64ZipApiUrl)))
+        {
+            return (release.PortableArm64ZipUrl, release.PortableArm64ZipApiUrl, PortableZipArm64AssetName, false);
+        }
+
+        if (!string.IsNullOrWhiteSpace(release.PortableZipUrl) || !string.IsNullOrWhiteSpace(release.PortableZipApiUrl))
+        {
+            return (release.PortableZipUrl, release.PortableZipApiUrl, PortableZipAssetName, false);
+        }
+
+        if (!string.IsNullOrWhiteSpace(release.PortableExeUrl) || !string.IsNullOrWhiteSpace(release.PortableApiUrl))
+        {
+            return (release.PortableExeUrl, release.PortableApiUrl, PortableExecutableAssetName, false);
+        }
+
+        if (isArm64 && (!string.IsNullOrWhiteSpace(release.SetupArm64ExeUrl) || !string.IsNullOrWhiteSpace(release.SetupArm64ApiUrl)))
+        {
+            return (release.SetupArm64ExeUrl, release.SetupArm64ApiUrl, SetupInstallerArm64AssetName, true);
+        }
+
+        if (!string.IsNullOrWhiteSpace(release.SetupExeUrl) || !string.IsNullOrWhiteSpace(release.SetupApiUrl))
+        {
+            return (release.SetupExeUrl, release.SetupApiUrl, SetupInstallerAssetName, true);
+        }
+
+        return (null, null, SetupInstallerAssetName, true);
+    }
+
+    private static string GetTargetApplicationDirectory()
+    {
+        string? processPath = Environment.ProcessPath;
+        if (!string.IsNullOrWhiteSpace(processPath))
+        {
+            string? processDir = Path.GetDirectoryName(processPath);
+            if (!string.IsNullOrWhiteSpace(processDir))
+            {
+                return processDir;
+            }
+        }
+
+        return AppContext.BaseDirectory;
+    }
+
+    private static void ExtractZipSafely(string zipPath, string destinationDirectory)
+    {
+        string destFull = Path.GetFullPath(destinationDirectory);
+        string destWithSep = destFull.EndsWith(Path.DirectorySeparatorChar)
+            ? destFull
+            : string.Concat(destFull, Path.DirectorySeparatorChar);
+
+        using ZipArchive archive = ZipFile.OpenRead(zipPath);
+        foreach (ZipArchiveEntry entry in archive.Entries)
+        {
+            if (string.IsNullOrEmpty(entry.Name) &&
+                (entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\')))
+            {
+                string subDir = Path.GetFullPath(Path.Combine(destFull, entry.FullName));
+                if (!subDir.StartsWith(destWithSep, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidDataException("Archive entry attempts directory traversal outside extraction directory.");
+                }
+
+                Directory.CreateDirectory(subDir);
+                continue;
+            }
+
+            string targetPath = Path.GetFullPath(Path.Combine(destFull, entry.FullName));
+            if (!targetPath.StartsWith(destWithSep, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException("Archive entry attempts directory traversal outside extraction directory.");
+            }
+
+            string? parentDir = Path.GetDirectoryName(targetPath);
+            if (!string.IsNullOrWhiteSpace(parentDir))
+            {
+                Directory.CreateDirectory(parentDir);
+            }
+
+            entry.ExtractToFile(targetPath, overwrite: true);
+        }
+    }
+
+    private static void ReplaceFileWithOldBackup(string sourcePath, string destinationPath)
+    {
+        string backupPath = string.Concat(destinationPath, ".old");
+        TryDeleteFile(backupPath);
+
+        if (File.Exists(destinationPath))
+        {
+            File.Move(destinationPath, backupPath, overwrite: true);
+        }
+
+        File.Copy(sourcePath, destinationPath, overwrite: true);
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {
@@ -879,10 +1151,16 @@ public sealed class VerifiedAppUpdateService : IDisposable
             : WebLatestUrl;
 
         string? setupUrl = null;
+        string? setupArm64Url = null;
+        string? portableZipUrl = null;
+        string? portableArm64ZipUrl = null;
         string? portableUrl = null;
         string? shaUrl = null;
         string? shaSigUrl = null;
         string? setupApiUrl = null;
+        string? setupArm64ApiUrl = null;
+        string? portableZipApiUrl = null;
+        string? portableArm64ZipApiUrl = null;
         string? portableApiUrl = null;
         string? shaApiUrl = null;
         string? shaSigApiUrl = null;
@@ -915,6 +1193,21 @@ public sealed class VerifiedAppUpdateService : IDisposable
                 {
                     setupUrl = url;
                     setupApiUrl = apiUrl;
+                }
+                else if (name.Equals(SetupInstallerArm64AssetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    setupArm64Url = url;
+                    setupArm64ApiUrl = apiUrl;
+                }
+                else if (name.Equals(PortableZipAssetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    portableZipUrl = url;
+                    portableZipApiUrl = apiUrl;
+                }
+                else if (name.Equals(PortableZipArm64AssetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    portableArm64ZipUrl = url;
+                    portableArm64ZipApiUrl = apiUrl;
                 }
                 else if (name.Equals(PortableExecutableAssetName, StringComparison.OrdinalIgnoreCase))
                 {
@@ -950,7 +1243,13 @@ public sealed class VerifiedAppUpdateService : IDisposable
             SetupApiUrl: setupApiUrl,
             PortableApiUrl: portableApiUrl,
             Sha256ApiUrl: shaApiUrl,
-            Sha256SigApiUrl: shaSigApiUrl);
+            Sha256SigApiUrl: shaSigApiUrl,
+            SetupArm64ExeUrl: setupArm64Url,
+            PortableZipUrl: portableZipUrl,
+            PortableArm64ZipUrl: portableArm64ZipUrl,
+            SetupArm64ApiUrl: setupArm64ApiUrl,
+            PortableZipApiUrl: portableZipApiUrl,
+            PortableArm64ZipApiUrl: portableArm64ZipApiUrl);
     }
 
     private static bool IsCandidateNewerThan(ReleaseInfo candidate, ReleaseInfo currentBest)

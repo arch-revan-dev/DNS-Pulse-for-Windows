@@ -30,7 +30,13 @@ public sealed record ReleaseInfo(
     string? SetupApiUrl = null,
     string? PortableApiUrl = null,
     string? Sha256ApiUrl = null,
-    string? Sha256SigApiUrl = null);
+    string? Sha256SigApiUrl = null,
+    string? SetupArm64ExeUrl = null,
+    string? PortableZipUrl = null,
+    string? PortableArm64ZipUrl = null,
+    string? SetupArm64ApiUrl = null,
+    string? PortableZipApiUrl = null,
+    string? PortableArm64ZipApiUrl = null);
 
 /// <summary>
 /// Result of checking GitHub Releases for a newer application version.

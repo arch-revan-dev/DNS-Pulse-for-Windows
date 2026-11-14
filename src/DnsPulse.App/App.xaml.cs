@@ -8,6 +8,7 @@ using DnsPulse.App.ViewModels;
 using DnsPulse.App.Views;
 using DnsPulse.Platform.Windows.Autostart;
 using DnsPulse.Platform.Windows.Recovery;
+using DnsPulse.Platform.Windows.Updates;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 
@@ -72,6 +73,7 @@ public sealed partial class App : System.Windows.Application, IDisposable
         try
         {
             CliLaunchOptions cliOptions = CliArgumentHandler.Parse(e.Args);
+            VerifiedAppUpdateService.CleanupOldUpdateBackups();
             LoggingSetupService.InitializeGlobalLogger();
 
             int? earlyExitCode = await CliArgumentHandler.TryHandleEarlyExitAsync(cliOptions).ConfigureAwait(true);
@@ -119,6 +121,15 @@ public sealed partial class App : System.Windows.Application, IDisposable
             _mainWindow = _serviceProvider.GetRequiredService<MainWindow>();
             _mainWindow.WindowBackdropType = themeService.CurrentBackdrop;
             MainWindow = _mainWindow;
+
+            shell.Settings.ShutdownRequested += (_, _) =>
+            {
+                _ = Dispatcher.InvokeAsync(() =>
+                {
+                    _mainWindow?.AllowClose();
+                    Shutdown();
+                });
+            };
 
             PulseAppSettings normalizedSettings = shell.Settings.BuildNormalizedSettings();
             if (!TrayIconService.ShouldStartMinimized(normalizedSettings, cliOptions))

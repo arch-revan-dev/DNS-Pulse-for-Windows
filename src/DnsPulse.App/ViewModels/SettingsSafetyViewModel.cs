@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
@@ -31,9 +32,13 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
     private readonly NetworkSnapshotJournal _journal;
     private readonly Func<(bool IsActive, IReadOnlyList<string> Names)> _antiCheatDetector;
     private readonly Func<VerifiedAppUpdateService>? _updateServiceFactory;
+    private readonly Func<VerifiedUpdateResult, CancellationToken, Task>? _applyUpdateHandler;
 
     private PulseAppSettings _preservedSettings = new();
     private bool _isLoading;
+    private bool _autoCheckTriggered;
+
+    public event EventHandler? ShutdownRequested;
 
     [ObservableProperty]
     private bool _startWithWindows;
@@ -105,12 +110,31 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
     private string _gitHubToken = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsUpdateBusy))]
+    [NotifyCanExecuteChangedFor(nameof(DownloadAndInstallUpdateCommand))]
     private bool _isCheckingUpdates;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsUpdateBusy))]
+    [NotifyCanExecuteChangedFor(nameof(CheckForUpdatesCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DownloadAndInstallUpdateCommand))]
+    private bool _isUpdating;
+
+    [ObservableProperty]
+    private double _updateProgressPercent;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(DownloadAndInstallUpdateCommand))]
+    private bool _isUpdateAvailable;
 
     [ObservableProperty]
     private string _updateStatusMessage = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasLatestRelease))]
+    [NotifyPropertyChangedFor(nameof(UpdateAvailableTitleText))]
+    [NotifyCanExecuteChangedFor(nameof(DownloadAndInstallUpdateCommand))]
+    [NotifyCanExecuteChangedFor(nameof(OpenReleasePageCommand))]
     private ReleaseInfo? _latestRelease;
 
     [ObservableProperty]
@@ -127,7 +151,8 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
         ThemeAppearanceService themeService,
         NetworkSnapshotJournal? journal = null,
         Func<(bool IsActive, IReadOnlyList<string> Names)>? antiCheatDetector = null,
-        Func<VerifiedAppUpdateService>? updateServiceFactory = null)
+        Func<VerifiedAppUpdateService>? updateServiceFactory = null,
+        Func<VerifiedUpdateResult, CancellationToken, Task>? applyUpdateHandler = null)
     {
         ArgumentNullException.ThrowIfNull(settingsStore);
         ArgumentNullException.ThrowIfNull(autostartService);
@@ -143,6 +168,7 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
         _journal = journal ?? new NetworkSnapshotJournal();
         _antiCheatDetector = antiCheatDetector ?? AntiCheatGuard.DetectActiveAntiCheat;
         _updateServiceFactory = updateServiceFactory;
+        _applyUpdateHandler = applyUpdateHandler;
 
         _localization.CultureChanged += OnCultureChanged;
         RefreshAntiCheatStatus();
@@ -197,6 +223,23 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
     public string BackdropStatusText => _themeService.IsMicaSupported
         ? _localization["Settings_Backdrop_Mica"]
         : _localization["Settings_Backdrop_Solid"];
+
+    public bool IsUpdateBusy => IsCheckingUpdates || IsUpdating;
+
+    public bool HasLatestRelease => LatestRelease is not null;
+
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Exposed as instance property for XAML data binding and culture updates.")]
+    public string CurrentAppVersionText => string.Format(
+        CultureInfo.CurrentCulture,
+        _localization["Settings_UpdateCurrentVersion"],
+        string.Concat("v", VerifiedAppUpdateService.GetCurrentVersion().ToString(3)));
+
+    public string UpdateAvailableTitleText => LatestRelease is null
+        ? string.Empty
+        : string.Format(
+            CultureInfo.CurrentCulture,
+            _localization["Settings_UpdateAvailableTitle"],
+            LatestRelease.TagName);
 
     public void SyncPreservedBannerFlags(
         bool dismissedBrowserDoh,
@@ -363,11 +406,16 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
         OnPropertyChanged(nameof(IsWfpAntiCheatBlocked));
     }
 
-    [RelayCommand]
+    private bool CanCheckForUpdates() => !IsCheckingUpdates && !IsUpdating;
+
+    private bool CanDownloadAndInstallUpdate() =>
+        !IsCheckingUpdates && !IsUpdating && IsUpdateAvailable && LatestRelease is not null;
+
+    [RelayCommand(CanExecute = nameof(CanCheckForUpdates))]
     [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Update check errors are surfaced to the user via UpdateStatusMessage.")]
     public async Task CheckForUpdatesAsync(CancellationToken cancellationToken = default)
     {
-        if (IsCheckingUpdates)
+        if (IsCheckingUpdates || IsUpdating)
         {
             return;
         }
@@ -375,41 +423,13 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
         IsCheckingUpdates = true;
         try
         {
-            UpdateCheckResult result;
-            if (_updateServiceFactory is not null)
-            {
-                using VerifiedAppUpdateService customService = _updateServiceFactory();
-                result = await customService.CheckForUpdateAsync(
+            UpdateCheckResult result = await ExecuteWithUpdateServiceAsync(
+                service => service.CheckForUpdateAsync(
                     SelectedUpdateChannel,
                     string.IsNullOrWhiteSpace(GitHubToken) ? null : GitHubToken.Trim(),
-                    cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                using VerifiedAppUpdateService defaultService = new(_runtimeService.BootstrapResolver);
-                result = await defaultService.CheckForUpdateAsync(
-                    SelectedUpdateChannel,
-                    string.IsNullOrWhiteSpace(GitHubToken) ? null : GitHubToken.Trim(),
-                    cancellationToken).ConfigureAwait(false);
-            }
+                    cancellationToken)).ConfigureAwait(true);
 
-            LatestRelease = result.LatestRelease;
-            if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
-            {
-                UpdateStatusMessage = result.ErrorMessage;
-            }
-            else if (result.UpdateAvailable && result.LatestRelease is not null)
-            {
-                UpdateStatusMessage = string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"{result.LatestRelease.TagName} ({result.CurrentVersion} -> {result.LatestRelease.ParsedVersion})");
-            }
-            else
-            {
-                UpdateStatusMessage = string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"Up to date ({result.CurrentVersion})");
-            }
+            ApplyUpdateCheckResult(result);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -417,11 +437,200 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            IsUpdateAvailable = false;
             UpdateStatusMessage = ex.Message;
         }
         finally
         {
             IsCheckingUpdates = false;
+        }
+    }
+
+    /// <summary>
+    /// Runs a quiet startup update check when <see cref="AutoCheckUpdates"/> is enabled,
+    /// swallowing offline/transient errors so startup is never disrupted.
+    /// </summary>
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Background startup check ignores offline/transient errors intentionally.")]
+    public async Task TryAutoCheckUpdatesOnStartupAsync(CancellationToken cancellationToken = default)
+    {
+        if (_autoCheckTriggered || !AutoCheckUpdates || IsCheckingUpdates || IsUpdating)
+        {
+            return;
+        }
+
+        _autoCheckTriggered = true;
+        try
+        {
+            UpdateCheckResult result = await ExecuteWithUpdateServiceAsync(
+                service => service.CheckForUpdateAsync(
+                    SelectedUpdateChannel,
+                    string.IsNullOrWhiteSpace(GitHubToken) ? null : GitHubToken.Trim(),
+                    cancellationToken)).ConfigureAwait(true);
+
+            if (result.UpdateAvailable && result.LatestRelease is not null)
+            {
+                ApplyUpdateCheckResult(result);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Quiet startup check should never surface spurious offline errors.
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanDownloadAndInstallUpdate))]
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Update download/verification failures are surfaced to the user via UpdateStatusMessage.")]
+    public async Task DownloadAndInstallUpdateAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanDownloadAndInstallUpdate() || LatestRelease is null)
+        {
+            return;
+        }
+
+        ReleaseInfo targetRelease = LatestRelease;
+        IsUpdating = true;
+        UpdateProgressPercent = 2;
+
+        try
+        {
+            Progress<(double Percent, string Status)> progress = new(report =>
+            {
+                UpdateProgressPercent = Math.Clamp(report.Percent, 0, 100);
+                if (!string.IsNullOrWhiteSpace(report.Status))
+                {
+                    UpdateStatusMessage = report.Status;
+                }
+            });
+
+            VerifiedUpdateResult verifiedResult = await ExecuteWithUpdateServiceAsync(
+                service => service.DownloadAndVerifyUpdateAsync(
+                    targetRelease,
+                    progress: progress,
+                    githubToken: string.IsNullOrWhiteSpace(GitHubToken) ? null : GitHubToken.Trim(),
+                    cancellationToken: cancellationToken)).ConfigureAwait(true);
+
+            UpdateProgressPercent = 100;
+
+            if (_applyUpdateHandler is not null)
+            {
+                await _applyUpdateHandler(verifiedResult, cancellationToken).ConfigureAwait(true);
+                UpdateStatusMessage = verifiedResult.Summary;
+                return;
+            }
+
+            ApplyVerifiedUpdateAndRestart(verifiedResult);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            UpdateProgressPercent = 0;
+            UpdateStatusMessage = string.Format(
+                CultureInfo.CurrentCulture,
+                _localization["Settings_UpdateFailed"],
+                ex.Message);
+        }
+        finally
+        {
+            IsUpdating = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(HasLatestRelease))]
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "External browser launch errors are surfaced cleanly via UpdateStatusMessage.")]
+    public void OpenReleasePage()
+    {
+        string? url = LatestRelease?.HtmlUrl;
+        if (string.IsNullOrWhiteSpace(url) ||
+            !Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) ||
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        try
+        {
+            using Process? proc = Process.Start(new ProcessStartInfo
+            {
+                FileName = uri.ToString(),
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusMessage = ex.Message;
+        }
+    }
+
+    private async Task<T> ExecuteWithUpdateServiceAsync<T>(Func<VerifiedAppUpdateService, Task<T>> action)
+    {
+        if (_updateServiceFactory is not null)
+        {
+            using VerifiedAppUpdateService customService = _updateServiceFactory();
+            return await action(customService).ConfigureAwait(true);
+        }
+
+        using VerifiedAppUpdateService defaultService = new(_runtimeService.BootstrapResolver);
+        return await action(defaultService).ConfigureAwait(true);
+    }
+
+    private void ApplyUpdateCheckResult(UpdateCheckResult result)
+    {
+        LatestRelease = result.LatestRelease;
+
+        if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+        {
+            IsUpdateAvailable = false;
+            UpdateStatusMessage = result.ErrorMessage;
+            return;
+        }
+
+        if (result.UpdateAvailable && result.LatestRelease is not null)
+        {
+            IsUpdateAvailable = true;
+            UpdateStatusMessage = string.Format(
+                CultureInfo.CurrentCulture,
+                _localization["Settings_UpdateAvailableStatus"],
+                result.LatestRelease.TagName,
+                result.CurrentVersion.ToString(3));
+            return;
+        }
+
+        IsUpdateAvailable = false;
+        UpdateStatusMessage = string.Format(
+            CultureInfo.CurrentCulture,
+            _localization["Settings_UpdateUpToDate"],
+            result.CurrentVersion.ToString(3));
+    }
+
+    private void ApplyVerifiedUpdateAndRestart(VerifiedUpdateResult verifiedResult)
+    {
+        if (verifiedResult.IsInstaller)
+        {
+            UpdateStatusMessage = _localization["Settings_UpdateLaunchingInstaller"];
+            using Process? installer = Process.Start(VerifiedAppUpdateService.CreateSilentInstallerStartInfo(verifiedResult.PreparedFilePath));
+        }
+        else
+        {
+            UpdateStatusMessage = _localization["Settings_UpdateApplyingPortable"];
+            string updatedExePath = VerifiedAppUpdateService.ApplyPortableUpdate(verifiedResult.PreparedFilePath);
+            using Process? relaunched = Process.Start(VerifiedAppUpdateService.CreateRelaunchStartInfo(updatedExePath));
+        }
+
+        if (ShutdownRequested is not null)
+        {
+            ShutdownRequested.Invoke(this, EventArgs.Empty);
+        }
+        else
+        {
+            Dispatcher? dispatcher = System.Windows.Application.Current?.Dispatcher;
+            dispatcher?.Invoke(() => System.Windows.Application.Current?.Shutdown());
         }
     }
 
@@ -515,5 +724,7 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(AntiCheatStatusMessage));
         OnPropertyChanged(nameof(BackdropStatusText));
+        OnPropertyChanged(nameof(CurrentAppVersionText));
+        OnPropertyChanged(nameof(UpdateAvailableTitleText));
     }
 }

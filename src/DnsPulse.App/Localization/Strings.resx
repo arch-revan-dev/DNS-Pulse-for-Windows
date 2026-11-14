@@ -289,6 +289,15 @@
   <data name="Settings_Channel_Beta" xml:space="preserve"><value>Beta</value></data>
   <data name="Settings_AutoCheckUpdates" xml:space="preserve"><value>Check for updates automatically</value></data>
   <data name="Settings_CheckUpdatesNow" xml:space="preserve"><value>Check for Updates</value></data>
+  <data name="Settings_UpdateCurrentVersion" xml:space="preserve"><value>Installed version: {0}</value></data>
+  <data name="Settings_UpdateAvailableTitle" xml:space="preserve"><value>Update available: {0}</value></data>
+  <data name="Settings_UpdateAvailableStatus" xml:space="preserve"><value>Version {0} is ready (installed: {1}). Click "Download and Install" to update.</value></data>
+  <data name="Settings_UpdateUpToDate" xml:space="preserve"><value>You are running the latest version ({0}).</value></data>
+  <data name="Settings_DownloadInstallUpdate" xml:space="preserve"><value>Download and Install</value></data>
+  <data name="Settings_OpenReleasePage" xml:space="preserve"><value>Open on GitHub</value></data>
+  <data name="Settings_UpdateLaunchingInstaller" xml:space="preserve"><value>SHA-256 verified. Launching installer and closing DNS Pulse...</value></data>
+  <data name="Settings_UpdateApplyingPortable" xml:space="preserve"><value>SHA-256 verified. Applying update and restarting DNS Pulse...</value></data>
+  <data name="Settings_UpdateFailed" xml:space="preserve"><value>Update error: {0}</value></data>
   <data name="Settings_Safety_Title" xml:space="preserve"><value>Emergency Recovery &amp; Support</value></data>
   <data name="Settings_EmergencyRestore" xml:space="preserve"><value>Restore Default Network Settings</value></data>
   <data name="Settings_ExportBundle" xml:space="preserve"><value>Export Redacted Diagnostic Archive (.zip)</value></data>

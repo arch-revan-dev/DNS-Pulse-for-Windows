@@ -380,6 +380,156 @@ public sealed class AutostartAndSettingsTests : IDisposable
         Directory.GetFiles(tamperedStageRoot, "*", SearchOption.AllDirectories).Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task VerifiedAppUpdateService_ResolvesPortableZipAndArm64Assets_AndAppliesPortableZipSafely()
+    {
+        const string releaseJson = """
+            {
+              "tag_name": "v2.0.2",
+              "prerelease": false,
+              "body": "Updater fix",
+              "html_url": "https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/tag/v2.0.2",
+              "assets": [
+                {
+                  "name": "DNS-Pulse-win-x64-setup.exe",
+                  "browser_download_url": "https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/download/v2.0.2/DNS-Pulse-win-x64-setup.exe"
+                },
+                {
+                  "name": "DNS-Pulse-win-x64-portable.zip",
+                  "browser_download_url": "https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/download/v2.0.2/DNS-Pulse-win-x64-portable.zip"
+                },
+                {
+                  "name": "DNS-Pulse-win-arm64-setup.exe",
+                  "browser_download_url": "https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/download/v2.0.2/DNS-Pulse-win-arm64-setup.exe"
+                },
+                {
+                  "name": "DNS-Pulse-win-arm64-portable.zip",
+                  "browser_download_url": "https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/download/v2.0.2/DNS-Pulse-win-arm64-portable.zip"
+                },
+                {
+                  "name": "SHA256SUMS.txt",
+                  "browser_download_url": "https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/download/v2.0.2/SHA256SUMS.txt"
+                }
+              ]
+            }
+            """;
+
+        ReleaseInfo? parsed = VerifiedAppUpdateService.ParseReleaseJson(releaseJson);
+        parsed.Should().NotBeNull();
+        parsed!.PortableZipUrl.Should().EndWith("DNS-Pulse-win-x64-portable.zip");
+        parsed.PortableArm64ZipUrl.Should().EndWith("DNS-Pulse-win-arm64-portable.zip");
+        parsed.SetupArm64ExeUrl.Should().EndWith("DNS-Pulse-win-arm64-setup.exe");
+
+        // Build a valid portable ZIP payload in memory.
+        string zipBuildDir = Path.Combine(_tempDir, "zip-src");
+        Directory.CreateDirectory(Path.Combine(zipBuildDir, "assets"));
+        await File.WriteAllTextAsync(Path.Combine(zipBuildDir, "DnsPulse.exe"), "NEW-PORTABLE-EXE-V202");
+        await File.WriteAllTextAsync(Path.Combine(zipBuildDir, "assets", "dns_catalog_1000.tsv"), "tsv-content");
+        string zipPath = Path.Combine(_tempDir, "DNS-Pulse-win-x64-portable.zip");
+        ZipFile.CreateFromDirectory(zipBuildDir, zipPath);
+        byte[] zipBytes = await File.ReadAllBytesAsync(zipPath);
+        string zipHash = Convert.ToHexStringLower(SHA256.HashData(zipBytes));
+
+        byte[] arm64SetupBytes = Encoding.UTF8.GetBytes("ARM64-SETUP-BYTES");
+        string arm64SetupHash = Convert.ToHexStringLower(SHA256.HashData(arm64SetupBytes));
+
+        string sumsText =
+            $"{zipHash}  DNS-Pulse-win-x64-portable.zip\n" +
+            $"{arm64SetupHash}  DNS-Pulse-win-arm64-setup.exe\n";
+
+        using StubHttpMessageHandler handler = new(request =>
+        {
+            string url = request.RequestUri!.ToString();
+            if (url.EndsWith("/releases/latest", StringComparison.Ordinal))
+            {
+                return StubHttpMessageHandler.JsonResponse(releaseJson);
+            }
+
+            if (url.EndsWith("/SHA256SUMS.txt", StringComparison.Ordinal))
+            {
+                return StubHttpMessageHandler.BytesResponse(Encoding.UTF8.GetBytes(sumsText));
+            }
+
+            if (url.EndsWith("/DNS-Pulse-win-x64-portable.zip", StringComparison.Ordinal))
+            {
+                return StubHttpMessageHandler.BytesResponse(zipBytes);
+            }
+
+            if (url.EndsWith("/DNS-Pulse-win-arm64-setup.exe", StringComparison.Ordinal))
+            {
+                return StubHttpMessageHandler.BytesResponse(arm64SetupBytes);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        IBootstrapResolver resolver = Substitute.For<IBootstrapResolver>();
+        using VerifiedAppUpdateService updateService = new(
+            resolver,
+            handler,
+            handler,
+            currentVersionOverride: new Version(2, 0, 0));
+
+        UpdateCheckResult check = await updateService.CheckForUpdateAsync(UpdateChannel.Stable);
+        check.UpdateAvailable.Should().BeTrue();
+        check.CurrentVersion.Should().Be(new Version(2, 0, 0));
+        check.LatestRelease!.ParsedVersion.Should().Be(new Version(2, 0, 2));
+
+        // 1. Portable x64 download selects DNS-Pulse-win-x64-portable.zip and verifies SHA-256.
+        string stageRoot = Path.Combine(_tempDir, "stage-portable");
+        VerifiedUpdateResult portableResult = await updateService.DownloadAndVerifyUpdateAsync(
+            check.LatestRelease,
+            stagingRootDirectory: stageRoot,
+            installedEditionOverride: false,
+            targetArchitectureOverride: System.Runtime.InteropServices.Architecture.X64);
+
+        portableResult.Verified.Should().BeTrue();
+        portableResult.IsInstaller.Should().BeFalse();
+        portableResult.PreparedFilePath.Should().EndWith("DNS-Pulse-win-x64-portable.zip");
+        portableResult.Sha256Hex.Should().Be(zipHash);
+
+        // Apply portable ZIP over an existing directory containing old DnsPulse.exe.
+        string targetAppDir = Path.Combine(_tempDir, "portable-app");
+        Directory.CreateDirectory(targetAppDir);
+        await File.WriteAllTextAsync(Path.Combine(targetAppDir, "DnsPulse.exe"), "OLD-PORTABLE-EXE-V200");
+
+        string updatedExe = VerifiedAppUpdateService.ApplyPortableUpdate(portableResult.PreparedFilePath, targetAppDir);
+        updatedExe.Should().Be(Path.Combine(targetAppDir, "DnsPulse.exe"));
+        (await File.ReadAllTextAsync(updatedExe)).Should().Be("NEW-PORTABLE-EXE-V202");
+        File.Exists(Path.Combine(targetAppDir, "DnsPulse.exe.old")).Should().BeTrue();
+        File.Exists(Path.Combine(targetAppDir, "assets", "dns_catalog_1000.tsv")).Should().BeTrue();
+
+        VerifiedAppUpdateService.CleanupOldUpdateBackups(targetAppDir);
+        File.Exists(Path.Combine(targetAppDir, "DnsPulse.exe.old")).Should().BeFalse();
+
+        // 2. Installed arm64 download selects DNS-Pulse-win-arm64-setup.exe.
+        string armStageRoot = Path.Combine(_tempDir, "stage-arm64");
+        VerifiedUpdateResult armSetupResult = await updateService.DownloadAndVerifyUpdateAsync(
+            check.LatestRelease,
+            stagingRootDirectory: armStageRoot,
+            installedEditionOverride: true,
+            targetArchitectureOverride: System.Runtime.InteropServices.Architecture.Arm64);
+
+        armSetupResult.Verified.Should().BeTrue();
+        armSetupResult.IsInstaller.Should().BeTrue();
+        armSetupResult.PreparedFilePath.Should().EndWith("DNS-Pulse-win-arm64-setup.exe");
+
+        // 3. Zip Slip archive entries must fail closed with InvalidDataException.
+        string evilZipPath = Path.Combine(_tempDir, "evil.zip");
+        using (FileStream fs = File.Create(evilZipPath))
+        using (ZipArchive archive = new(fs, ZipArchiveMode.Create))
+        {
+            ZipArchiveEntry entry = archive.CreateEntry("../escape.exe");
+            await using Stream entryStream = entry.Open();
+            await entryStream.WriteAsync(Encoding.UTF8.GetBytes("bad"));
+        }
+
+        string safeTargetDir = Path.Combine(_tempDir, "safe-target");
+        Directory.CreateDirectory(safeTargetDir);
+        Action evilAct = () => VerifiedAppUpdateService.ApplyPortableUpdate(evilZipPath, safeTargetDir);
+        evilAct.Should().Throw<InvalidDataException>();
+    }
+
     private static async Task<string> ReadZipEntryTextAsync(ZipArchiveEntry entry)
     {
         await using Stream s = entry.Open();

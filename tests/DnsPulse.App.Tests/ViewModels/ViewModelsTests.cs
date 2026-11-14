@@ -1,6 +1,10 @@
 using System.IO;
 using System.IO.Compression;
+using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
+using System.Security.Cryptography;
+using System.Text;
 using DnsPulse.App.Data;
 using DnsPulse.App.Localization;
 using DnsPulse.App.Services;
@@ -14,6 +18,7 @@ using DnsPulse.Engine.Pipeline;
 using DnsPulse.Platform.Windows.Autostart;
 using DnsPulse.Platform.Windows.Contracts;
 using DnsPulse.Platform.Windows.Recovery;
+using DnsPulse.Platform.Windows.Updates;
 using FluentAssertions;
 using NSubstitute;
 
@@ -272,6 +277,121 @@ public sealed class ViewModelsTests : IDisposable
         using StreamReader reader = new(settingsEntry.Open());
         string settingsJson = await reader.ReadToEndAsync();
         settingsJson.Should().NotContain("ghp_secret_token_1234567890");
+    }
+
+    [Fact]
+    public async Task SettingsSafetyViewModel_CheckAndDownloadAndInstallUpdate_TransitionsStateCleanly()
+    {
+        AppSettingsStore store = new(_tempDir, _tempDir);
+        WindowsAutostartService autostart = new(@"SOFTWARE\DnsPulseTests_NonExistentRun", "DnsPulseTest");
+        IPulseRuntimeService runtime = CreateMockRuntime();
+        LocalizationService localization = new();
+        localization.SetLanguage("ru-RU", updateThreadCulture: false);
+        ThemeAppearanceService theme = new(static () => false, static () => 22631);
+        NetworkSnapshotJournal journal = new(_tempDir);
+
+        byte[] packageBytes = Encoding.UTF8.GetBytes("PK-simulated-portable-or-setup-binary");
+        string shaHex = Convert.ToHexStringLower(SHA256.HashData(packageBytes));
+        string sumsText =
+            $"{shaHex}  DNS-Pulse-win-x64-setup.exe\n" +
+            $"{shaHex}  DNS-Pulse-win-x64-portable.zip\n" +
+            $"{shaHex}  DNS-Pulse-win-arm64-setup.exe\n" +
+            $"{shaHex}  DNS-Pulse-win-arm64-portable.zip\n";
+
+        const string releaseJson = """
+            {
+              "tag_name": "v2.0.2",
+              "prerelease": false,
+              "body": "Release 2.0.2",
+              "html_url": "https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/tag/v2.0.2",
+              "assets": [
+                {
+                  "name": "DNS-Pulse-win-x64-setup.exe",
+                  "browser_download_url": "https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/download/v2.0.2/DNS-Pulse-win-x64-setup.exe"
+                },
+                {
+                  "name": "DNS-Pulse-win-x64-portable.zip",
+                  "browser_download_url": "https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/download/v2.0.2/DNS-Pulse-win-x64-portable.zip"
+                },
+                {
+                  "name": "DNS-Pulse-win-arm64-setup.exe",
+                  "browser_download_url": "https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/download/v2.0.2/DNS-Pulse-win-arm64-setup.exe"
+                },
+                {
+                  "name": "DNS-Pulse-win-arm64-portable.zip",
+                  "browser_download_url": "https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/download/v2.0.2/DNS-Pulse-win-arm64-portable.zip"
+                },
+                {
+                  "name": "SHA256SUMS.txt",
+                  "browser_download_url": "https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/download/v2.0.2/SHA256SUMS.txt"
+                }
+              ]
+            }
+            """;
+
+        using MockUpdateHttpHandler mockHandler = new(request =>
+        {
+            string url = request.RequestUri!.ToString();
+            if (url.EndsWith("/releases/latest", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(releaseJson, Encoding.UTF8, "application/json")
+                };
+            }
+
+            if (url.EndsWith("/SHA256SUMS.txt", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(Encoding.UTF8.GetBytes(sumsText))
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(packageBytes)
+            };
+        });
+
+        VerifiedUpdateResult? appliedResult = null;
+        SettingsSafetyViewModel vm = new(
+            store,
+            autostart,
+            runtime,
+            localization,
+            theme,
+            journal,
+            static () => (false, []),
+            updateServiceFactory: () => new VerifiedAppUpdateService(
+                runtime.BootstrapResolver,
+                mockHandler,
+                mockHandler,
+                currentVersionOverride: new Version(2, 0, 0)),
+            applyUpdateHandler: (res, _) =>
+            {
+                appliedResult = res;
+                return Task.CompletedTask;
+            });
+
+        vm.IsUpdateAvailable.Should().BeFalse();
+        vm.DownloadAndInstallUpdateCommand.CanExecute(null).Should().BeFalse();
+
+        await vm.CheckForUpdatesCommand.ExecuteAsync(null);
+
+        vm.IsUpdateAvailable.Should().BeTrue();
+        vm.LatestRelease.Should().NotBeNull();
+        vm.LatestRelease!.TagName.Should().Be("v2.0.2");
+        vm.UpdateStatusMessage.Should().Contain("v2.0.2");
+        vm.DownloadAndInstallUpdateCommand.CanExecute(null).Should().BeTrue();
+
+        await vm.DownloadAndInstallUpdateCommand.ExecuteAsync(null);
+
+        appliedResult.Should().NotBeNull();
+        appliedResult!.Verified.Should().BeTrue();
+        appliedResult.Sha256Hex.Should().Be(shaHex);
+        vm.UpdateProgressPercent.Should().Be(100);
+        vm.IsUpdating.Should().BeFalse();
     }
 
     [Fact]
@@ -763,4 +883,10 @@ internal static class ServerEntryTestExtensions
         return entry.EndpointLabel.Contains(host, StringComparison.OrdinalIgnoreCase) ||
             entry.Name.Contains(host, StringComparison.OrdinalIgnoreCase);
     }
+}
+
+internal sealed class MockUpdateHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+        Task.FromResult(responder(request));
 }
