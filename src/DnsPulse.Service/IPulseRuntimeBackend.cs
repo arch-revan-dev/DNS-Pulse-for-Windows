@@ -23,3 +23,29 @@ public interface IPulseRuntimeBackend
 
     Task<bool> ProbeListenerHealthAsync(CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Extended runtime backend contract supporting full routing, upstream pool, blocklist, and engine configuration over IPC.
+/// </summary>
+public interface IConfigurablePulseRuntimeBackend
+{
+    Task<ServiceStatusSnapshot> ApplyConnectConfigurationAsync(
+        ServiceConnectRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<ServiceStatusSnapshot> UpdateRoutingConfigAsync(
+        ServiceRoutingConfigRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<ServiceStatusSnapshot> UpdatePoolAsync(
+        ServicePoolUpdateRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<ServiceStatusSnapshot> ConfigureEngineAsync(
+        ServiceEngineConfigRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<ServiceStatusSnapshot> UpdateBlocklistAsync(
+        ServiceBlocklistUpdateRequest request,
+        CancellationToken cancellationToken = default);
+}

@@ -27,7 +27,10 @@ public sealed class PulsePipeIpcServer : IAsyncDisposable, IDisposable
         PipeCommandNames.UpdateBlocklist,
         PipeCommandNames.GetRecentTelemetry,
         PipeCommandNames.ExportBundle,
-        PipeCommandNames.ShutdownService
+        PipeCommandNames.ShutdownService,
+        PipeCommandNames.UpdateRoutingConfig,
+        PipeCommandNames.UpdatePool,
+        PipeCommandNames.ConfigureEngine
     };
 
     private readonly Func<PipeRpcRequest, CancellationToken, Task<PipeRpcResponse>> _requestHandler;

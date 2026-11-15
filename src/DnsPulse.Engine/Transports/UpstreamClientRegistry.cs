@@ -70,7 +70,8 @@ public sealed class UpstreamClientRegistry : IAsyncDisposable, IDisposable
                 doq,
                 new DnsCryptClient(DnsProtocol.DnsCrypt, effectiveOptions),
                 new DnsCryptClient(DnsProtocol.AnonymizedDnsCrypt, effectiveOptions),
-                odoh
+                odoh,
+                new SniProxyDnsClient(effectiveOptions)
             ];
 
             UpstreamClientRegistry registry = new(clients, ownsClients: true);

@@ -39,6 +39,12 @@ public sealed record PulseServiceOptions
 
     public bool EnableDohListener { get; init; } = true;
 
+    public bool BlockIpv6OnBypass { get; init; } = true;
+
+    public bool AutoFallbackToPacOnPort53Conflict { get; init; } = true;
+
+    public string? ActiveTrustedUpstreamId { get; init; }
+
     public string? ActiveGeoUnlockUpstreamId { get; init; }
 
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;

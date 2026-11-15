@@ -23,9 +23,20 @@ namespace DnsPulse.App;
 public sealed partial class App : System.Windows.Application, IDisposable
 {
     private ServiceProvider? _serviceProvider;
+    private readonly bool _suppressStartup;
     private TrayIconService? _trayIconService;
     private MainWindow? _mainWindow;
     private bool _disposed;
+
+    public App()
+        : this(suppressStartup: false)
+    {
+    }
+
+    public App(bool suppressStartup)
+    {
+        _suppressStartup = suppressStartup;
+    }
 
     /// <summary>
     /// Builds the application's dependency injection container, registering core services,
@@ -71,6 +82,10 @@ public sealed partial class App : System.Windows.Application, IDisposable
         base.OnStartup(e);
 
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        if (_suppressStartup)
+        {
+            return;
+        }
 
         try
         {

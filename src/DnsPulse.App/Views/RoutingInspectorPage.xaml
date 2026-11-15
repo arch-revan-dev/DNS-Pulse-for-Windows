@@ -9,8 +9,8 @@
       <Border Padding="10,7"
               Margin="0,0,0,4"
               CornerRadius="6"
-              Background="#1C212A"
-              BorderBrush="#2D3545"
+              Background="{DynamicResource PulseInnerPanelBrush}"
+              BorderBrush="{DynamicResource PulseInnerPanelBorderBrush}"
               BorderThickness="1">
         <Grid>
           <Grid.ColumnDefinitions>
@@ -27,7 +27,7 @@
           <TextBlock Grid.Column="0"
                      FontSize="11"
                      FontFamily="Consolas"
-                     Foreground="#94A3B8"
+                     Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                      VerticalAlignment="Center"
                      Text="{Binding TimestampUtc, StringFormat={}{0:HH:mm:ss}}" />
 
@@ -40,7 +40,7 @@
             <TextBlock Grid.Column="0"
                        FontSize="12"
                        FontWeight="SemiBold"
-                       Foreground="#F8FAFC"
+                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                        VerticalAlignment="Center"
                        Text="{Binding Domain}"
                        TextTrimming="CharacterEllipsis"
@@ -49,11 +49,11 @@
                     Margin="6,0,0,0"
                     Padding="5,1"
                     CornerRadius="4"
-                    Background="#283140"
+                    Background="{DynamicResource PulseChipSurfaceBrush}"
                     VerticalAlignment="Center">
               <TextBlock FontSize="10"
                          FontWeight="SemiBold"
-                         Foreground="#CBD5E1"
+                         Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                          Text="{Binding RecordType}" />
             </Border>
           </Grid>
@@ -63,11 +63,11 @@
                   Margin="0,0,8,0"
                   Padding="6,2"
                   CornerRadius="8"
-                  Background="#242C3A"
+                  Background="{DynamicResource PulseChipSurfaceBrush}"
                   HorizontalAlignment="Left"
                   VerticalAlignment="Center">
             <TextBlock FontSize="11"
-                       Foreground="#E2E8F0"
+                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                        TextTrimming="CharacterEllipsis">
               <TextBlock.Text>
                 <MultiBinding Converter="{StaticResource EnumLocalizationConverter}">
@@ -92,7 +92,7 @@
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0"
                        FontSize="12"
-                       Foreground="#E2E8F0"
+                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                        VerticalAlignment="Center"
                        Text="{Binding UpstreamName}"
                        TextTrimming="CharacterEllipsis"
@@ -101,11 +101,11 @@
                     Margin="5,0,0,0"
                     Padding="5,1"
                     CornerRadius="4"
-                    Background="#1E3A5F"
+                    Background="{DynamicResource PulseProtocolBadgeBgBrush}"
                     VerticalAlignment="Center">
               <TextBlock FontSize="10"
                          FontWeight="SemiBold"
-                         Foreground="#93C5FD"
+                         Foreground="{DynamicResource PulseProtocolBadgeFgBrush}"
                          Text="{Binding Protocol}" />
             </Border>
           </Grid>
@@ -115,7 +115,7 @@
                      Margin="0,0,8,0"
                      FontSize="11"
                      FontFamily="Consolas"
-                     Foreground="#CBD5E1"
+                     Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                      HorizontalAlignment="Right"
                      VerticalAlignment="Center"
                      Text="{Binding LatencyMs, Converter={StaticResource LatencyFormatConverter}}" />
@@ -125,7 +125,7 @@
                      Margin="0,0,8,0"
                      FontSize="11"
                      FontWeight="SemiBold"
-                     Foreground="#E2E8F0"
+                     Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                      VerticalAlignment="Center"
                      TextTrimming="CharacterEllipsis">
             <TextBlock.Text>
@@ -145,7 +145,7 @@
           <!-- Decision Note -->
           <TextBlock Grid.Column="6"
                      FontSize="11"
-                     Foreground="#94A3B8"
+                     Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                      VerticalAlignment="Center"
                      Text="{Binding DecisionNote}"
                      TextTrimming="CharacterEllipsis"
@@ -155,7 +155,7 @@
     </DataTemplate>
   </UserControl.Resources>
 
-  <Grid Margin="20,16,20,20">
+  <Grid Margin="{DynamicResource PulsePagePadding}">
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="340" MinWidth="290" />
       <ColumnDefinition Width="16" />
@@ -222,10 +222,10 @@
                           Margin="0,0,0,12"
                           Text="{conv:Localization Routing_Rules_Title}" />
 
-            <ui:TextBlock Appearance="Secondary"
-                          FontTypography="Caption"
-                          Margin="0,0,0,4"
-                          Text="{conv:Localization Routing_Rules_Format}" />
+            <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       FontSize="12"
+                       Margin="0,0,0,4"
+                       Text="{conv:Localization Routing_Rules_Format}" />
             <ComboBox ItemsSource="{Binding AvailableRuleFormats}"
                       SelectedItem="{Binding SelectedRuleFormat, Mode=TwoWay}"
                       Margin="0,0,0,8"
@@ -277,12 +277,12 @@
               </ui:Button>
             </WrapPanel>
 
-            <ui:TextBlock Margin="0,4,0,0"
-                          Appearance="Secondary"
-                          FontTypography="Caption"
-                          Text="{Binding RuleImportStatusMessage}"
-                          TextWrapping="Wrap"
-                          Visibility="{Binding RuleImportStatusMessage, Converter={StaticResource NullToVisibilityConverter}}" />
+            <TextBlock Margin="0,4,0,0"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       FontSize="12"
+                       Text="{Binding RuleImportStatusMessage}"
+                       TextWrapping="Wrap"
+                       Visibility="{Binding RuleImportStatusMessage, Converter={StaticResource NullToVisibilityConverter}}" />
           </StackPanel>
         </ui:Card>
       </StackPanel>
@@ -376,13 +376,13 @@
                        AutomationProperties.HelpText="{conv:Localization Routing_Telemetry_Title}" />
         </WrapPanel>
 
-        <!-- Dark Responsive Column Header Row -->
+        <!-- Responsive Column Header Row -->
         <Border Grid.Row="3"
                 Padding="10,7"
                 Margin="0,2,0,4"
                 CornerRadius="6"
-                Background="#161B24"
-                BorderBrush="#2D3545"
+                Background="{DynamicResource PulseHeaderSurfaceBrush}"
+                BorderBrush="{DynamicResource PulseInnerPanelBorderBrush}"
                 BorderThickness="1">
           <Grid>
             <Grid.ColumnDefinitions>
@@ -394,13 +394,13 @@
               <ColumnDefinition Width="82" />
               <ColumnDefinition Width="1.2*" />
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" Text="{conv:Localization Routing_Col_Time}" TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="1" Margin="6,0,8,0" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" Text="{conv:Localization Routing_Col_Domain}" TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="2" Margin="0,0,8,0" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" Text="{conv:Localization Routing_Col_Zone}" TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="3" Margin="0,0,8,0" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" Text="{conv:Localization Routing_Col_Upstream}" TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="4" Margin="0,0,8,0" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" HorizontalAlignment="Right" Text="{conv:Localization Routing_Col_Latency}" TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="5" Margin="0,0,8,0" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" Text="{conv:Localization Routing_Col_Result}" TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="6" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" Text="{conv:Localization Routing_Col_Note}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="0" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="{conv:Localization Routing_Col_Time}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="1" Margin="6,0,8,0" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="{conv:Localization Routing_Col_Domain}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="2" Margin="0,0,8,0" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="{conv:Localization Routing_Col_Zone}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="3" Margin="0,0,8,0" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="{conv:Localization Routing_Col_Upstream}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="4" Margin="0,0,8,0" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" HorizontalAlignment="Right" Text="{conv:Localization Routing_Col_Latency}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="5" Margin="0,0,8,0" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="{conv:Localization Routing_Col_Result}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="6" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="{conv:Localization Routing_Col_Note}" TextTrimming="CharacterEllipsis" />
           </Grid>
         </Border>
 

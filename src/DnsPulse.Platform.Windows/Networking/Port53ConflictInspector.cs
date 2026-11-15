@@ -70,44 +70,122 @@ public sealed class Port53ConflictInspector
     }
 
     /// <summary>
-    /// Inspects UDP and TCP tables for any process bound to <paramref name="port"/> on loopback or wildcard addresses.
+    /// Inspects UDP and TCP tables for any process bound to <paramref name="port"/> on DNS Pulse loopback candidates or wildcard addresses.
     /// </summary>
     [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Preserves instance API contract.")]
     public (string? OccupantName, int? ProcessId) InspectPortConflict(int port, bool excludeSelfProcesses)
     {
+        return InspectPortConflict(port, specificAddress: null, excludeSelfProcesses);
+    }
+
+    /// <summary>
+    /// Inspects UDP and TCP tables for any process bound to <paramref name="port"/> on <paramref name="specificAddress"/>
+    /// (or DNS Pulse candidate loopback addresses when <see langword="null"/>) or wildcard addresses.
+    /// </summary>
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Preserves instance API contract.")]
+    public (string? OccupantName, int? ProcessId) InspectPortConflict(
+        int port,
+        IPAddress? specificAddress,
+        bool excludeSelfProcesses = true)
+    {
         ArgumentOutOfRangeException.ThrowIfLessThan(port, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(port, 65535);
 
-        (string? Name, int Pid)? candidate =
-            FindUdpConflict(AfInet, port, excludeSelfProcesses) ??
-            FindUdpConflict(AfInet6, port, excludeSelfProcesses) ??
-            FindTcpConflict(AfInet, port, excludeSelfProcesses) ??
-            FindTcpConflict(AfInet6, port, excludeSelfProcesses);
-
-        if (candidate is { } found)
+        List<(string Name, int Pid, IPAddress Address)> listeners = CollectListeners(port, excludeSelfProcesses);
+        foreach ((string name, int pid, IPAddress addr) in listeners)
         {
-            PlatformDiagnosticLog.Write(string.Create(
-                CultureInfo.InvariantCulture,
-                $"Port {port} conflict detected: '{found.Name}' (PID {found.Pid})."));
-            return (found.Name, found.Pid);
+            if (IsMatchingEndpoint(addr, specificAddress))
+            {
+                PlatformDiagnosticLog.Write(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Port {port} conflict detected on {addr}: '{name}' (PID {pid})."));
+                return (name, pid);
+            }
         }
 
         return (null, null);
     }
 
-    private static (string Name, int Pid)? FindUdpConflict(int addressFamily, int targetPort, bool excludeSelfProcesses)
+    /// <summary>
+    /// Inspects whether an external listener blocks ALL DNS Pulse candidate loopback endpoints
+    /// (<c>127.0.0.1</c> and <c>127.0.53.1..10</c>) on <paramref name="port"/>.
+    /// Listeners bound only to unrelated loopback IPs such as <c>127.0.0.53</c> do not report a blocking conflict
+    /// while at least one candidate loopback endpoint remains free.
+    /// </summary>
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Preserves instance API contract.")]
+    public (string? OccupantName, int? ProcessId) InspectBlockingPortConflict(int port, bool excludeSelfProcesses = true)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(port, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(port, 65535);
+
+        List<(string Name, int Pid, IPAddress Address)> listeners = CollectListeners(port, excludeSelfProcesses);
+        if (listeners.Count == 0)
+        {
+            return (null, null);
+        }
+
+        foreach ((string name, int pid, IPAddress addr) in listeners)
+        {
+            if (addr.Equals(IPAddress.Any))
+            {
+                PlatformDiagnosticLog.Write(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Port {port} wildcard conflict detected on {addr}: '{name}' (PID {pid})."));
+                return (name, pid);
+            }
+        }
+
+        HashSet<IPAddress> occupiedAddresses = [.. listeners.Select(static l => l.Address)];
+        IReadOnlyList<IPAddress> candidates = LoopbackPortSelector.GetCandidateEndpoints();
+        foreach (IPAddress candidate in candidates)
+        {
+            if (!occupiedAddresses.Contains(candidate))
+            {
+                return (null, null);
+            }
+        }
+
+        foreach ((string name, int pid, IPAddress addr) in listeners)
+        {
+            if (candidates.Contains(addr))
+            {
+                PlatformDiagnosticLog.Write(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Port {port} conflict blocks all candidate loopbacks (e.g. {addr}): '{name}' (PID {pid})."));
+                return (name, pid);
+            }
+        }
+
+        return (null, null);
+    }
+
+    private static List<(string Name, int Pid, IPAddress Address)> CollectListeners(int port, bool excludeSelfProcesses)
+    {
+        List<(string Name, int Pid, IPAddress Address)> results = [];
+        CollectUdpListeners(AfInet, port, excludeSelfProcesses, results);
+        CollectUdpListeners(AfInet6, port, excludeSelfProcesses, results);
+        CollectTcpListeners(AfInet, port, excludeSelfProcesses, results);
+        CollectTcpListeners(AfInet6, port, excludeSelfProcesses, results);
+        return results;
+    }
+
+    private static void CollectUdpListeners(
+        int addressFamily,
+        int targetPort,
+        bool excludeSelfProcesses,
+        List<(string Name, int Pid, IPAddress Address)> results)
     {
         int rowSize = addressFamily == AfInet ? 12 : 28;
         int bufferSize = 0;
         uint probeResult = NativeMethods.GetExtendedUdpTable(0, ref bufferSize, false, addressFamily, UdpTableOwnerPid, 0);
         if (probeResult != ErrorInsufficientBuffer && probeResult != NoError)
         {
-            return null;
+            return;
         }
 
         if (bufferSize <= 4)
         {
-            return null;
+            return;
         }
 
         for (int attempt = 0; attempt < 3; attempt++)
@@ -123,13 +201,13 @@ public sealed class Port53ConflictInspector
 
                 if (result != NoError)
                 {
-                    return null;
+                    return;
                 }
 
                 int count = Marshal.ReadInt32(buffer, 0);
                 if (count <= 0)
                 {
-                    return null;
+                    return;
                 }
 
                 int offset = 4;
@@ -140,7 +218,7 @@ public sealed class Port53ConflictInspector
                         break;
                     }
 
-                    bool isMatchingAddress;
+                    IPAddress addr;
                     int rawPort;
                     int pid;
 
@@ -149,7 +227,7 @@ public sealed class Port53ConflictInspector
                         uint rawAddr = unchecked((uint)Marshal.ReadInt32(buffer, offset));
                         rawPort = Marshal.ReadInt32(buffer, offset + 4);
                         pid = Marshal.ReadInt32(buffer, offset + 8);
-                        isMatchingAddress = IsLoopbackOrAnyV4(rawAddr);
+                        addr = new IPAddress(rawAddr);
                     }
                     else
                     {
@@ -157,52 +235,54 @@ public sealed class Port53ConflictInspector
                         Marshal.Copy(buffer + offset, addrBytes, 0, 16);
                         rawPort = Marshal.ReadInt32(buffer, offset + 20);
                         pid = Marshal.ReadInt32(buffer, offset + 24);
-                        isMatchingAddress = IsLoopbackOrAnyV6(addrBytes);
+                        addr = new IPAddress(addrBytes);
                     }
 
                     int port = DecodeNetworkPort(rawPort);
-                    if (port == targetPort && isMatchingAddress && pid > 0)
+                    if (port == targetPort && pid > 0)
                     {
                         string name = ResolveProcessName(pid);
                         if (excludeSelfProcesses && IsSelfProcess(name))
                         {
                             PlatformDiagnosticLog.Write(string.Create(
                                 CultureInfo.InvariantCulture,
-                                $"Ignoring self-owned UDP listener on port {targetPort}: '{name}' (PID {pid})."));
+                                $"Ignoring self-owned UDP listener on {addr}:{targetPort}: '{name}' (PID {pid})."));
                         }
                         else
                         {
-                            return (name, pid);
+                            results.Add((name, pid, addr));
                         }
                     }
 
                     offset += rowSize;
                 }
 
-                return null;
+                return;
             }
             finally
             {
                 Marshal.FreeHGlobal(buffer);
             }
         }
-
-        return null;
     }
 
-    private static (string Name, int Pid)? FindTcpConflict(int addressFamily, int targetPort, bool excludeSelfProcesses)
+    private static void CollectTcpListeners(
+        int addressFamily,
+        int targetPort,
+        bool excludeSelfProcesses,
+        List<(string Name, int Pid, IPAddress Address)> results)
     {
         int rowSize = addressFamily == AfInet ? 24 : 56;
         int bufferSize = 0;
         uint probeResult = NativeMethods.GetExtendedTcpTable(0, ref bufferSize, false, addressFamily, TcpTableOwnerPidListener, 0);
         if (probeResult != ErrorInsufficientBuffer && probeResult != NoError)
         {
-            return null;
+            return;
         }
 
         if (bufferSize <= 4)
         {
-            return null;
+            return;
         }
 
         for (int attempt = 0; attempt < 3; attempt++)
@@ -218,13 +298,13 @@ public sealed class Port53ConflictInspector
 
                 if (result != NoError)
                 {
-                    return null;
+                    return;
                 }
 
                 int count = Marshal.ReadInt32(buffer, 0);
                 if (count <= 0)
                 {
-                    return null;
+                    return;
                 }
 
                 int offset = 4;
@@ -235,7 +315,7 @@ public sealed class Port53ConflictInspector
                         break;
                     }
 
-                    bool isMatchingAddress;
+                    IPAddress addr;
                     int rawPort;
                     int pid;
 
@@ -244,7 +324,7 @@ public sealed class Port53ConflictInspector
                         uint rawAddr = unchecked((uint)Marshal.ReadInt32(buffer, offset + 4));
                         rawPort = Marshal.ReadInt32(buffer, offset + 8);
                         pid = Marshal.ReadInt32(buffer, offset + 20);
-                        isMatchingAddress = IsLoopbackOrAnyV4(rawAddr);
+                        addr = new IPAddress(rawAddr);
                     }
                     else
                     {
@@ -252,37 +332,35 @@ public sealed class Port53ConflictInspector
                         Marshal.Copy(buffer + offset, addrBytes, 0, 16);
                         rawPort = Marshal.ReadInt32(buffer, offset + 20);
                         pid = Marshal.ReadInt32(buffer, offset + 52);
-                        isMatchingAddress = IsLoopbackOrAnyV6(addrBytes);
+                        addr = new IPAddress(addrBytes);
                     }
 
                     int port = DecodeNetworkPort(rawPort);
-                    if (port == targetPort && isMatchingAddress && pid > 0)
+                    if (port == targetPort && pid > 0)
                     {
                         string name = ResolveProcessName(pid);
                         if (excludeSelfProcesses && IsSelfProcess(name))
                         {
                             PlatformDiagnosticLog.Write(string.Create(
                                 CultureInfo.InvariantCulture,
-                                $"Ignoring self-owned TCP listener on port {targetPort}: '{name}' (PID {pid})."));
+                                $"Ignoring self-owned TCP listener on {addr}:{targetPort}: '{name}' (PID {pid})."));
                         }
                         else
                         {
-                            return (name, pid);
+                            results.Add((name, pid, addr));
                         }
                     }
 
                     offset += rowSize;
                 }
 
-                return null;
+                return;
             }
             finally
             {
                 Marshal.FreeHGlobal(buffer);
             }
         }
-
-        return null;
     }
 
     private static int DecodeNetworkPort(int rawPort)
@@ -290,21 +368,24 @@ public sealed class Port53ConflictInspector
         return ((rawPort & 0xFF) << 8) | ((rawPort >> 8) & 0xFF);
     }
 
-    private static bool IsLoopbackOrAnyV4(uint rawAddr)
+    private static bool IsMatchingEndpoint(IPAddress listenerAddress, IPAddress? specificTarget)
     {
-        if (rawAddr == 0)
+        if (listenerAddress.Equals(IPAddress.Any) || listenerAddress.Equals(IPAddress.IPv6Any))
         {
             return true;
         }
 
-        byte firstOctet = (byte)(rawAddr & 0xFF);
-        return firstOctet == 127;
-    }
+        if (specificTarget is not null)
+        {
+            return listenerAddress.Equals(specificTarget);
+        }
 
-    private static bool IsLoopbackOrAnyV6(byte[] addrBytes)
-    {
-        IPAddress addr = new(addrBytes);
-        return addr.Equals(IPAddress.IPv6Any) || IPAddress.IsLoopback(addr);
+        if (listenerAddress.Equals(IPAddress.IPv6Loopback))
+        {
+            return true;
+        }
+
+        return LoopbackPortSelector.GetCandidateEndpoints().Contains(listenerAddress);
     }
 
     private static string ResolveProcessName(int processId)

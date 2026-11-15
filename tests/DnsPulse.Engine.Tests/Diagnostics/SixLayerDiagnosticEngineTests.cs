@@ -288,6 +288,56 @@ public sealed class SixLayerDiagnosticEngineTests
         browserReport.Remediation.Action.Should().Be(RemediationActionKind.DisableBrowserDohOverride);
     }
 
+    [Fact]
+    public async Task DiagnoseAsync_SniProxyGoogleAiStudio_SucceedsForAuthenticResponseAndRejectsFakeNode()
+    {
+        using TestPkiBundle pki = CreateTestPki("aistudio.google.com");
+        await using MockTlsHttpServer authenticServer = new(
+            pki.LeafServerCert,
+            _ => new MockHttpResponse(200, "<html><title>Google AI Studio</title><body>aistudio makersuite</body></html>"));
+        await using MockTlsHttpServer fakeNginxServer = new(
+            pki.LeafServerCert,
+            _ => new MockHttpResponse(200, "<html><body>Welcome to nginx!</body></html>"));
+
+        DnsServerEntry sniProxy = new()
+        {
+            Id = "smart_geohide_test",
+            Name = "GeoHide Node Test",
+            Provider = "GeoHide",
+            Protocol = DnsProtocol.SniProxy,
+            TrustTier = TrustTier.Tier4ExperimentalLab,
+            PrimaryIp = "192.255.159.240",
+            SmartProxyIp = "192.255.159.240",
+            DohUrl = "smartproxy://192.255.159.240:443",
+            SupportsBypass = true
+        };
+
+        IBootstrapResolver bootstrap = CreateMockBootstrap("aistudio.google.com", PublicExampleIp);
+        Func<DnsProtocol, IDnsUpstreamClient> throwingFactory = protocol =>
+            throw new NotSupportedException($"No DNS upstream transport client is registered for protocol '{protocol}'.");
+
+        SixLayerDiagnosticEngine engine = new(bootstrap, throwingFactory);
+
+        DiagnosticProbeOptions okOptions = new()
+        {
+            TransportProbeSamples = 2,
+            OverrideTlsEndpoint = authenticServer.Endpoint,
+            AdditionalTrustedRoots = [pki.RootPublicCert],
+            ProbeCompanionDomains = false,
+            CheckEchViaBaseline = false
+        };
+
+        DiagnosticReport healthyReport = await engine.DiagnoseAsync("aistudio.google.com", sniProxy, okOptions);
+        healthyReport.Verdict.Should().Be(DiagnosticVerdict.Healthy);
+        healthyReport.HttpStatusCode.Should().Be(200);
+        healthyReport.TlsHandshakeSucceeded.Should().BeTrue();
+        healthyReport.ResolvedAddresses.Should().ContainSingle().Which.Should().Be(IPAddress.Parse("192.255.159.240"));
+
+        DiagnosticProbeOptions fakeOptions = okOptions with { OverrideTlsEndpoint = fakeNginxServer.Endpoint };
+        DiagnosticReport fakeReport = await engine.DiagnoseAsync("aistudio.google.com", sniProxy, fakeOptions);
+        fakeReport.Verdict.Should().NotBe(DiagnosticVerdict.Healthy);
+    }
+
     private static DnsServerEntry CreateTestUpstream()
     {
         return new DnsServerEntry

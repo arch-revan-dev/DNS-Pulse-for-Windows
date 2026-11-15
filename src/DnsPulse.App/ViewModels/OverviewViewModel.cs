@@ -115,6 +115,7 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
     private Func<PulseAppSettings> _settingsProvider = static () => new PulseAppSettings();
     private Func<string, string?, CancellationToken, Task>? _ensureRoutingPresetHandler;
     private Func<CancellationToken, Task>? _fixBrowserDohHandler;
+    private Func<CancellationToken, Task>? _switchToSafeProxyModeHandler;
     private Func<string, string, CancellationToken, Task>? _persistQuickServiceHandler;
     private Func<StrategyProfileKind, string?, string?, CancellationToken, Task>? _persistSelectionHandler;
     private Action<DnsServerEntry>? _catalogEntryUpdatedHandler;
@@ -204,6 +205,30 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _detectedBrowserDohText = string.Empty;
+
+    [ObservableProperty]
+    private bool _needsPort53FallbackAction;
+
+    [ObservableProperty]
+    private string _port53ConflictSummaryText = string.Empty;
+
+    [ObservableProperty]
+    private bool _isChecklistDnsHooked;
+
+    [ObservableProperty]
+    private string _checklistDnsHookSummary = string.Empty;
+
+    [ObservableProperty]
+    private bool _isChecklistBypassIpResolved;
+
+    [ObservableProperty]
+    private string _checklistBypassIpSummary = string.Empty;
+
+    [ObservableProperty]
+    private bool _isChecklistHttpReachable;
+
+    [ObservableProperty]
+    private string _checklistHttpReachableSummary = string.Empty;
 
     public OverviewViewModel(
         IPulseRuntimeService runtimeService,
@@ -330,13 +355,15 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
         Func<CancellationToken, Task>? fixBrowserDohHandler = null,
         Func<string, string, CancellationToken, Task>? persistQuickServiceHandler = null,
         Action<DnsServerEntry>? catalogEntryUpdatedHandler = null,
-        Func<StrategyProfileKind, string?, string?, CancellationToken, Task>? persistSelectionHandler = null)
+        Func<StrategyProfileKind, string?, string?, CancellationToken, Task>? persistSelectionHandler = null,
+        Func<CancellationToken, Task>? switchToSafeProxyModeHandler = null)
     {
         _ensureRoutingPresetHandler = ensureRoutingPresetHandler;
         _fixBrowserDohHandler = fixBrowserDohHandler;
         _persistQuickServiceHandler = persistQuickServiceHandler;
         _catalogEntryUpdatedHandler = catalogEntryUpdatedHandler;
         _persistSelectionHandler = persistSelectionHandler;
+        _switchToSafeProxyModeHandler = switchToSafeProxyModeHandler;
     }
 
     public void LoadPersistedQuickService(PulseAppSettings settings)
@@ -701,6 +728,44 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Mode fallback and reconnection failures are surfaced inline via VerificationDetails.")]
+    public async Task SwitchToSafeProxyModeAsync(CancellationToken cancellationToken = default)
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_switchToSafeProxyModeHandler is not null)
+            {
+                await _switchToSafeProxyModeHandler(cancellationToken).ConfigureAwait(false);
+            }
+            else if (_settingsStore is not null)
+            {
+                await _settingsStore.UpdateAsync(
+                    static s => s.InterceptionMode = InterceptionMode.LocalProxyPacOnly,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            NeedsPort53FallbackAction = false;
+            Port53ConflictSummaryText = string.Empty;
+            await AutoConnectBestAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            LastErrorMessage = ex.Message;
+            HasDegradedCondition = true;
+            UpdateHeroState();
+        }
+    }
+
+    [RelayCommand]
     [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Opening a URL in the default browser must not crash the UI if shell launch fails.")]
     public void OpenTargetInBrowser()
     {
@@ -863,7 +928,6 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
 
             bool currentGeoValid = SelectedGeoUnlockUpstream is not null
                 && TrustTierPolicy.CanServeGeoUnlock(SelectedGeoUnlockUpstream.TrustTier)
-                && SelectedGeoUnlockUpstream.Protocol != DnsProtocol.SniProxy
                 && (!aiTarget || ServerCategoryClassifier.SupportsAiDomain(SelectedGeoUnlockUpstream));
 
             if (!currentGeoValid)
@@ -872,13 +936,11 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
                     ? catalog.FirstOrDefault(s =>
                         string.Equals(s.Id, _preferredGeoUnlockUpstreamId, StringComparison.OrdinalIgnoreCase) &&
                         TrustTierPolicy.CanServeGeoUnlock(s.TrustTier) &&
-                        s.Protocol != DnsProtocol.SniProxy &&
                         (!aiTarget || ServerCategoryClassifier.SupportsAiDomain(s)))
                     : null;
 
                 SelectedGeoUnlockUpstream = preferredGeo ?? catalog
                     .Where(s => TrustTierPolicy.CanServeGeoUnlock(s.TrustTier)
-                        && s.Protocol != DnsProtocol.SniProxy
                         && (!aiTarget || ServerCategoryClassifier.SupportsAiDomain(s)))
                     .OrderBy(static s => s.Verdict switch
                     {
@@ -895,7 +957,6 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
                     .FirstOrDefault()
                     ?? catalog.FirstOrDefault(static s =>
                         TrustTierPolicy.CanServeGeoUnlock(s.TrustTier)
-                        && s.Protocol != DnsProtocol.SniProxy
                         && !ServerCategoryClassifier.IsGamingOnlyGeoServer(s));
 
                 OnPropertyChanged(nameof(ActiveGeoUnlockName));
@@ -929,13 +990,23 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
             }
 
             LatencyP50Ms = 0;
+            IsChecklistDnsHooked = false;
+            IsChecklistBypassIpResolved = false;
+            IsChecklistHttpReachable = false;
+            ChecklistDnsHookSummary = _localization["Overview_State_Disconnected"];
+            ChecklistBypassIpSummary = string.Empty;
+            ChecklistHttpReachableSummary = string.Empty;
+            IsTargetVerifiedWorking = false;
+            NeedsPort53FallbackAction = false;
+            Port53ConflictSummaryText = string.Empty;
         }
         else if (snapshot.LatencyP50Ms is double p50 && p50 > 0)
         {
             RecordLatencySample(p50);
         }
 
-        HasDegradedCondition = snapshot.IsConnected && (!snapshot.IsHealthy || snapshot.DirtyRecoveryPending);
+        HasDegradedCondition = snapshot.IsConnected
+            && (!snapshot.IsHealthy || snapshot.DirtyRecoveryPending || snapshot.ActiveMode == InterceptionMode.None);
 
         if (_runtimeService.ActiveTrustedUpstream is not null)
         {
@@ -1067,7 +1138,6 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
         [
             .. rawCandidates
                 .Where(s => TrustTierPolicy.CanServeGeoUnlock(s.TrustTier)
-                    && s.Protocol != DnsProtocol.SniProxy
                     && ServerCategoryClassifier.SupportsTargetDomain(s, targetDomain)
                     && (!aiTarget || !ServerCategoryClassifier.IsGamingOnlyGeoServer(s)))
                 .OrderBy(static s => s.Verdict switch
@@ -1117,6 +1187,27 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
             ? string.Join(", ", hostHealth.DetectedBrowserDohBypassBrowsers)
             : string.Empty;
 
+        bool osInterceptionActive = IsConnected && _runtimeService.CurrentStatus.ActiveMode != InterceptionMode.None;
+        bool dnsHooked = osInterceptionActive && !hasBrowserDoh;
+        bool hasPort53Occupant = !string.IsNullOrWhiteSpace(hostHealth.Port53OccupantName) || hostHealth.Port53OccupantProcessId.HasValue;
+        NeedsPort53FallbackAction = hasPort53Occupant
+            && _runtimeService.CurrentStatus.ActiveMode != InterceptionMode.LocalProxyPacOnly
+            && !dnsHooked;
+        Port53ConflictSummaryText = NeedsPort53FallbackAction
+            ? string.Format(
+                CultureInfo.CurrentCulture,
+                _localization["Banner_Port53_Desc"],
+                string.IsNullOrWhiteSpace(hostHealth.Port53OccupantName) ? "System" : hostHealth.Port53OccupantName,
+                hostHealth.Port53OccupantProcessId ?? 0)
+            : string.Empty;
+
+        IsChecklistDnsHooked = dnsHooked;
+        ChecklistDnsHookSummary = hasBrowserDoh
+            ? string.Format(CultureInfo.CurrentCulture, _localization["Banner_BrowserDoh_Desc"], DetectedBrowserDohText)
+            : osInterceptionActive
+                ? ActiveInterceptionModeLabel
+                : (NeedsPort53FallbackAction ? Port53ConflictSummaryText : _localization["Overview_State_Disconnected"]);
+
         RouteDecision? routeDecision = _runtimeService.Router?.Route(targetDomain);
         bool routeUsesGeo = SelectedStrategyProfile != StrategyProfileKind.EncryptedDnsOnly
             && (routeDecision is null || routeDecision.Zone == RouteZone.Zone3GeoUnlock);
@@ -1147,7 +1238,12 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
 
         if (report is null)
         {
-            bool connectedHealthy = IsConnected && _runtimeService.CurrentStatus.IsHealthy && !hasBrowserDoh;
+            bool connectedHealthy = osInterceptionActive && _runtimeService.CurrentStatus.IsHealthy && !hasBrowserDoh;
+            IsChecklistBypassIpResolved = connectedHealthy;
+            ChecklistBypassIpSummary = upstreamToVerify?.Name ?? ActiveInterceptionModeLabel;
+            IsChecklistHttpReachable = connectedHealthy;
+            ChecklistHttpReachableSummary = connectedHealthy ? _localization["Overview_Step_Success"] : (_runtimeService.CurrentStatus.LastErrorMessage ?? _localization["Overview_Step_Failed"]);
+
             HasVerificationResult = true;
             IsTargetVerifiedWorking = connectedHealthy;
             VerificationHeadline = hasBrowserDoh
@@ -1181,7 +1277,22 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
         bool pacSniBypass = report.Verdict == DiagnosticVerdict.TlsSniDpiReset
             && _runtimeService.CurrentStatus.ActiveMode == InterceptionMode.LocalProxyPacOnly
             && settings.EnableLocalTlsSplitPac;
-        bool targetWorking = IsConnected && (probeHealthy || pacSniBypass) && !hasBrowserDoh;
+        bool bypassIpResolved = (report.ResolvedAddresses.Count > 0
+            && report.Verdict != DiagnosticVerdict.DnsPoisoned
+            && report.Verdict != DiagnosticVerdict.LocalPort53Conflict
+            && report.Verdict != DiagnosticVerdict.EncryptedDnsDpiBlocked)
+            || pacSniBypass;
+        bool targetWorking = osInterceptionActive && (probeHealthy || pacSniBypass) && !hasBrowserDoh;
+
+        IsChecklistBypassIpResolved = bypassIpResolved;
+        ChecklistBypassIpSummary = report.ResolvedAddresses.Count > 0
+            ? string.Create(CultureInfo.CurrentCulture, $"{report.ResolvedAddresses[0]} ({upstreamToVerify?.Name})")
+            : (!string.IsNullOrWhiteSpace(report.Reason) ? report.Reason : (upstreamToVerify?.Name ?? "—"));
+
+        IsChecklistHttpReachable = (probeHealthy || pacSniBypass) && osInterceptionActive && !hasBrowserDoh;
+        ChecklistHttpReachableSummary = report.HttpStatusCode.HasValue
+            ? string.Create(CultureInfo.InvariantCulture, $"HTTP {report.HttpStatusCode.Value}")
+            : (report.TlsHandshakeSucceeded ? "TLS OK" : (!string.IsNullOrWhiteSpace(report.Reason) ? report.Reason : _localization["Overview_Step_Failed"]));
 
         HasVerificationResult = true;
         IsTargetVerifiedWorking = targetWorking;
@@ -1348,7 +1459,7 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
     {
         HeroState = !IsConnected
             ? HeroConnectionState.Disconnected
-            : HasDegradedCondition
+            : (HasDegradedCondition || ActiveInterceptionMode == InterceptionMode.None)
                 ? HeroConnectionState.Degraded
                 : (HasActiveSmartBypassRules && SelectedStrategyProfile != StrategyProfileKind.EncryptedDnsOnly)
                     ? HeroConnectionState.SmartBypassActive

@@ -7,7 +7,6 @@ using System.Security.Principal;
 using System.Text.Json;
 using DnsPulse.Core.Models;
 using DnsPulse.Core.Routing;
-using DnsPulse.Core.Wire;
 using DnsPulse.Engine.Bootstrap;
 using DnsPulse.Engine.Cache;
 using DnsPulse.Engine.Contracts;
@@ -59,10 +58,15 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
     private TlsFragmentationProxyServer? _localProxyServer;
     private AutoPacServer? _localPacServer;
     private IDnsInterceptor? _activeInterceptor;
+    private LocalProxyPacInterceptor? _sessionPacInterceptor;
+    private string? _sessionPacUrl;
+    private string? _activeInterceptionStatusDetail;
     private ServiceStatusSnapshot _currentStatus = new();
     private DnsServerEntry? _activeTrustedUpstream;
     private DnsServerEntry? _activeGeoUnlockUpstream;
+    private IReadOnlyList<DnsServerEntry> _geoUnlockUpstreams = [];
     private IReadOnlyList<DnsServerEntry> _catalogSnapshot = BuiltInCatalogPresets.BuildFlagshipServers();
+    private SplitNamespaceRouterConfig _routingConfig = new();
     private IReadOnlyList<string> _activeSplitDomains;
     private PulseAppSettings _lastSettings = new();
     private bool _isServiceMode;
@@ -182,11 +186,13 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         if (ipcStatus is not null)
         {
             _isServiceMode = true;
+            await SyncSessionPacInterceptorAsync(ipcStatus, cancellationToken).ConfigureAwait(false);
             UpdateSnapshot(ipcStatus);
             return ipcStatus;
         }
 
         _isServiceMode = false;
+        await ClearSessionPacInterceptorAsync(cancellationToken).ConfigureAwait(false);
         ServiceStatusSnapshot portable = BuildPortableSnapshot(lastError: _currentStatus.LastErrorMessage);
         UpdateSnapshot(portable);
         return portable;
@@ -220,26 +226,22 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
                 effectiveSettings.LocalPacPort,
                 IsElevated);
 
-            object connectPayload = new
-            {
-                dnsPort = effectiveSettings.LocalDnsPort,
-                dohPort = effectiveSettings.LocalDohPort,
-                proxyPort = effectiveSettings.LocalProxyPort,
-                pacPort = effectiveSettings.LocalPacPort
-            };
+            ServiceConnectRequest connectRequest = BuildConnectRequest(effectiveSettings);
 
             ServiceStatusSnapshot? ipcStatus = await TrySendIpcAsync<ServiceStatusSnapshot>(
                 PipeCommandNames.Connect,
-                payload: connectPayload,
+                payload: connectRequest,
                 cancellationToken).ConfigureAwait(false);
 
             if (ipcStatus is not null)
             {
                 _isServiceMode = true;
+                await SyncSessionPacInterceptorAsync(ipcStatus, cancellationToken).ConfigureAwait(false);
                 UpdateSnapshot(ipcStatus);
                 Log.Information(
-                    "Connected via DnsPulseService IPC (Mode={Mode}, DNS:{DnsPort}, DoH:{DohPort}, Proxy:{ProxyPort}, PAC:{PacPort})",
+                    "Connected via DnsPulseService IPC (Mode={Mode}, Active={Active}, DNS:{DnsPort}, DoH:{DohPort}, Proxy:{ProxyPort}, PAC:{PacPort})",
                     ipcStatus.ActiveMode,
+                    ipcStatus.InterceptionActive,
                     ipcStatus.BoundDnsPort,
                     ipcStatus.BoundDoHPort,
                     ipcStatus.BoundProxyPort,
@@ -248,6 +250,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
             }
 
             _isServiceMode = false;
+            await ClearSessionPacInterceptorAsync(cancellationToken).ConfigureAwait(false);
             return await ConnectPortableLockedAsync(effectiveSettings, cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -270,6 +273,8 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
                     payload: null,
                     cancellationToken).ConfigureAwait(false);
 
+                await ClearSessionPacInterceptorAsync(cancellationToken).ConfigureAwait(false);
+
                 if (ipcStatus is not null)
                 {
                     UpdateSnapshot(ipcStatus);
@@ -277,6 +282,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
                 }
             }
 
+            await ClearSessionPacInterceptorAsync(cancellationToken).ConfigureAwait(false);
             await StopPortableLockedAsync(markCleanShutdown: true, cancellationToken).ConfigureAwait(false);
             ServiceStatusSnapshot snapshot = BuildPortableSnapshot(lastError: null);
             UpdateSnapshot(snapshot);
@@ -313,7 +319,14 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         _activeTrustedUpstream = next;
         _poolManager.UpdateZone4Pool([next, .. eligible.Where(e => !string.Equals(e.Id, next.Id, StringComparison.OrdinalIgnoreCase))]);
 
-        if (_currentStatus.IsConnected && !_isServiceMode)
+        if (_currentStatus.IsConnected && _isServiceMode)
+        {
+            await TrySendIpcAsync<ServiceStatusSnapshot>(
+                PipeCommandNames.UpdatePool,
+                BuildPoolUpdateRequest(_lastSettings),
+                cancellationToken).ConfigureAwait(false);
+        }
+        else if (_currentStatus.IsConnected && !_isServiceMode)
         {
             _cache.Clear();
         }
@@ -329,6 +342,8 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         await _lifecycleLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await ClearSessionPacInterceptorAsync(cancellationToken).ConfigureAwait(false);
+
             if (_isServiceMode)
             {
                 NetworkRestoredResult? ipcRestore = await TrySendIpcAsync<NetworkRestoredResult>(
@@ -343,6 +358,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
                         IsConnected = false,
                         IsHealthy = false,
                         ActiveMode = InterceptionMode.None,
+                        InterceptionActive = false,
                         LastErrorMessage = ipcRestore.Summary
                     });
                     return ipcRestore;
@@ -389,7 +405,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         return _dnsEngine.Telemetry.GetRecentEvents(maxCount);
     }
 
-    public Task UpdateRoutingConfigAsync(
+    public async Task UpdateRoutingConfigAsync(
         SplitNamespaceRouterConfig config,
         CancellationToken cancellationToken = default)
     {
@@ -397,6 +413,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         ObjectDisposedException.ThrowIf(_disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
 
+        _routingConfig = config;
         _router.UpdateConfiguration(config);
 
         HashSet<string> splitDomains = new(StringComparer.OrdinalIgnoreCase);
@@ -419,7 +436,22 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         _localPacServer?.UpdateSplitDomains(_activeSplitDomains);
         _cache.Clear();
 
-        return Task.CompletedTask;
+        if (_isServiceMode)
+        {
+            ServiceStatusSnapshot? ipcStatus = await TrySendIpcAsync<ServiceStatusSnapshot>(
+                PipeCommandNames.UpdateRoutingConfig,
+                new ServiceRoutingConfigRequest(
+                    RoutingConfig: _routingConfig,
+                    SplitDomains: [.. _activeSplitDomains],
+                    ClearCache: true),
+                cancellationToken).ConfigureAwait(false);
+
+            if (ipcStatus is not null)
+            {
+                await SyncSessionPacInterceptorAsync(ipcStatus, cancellationToken).ConfigureAwait(false);
+                UpdateSnapshot(ipcStatus);
+            }
+        }
     }
 
     public async Task UpdateEngineOptionsAsync(
@@ -440,6 +472,21 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
              previousSettings.LocalProxyPort != settings.LocalProxyPort ||
              previousSettings.LocalPacPort != settings.LocalPacPort ||
              previousSettings.InterceptionMode != settings.InterceptionMode);
+
+        if (_isServiceMode)
+        {
+            ServiceStatusSnapshot? ipcStatus = await TrySendIpcAsync<ServiceStatusSnapshot>(
+                PipeCommandNames.ConfigureEngine,
+                BuildEngineConfigRequest(settings, reconnectIfNeeded: listenersActive),
+                cancellationToken).ConfigureAwait(false);
+
+            if (ipcStatus is not null)
+            {
+                await SyncSessionPacInterceptorAsync(ipcStatus, cancellationToken).ConfigureAwait(false);
+                UpdateSnapshot(ipcStatus);
+                return;
+            }
+        }
 
         if (listenersActive)
         {
@@ -467,6 +514,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         return _hostHealthProvider.InspectAsync(cancellationToken);
     }
 
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Dispose must remain exception-safe when tearing down session WinINet PAC state.")]
     public void Dispose()
     {
         if (_disposed)
@@ -476,6 +524,17 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
 
         _disposed = true;
         _dnsEngine.Telemetry.EventRecorded -= OnEngineTelemetryRecorded;
+
+        try
+        {
+            _sessionPacInterceptor?.DeactivateAsync(CancellationToken.None).GetAwaiter().GetResult();
+        }
+        catch (Exception)
+        {
+        }
+
+        _sessionPacInterceptor = null;
+        _sessionPacUrl = null;
 
         _localPacServer?.Dispose();
         _localProxyServer?.Dispose();
@@ -503,6 +562,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         _disposed = true;
         _dnsEngine.Telemetry.EventRecorded -= OnEngineTelemetryRecorded;
 
+        await ClearSessionPacInterceptorAsync(CancellationToken.None).ConfigureAwait(false);
         await StopPortableLockedAsync(markCleanShutdown: true, CancellationToken.None).ConfigureAwait(false);
 
         _cache.Dispose();
@@ -564,7 +624,6 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
             .Where(candidate =>
                 candidate is not null
                 && TrustTierPolicy.CanServeGeoUnlock(candidate.TrustTier)
-                && candidate.Protocol != DnsProtocol.SniProxy
                 && (!aiBypassActive || ServerCategoryClassifier.SupportsAiDomain(candidate))
                 && !geoList.Any(existing => string.Equals(existing.Id, candidate.Id, StringComparison.OrdinalIgnoreCase)))
             .GroupBy(static candidate => candidate.Id, StringComparer.OrdinalIgnoreCase)
@@ -584,6 +643,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
             .Take(4);
 
         geoList.AddRange(geoFallbacks);
+        _geoUnlockUpstreams = [.. geoList];
 
         _dnsEngine.UpdateOptions(new PulseCoreEngineOptions
         {
@@ -699,10 +759,19 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
                 _activeSplitDomains);
             await pacServer.StartAsync(cancellationToken).ConfigureAwait(false);
 
+            _activeInterceptionStatusDetail = null;
+
             InterceptionMode effectiveMode = elevated ? settings.InterceptionMode : InterceptionMode.LocalProxyPacOnly;
             if (dnsServer.BoundPort != 53 && effectiveMode is InterceptionMode.AdapterDns or InterceptionMode.SplitNrpt or InterceptionMode.WfpDivertPlugin)
             {
                 effectiveMode = InterceptionMode.LocalProxyPacOnly;
+            }
+
+            if (effectiveMode != settings.InterceptionMode)
+            {
+                _activeInterceptionStatusDetail = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Fallback to {effectiveMode} (DNS port {dnsServer.BoundPort}, Elevated={elevated}).");
             }
 
             string pacUrl = pacServer.PacUrl ?? string.Create(
@@ -742,6 +811,9 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
                     {
                     }
 
+                    _activeInterceptionStatusDetail = string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Fallback to LocalProxyPacOnly after {effectiveMode} failed: {ex.Message}");
                     interceptor = CreatePortableInterceptor(InterceptionMode.LocalProxyPacOnly, pacUrl, settings.BlockIpv6OnBypass)!;
                     await interceptor.ActivateAsync(
                         loopbackIp,
@@ -904,11 +976,19 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
     private ServiceStatusSnapshot BuildPortableSnapshot(string? lastError)
     {
         bool connected = _localDnsServer is not null;
+        InterceptionMode activeMode = connected && _activeInterceptor is not null
+            ? _activeInterceptor.Mode
+            : InterceptionMode.None;
+        bool interceptionActive = connected && _activeInterceptor is not null && activeMode != InterceptionMode.None;
+
         return new ServiceStatusSnapshot
         {
             IsConnected = connected,
-            IsHealthy = connected,
-            ActiveMode = connected ? (_activeInterceptor?.Mode ?? InterceptionMode.LocalProxyPacOnly) : InterceptionMode.None,
+            IsHealthy = connected && interceptionActive,
+            ActiveMode = activeMode,
+            RequestedMode = _lastSettings.InterceptionMode,
+            InterceptionActive = interceptionActive,
+            PacUrl = connected ? _localPacServer?.PacUrl : null,
             ActiveLoopbackIp = connected ? (_localDnsEndPoint?.Address.ToString() ?? IPAddress.Loopback.ToString()) : null,
             BoundDnsPort = _localDnsServer?.BoundPort ?? 0,
             BoundDoHPort = _localDohListener?.BoundPort ?? 0,
@@ -920,95 +1000,153 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
             DirtyRecoveryPending = false,
             LastErrorMessage = lastError,
             LatencyP50Ms = _dnsEngine.Telemetry.Count > 0 ? _dnsEngine.Telemetry.P50LatencyMs : null,
-            ActiveGeoUnlockUpstreamId = _activeGeoUnlockUpstream?.Id
+            ActiveTrustedUpstreamId = _activeTrustedUpstream?.Id,
+            ActiveGeoUnlockUpstreamId = _activeGeoUnlockUpstream?.Id,
+            ActiveGeoUnlockRulesCount = _routingConfig.GeoUnlockRules.Count,
+            InterceptionStatusDetail = connected ? _activeInterceptionStatusDetail : null
         };
     }
 
-    private async Task<IReadOnlyList<IPAddress>> ResolveSidecarHostAsync(
+    private Task<IReadOnlyList<IPAddress>> ResolveSidecarHostAsync(
         string host,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(host))
         {
-            return [];
+            return Task.FromResult<IReadOnlyList<IPAddress>>([]);
         }
 
-        string trimmed = host.Trim();
-        if (IPAddress.TryParse(trimmed, out IPAddress? literalIp))
-        {
-            return [literalIp];
-        }
-
-        DnsMessage queryA = DnsMessage.CreateQuery(1, trimmed, DnsRecordType.A);
-        DnsMessage responseA = await _dnsEngine.ResolveAsync(queryA, cancellationToken).ConfigureAwait(false);
-
-        if (responseA.EffectiveResponseCode == DnsResponseCode.NoError)
-        {
-            List<IPAddress> ipv4 = ExtractNonSinkholeAddresses(responseA);
-            if (ipv4.Count > 0)
-            {
-                return ipv4;
-            }
-
-            if (ContainsNullSinkholeAddress(responseA))
-            {
-                return [];
-            }
-
-            DnsMessage queryAaaa = DnsMessage.CreateQuery(2, trimmed, DnsRecordType.AAAA);
-            DnsMessage responseAaaa = await _dnsEngine.ResolveAsync(queryAaaa, cancellationToken).ConfigureAwait(false);
-            if (responseAaaa.EffectiveResponseCode == DnsResponseCode.NoError)
-            {
-                List<IPAddress> ipv6 = ExtractNonSinkholeAddresses(responseAaaa);
-                if (ipv6.Count > 0)
-                {
-                    return ipv6;
-                }
-            }
-
-            return [];
-        }
-
-        if (responseA.EffectiveResponseCode == DnsResponseCode.ServFail)
-        {
-            return await _bootstrapResolver.ResolveHostAsync(trimmed, cancellationToken).ConfigureAwait(false);
-        }
-
-        return [];
+        return _dnsEngine.ResolveHostAddressesForProxyAsync(
+            host,
+            (h, ct) => _bootstrapResolver.ResolveHostAsync(h, ct),
+            cancellationToken);
     }
 
-    private static List<IPAddress> ExtractNonSinkholeAddresses(DnsMessage message)
+    private ServiceConnectRequest BuildConnectRequest(PulseAppSettings settings) => new(
+        DnsPort: settings.LocalDnsPort,
+        DohPort: settings.LocalDohPort,
+        ProxyPort: settings.LocalProxyPort,
+        PacPort: settings.LocalPacPort,
+        InterceptionMode: settings.InterceptionMode,
+        BlockIpv6OnBypass: settings.BlockIpv6OnBypass,
+        EnableSidecarProxy: settings.EnableLocalTlsSplitPac,
+        EnableDohListener: settings.UseLocalDohEndpoint,
+        AutoFallbackToPacOnPort53Conflict: true,
+        StrategyProfile: settings.StrategyProfile,
+        ActiveTrustedUpstreamId: _activeTrustedUpstream?.Id,
+        ActiveGeoUnlockUpstreamId: _activeGeoUnlockUpstream?.Id,
+        RoutingConfig: _routingConfig,
+        SplitDomains: [.. _activeSplitDomains],
+        Zone4Servers: [.. _poolManager.Zone4Servers],
+        GeoUnlockUpstreams: [.. _geoUnlockUpstreams],
+        Zone1Strategy: PoolSelectionStrategy.Fastest,
+        Zone3Strategy: PoolSelectionStrategy.Failover,
+        Zone4Strategy: settings.PoolStrategy,
+        ClearCache: true);
+
+    private ServiceEngineConfigRequest BuildEngineConfigRequest(PulseAppSettings settings, bool reconnectIfNeeded) => new(
+        DnsPort: settings.LocalDnsPort,
+        DohPort: settings.LocalDohPort,
+        ProxyPort: settings.LocalProxyPort,
+        PacPort: settings.LocalPacPort,
+        InterceptionMode: settings.InterceptionMode,
+        BlockIpv6OnBypass: settings.BlockIpv6OnBypass,
+        EnableSidecarProxy: settings.EnableLocalTlsSplitPac,
+        EnableDohListener: settings.UseLocalDohEndpoint,
+        AutoFallbackToPacOnPort53Conflict: true,
+        StrategyProfile: settings.StrategyProfile,
+        ActiveTrustedUpstreamId: _activeTrustedUpstream?.Id,
+        ActiveGeoUnlockUpstreamId: _activeGeoUnlockUpstream?.Id,
+        RoutingConfig: _routingConfig,
+        SplitDomains: [.. _activeSplitDomains],
+        Zone4Servers: [.. _poolManager.Zone4Servers],
+        GeoUnlockUpstreams: [.. _geoUnlockUpstreams],
+        Zone1Strategy: PoolSelectionStrategy.Fastest,
+        Zone3Strategy: PoolSelectionStrategy.Failover,
+        Zone4Strategy: settings.PoolStrategy,
+        ClearCache: true,
+        ReconnectIfNeeded: reconnectIfNeeded);
+
+    private ServicePoolUpdateRequest BuildPoolUpdateRequest(PulseAppSettings settings) => new(
+        Zone4Servers: [.. _poolManager.Zone4Servers],
+        GeoUnlockUpstreams: [.. _geoUnlockUpstreams],
+        ActiveTrustedUpstreamId: _activeTrustedUpstream?.Id,
+        ActiveGeoUnlockUpstreamId: _activeGeoUnlockUpstream?.Id,
+        Zone1Strategy: PoolSelectionStrategy.Fastest,
+        Zone3Strategy: PoolSelectionStrategy.Failover,
+        Zone4Strategy: settings.PoolStrategy,
+        ClearCache: true);
+
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Session WinINet PAC sync is best-effort and must not fail IPC status handling.")]
+    private async Task SyncSessionPacInterceptorAsync(ServiceStatusSnapshot snapshot, CancellationToken cancellationToken)
     {
-        List<IPAddress> addresses = [];
-        foreach (DnsResourceRecord record in message.Answers)
+        bool wantsSessionPac = _isServiceMode
+            && snapshot.IsConnected
+            && snapshot.ActiveMode == InterceptionMode.LocalProxyPacOnly
+            && !string.IsNullOrWhiteSpace(snapshot.PacUrl);
+
+        if (!wantsSessionPac)
         {
-            if (record.RecordType is DnsRecordType.A or DnsRecordType.AAAA &&
-                record.Address is not null &&
-                !IPAddress.Any.Equals(record.Address) &&
-                !IPAddress.IPv6Any.Equals(record.Address) &&
-                !IPAddress.IPv6None.Equals(record.Address))
-            {
-                addresses.Add(record.Address);
-            }
+            await ClearSessionPacInterceptorAsync(cancellationToken).ConfigureAwait(false);
+            return;
         }
 
-        return addresses;
+        if (_sessionPacInterceptor is not null &&
+            string.Equals(_sessionPacUrl, snapshot.PacUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await ClearSessionPacInterceptorAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            LocalProxyPacInterceptor interceptor = new(snapshot.PacUrl!);
+            IPAddress loopback = IPAddress.TryParse(snapshot.ActiveLoopbackIp, out IPAddress? parsed)
+                ? parsed
+                : IPAddress.Loopback;
+            await interceptor.ActivateAsync(
+                loopback,
+                snapshot.BoundDnsPort,
+                _activeSplitDomains,
+                cancellationToken).ConfigureAwait(false);
+            _sessionPacInterceptor = interceptor;
+            _sessionPacUrl = snapshot.PacUrl;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Session WinINet PAC mirror skipped for {PacUrl}.", snapshot.PacUrl);
+        }
     }
 
-    private static bool ContainsNullSinkholeAddress(DnsMessage message)
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Session WinINet PAC cleanup must remain resilient on teardown.")]
+    private async Task ClearSessionPacInterceptorAsync(CancellationToken cancellationToken)
     {
-        foreach (DnsResourceRecord record in message.Answers)
+        LocalProxyPacInterceptor? existing = _sessionPacInterceptor;
+        _sessionPacInterceptor = null;
+        _sessionPacUrl = null;
+
+        if (existing is null)
         {
-            if (record.Address is not null &&
-                (IPAddress.Any.Equals(record.Address) ||
-                 IPAddress.IPv6Any.Equals(record.Address) ||
-                 IPAddress.IPv6None.Equals(record.Address)))
-            {
-                return true;
-            }
+            return;
         }
 
-        return false;
+        try
+        {
+            await existing.DeactivateAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Session WinINet PAC teardown ignored error.");
+        }
     }
 
     private void UpdateSnapshot(ServiceStatusSnapshot snapshot)
@@ -1037,7 +1175,12 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
                 command,
                 payloadJson);
 
-            PipeRpcResponse response = await _ipcClient.SendAsync(request, IpcProbeTimeout, cancellationToken).ConfigureAwait(false);
+            TimeSpan effectiveTimeout = _isServiceMode
+                && !string.Equals(command, PipeCommandNames.GetStatus, StringComparison.Ordinal)
+                ? _ipcClient.DefaultConnectAndCallTimeout
+                : IpcProbeTimeout;
+
+            PipeRpcResponse response = await _ipcClient.SendAsync(request, effectiveTimeout, cancellationToken).ConfigureAwait(false);
             if (!response.Success || string.IsNullOrWhiteSpace(response.PayloadJson))
             {
                 Log.Debug("IPC command {Command} returned unsuccessful or empty response (Success={Success}, ErrorCode={ErrorCode}, Error={Error}).",

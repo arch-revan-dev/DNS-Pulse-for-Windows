@@ -68,6 +68,11 @@
   <data name="Overview_Step_Verifying" xml:space="preserve"><value>Verifying real access...</value></data>
   <data name="Overview_Step_Success" xml:space="preserve"><value>Access is open!</value></data>
   <data name="Overview_Step_Failed" xml:space="preserve"><value>Could not verify access — check diagnostics</value></data>
+  <data name="Overview_Check_Title" xml:space="preserve"><value>Live Verification</value></data>
+  <data name="Overview_Check_Step1" xml:space="preserve"><value>1. DNS Hook</value></data>
+  <data name="Overview_Check_Step2" xml:space="preserve"><value>2. Unblock IP</value></data>
+  <data name="Overview_Check_Step3" xml:space="preserve"><value>3. Site Access</value></data>
+  <data name="Overview_Check_Port53Fix" xml:space="preserve"><value>Switch to Proxy Mode</value></data>
   <data name="Overview_QuickService_AiStudio" xml:space="preserve"><value>Google AI Studio &amp; Gemini</value></data>
   <data name="Overview_QuickService_ChatGpt" xml:space="preserve"><value>OpenAI / ChatGPT</value></data>
   <data name="Overview_QuickService_Claude" xml:space="preserve"><value>Anthropic Claude</value></data>
@@ -159,6 +164,9 @@
   <data name="Servers_Category_Custom" xml:space="preserve"><value>Custom / Discovered</value></data>
   <data name="Servers_Category_Custom_Desc" xml:space="preserve"><value>Servers you added manually, private VPS nodes, and addresses found by the network scanner.</value></data>
   <data name="Servers_Category_Custom_Short" xml:space="preserve"><value>Custom</value></data>
+  <data name="Servers_Category_AutoProxy" xml:space="preserve"><value>Auto Proxy (SNI)</value></data>
+  <data name="Servers_Category_AutoProxy_Desc" xml:space="preserve"><value>Smart TLS SNI proxy relays that unblock AI and streaming services without changing normal internet DNS.</value></data>
+  <data name="Servers_Category_AutoProxy_Short" xml:space="preserve"><value>Auto Proxy</value></data>
   <data name="Servers_Badge_Trust_Fast" xml:space="preserve"><value>Encrypted</value></data>
   <data name="Servers_Badge_Trust_Geo" xml:space="preserve"><value>Geo-Unblock</value></data>
   <data name="Servers_Badge_Trust_Custom" xml:space="preserve"><value>Custom</value></data>

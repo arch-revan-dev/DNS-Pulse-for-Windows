@@ -5,17 +5,17 @@
              xmlns:conv="clr-namespace:DnsPulse.App.Converters">
   <ScrollViewer VerticalScrollBarVisibility="Auto"
                 HorizontalScrollBarVisibility="Disabled"
-                Padding="24,16,24,24">
+                Padding="{DynamicResource PulsePagePadding}">
     <StackPanel MaxWidth="1280">
       <!-- Guided 1-2-3 Hero Card -->
-      <ui:Card Padding="22"
-               Margin="0,0,0,16"
+      <ui:Card Padding="{DynamicResource PulseHeroPadding}"
+               Margin="{DynamicResource PulseSectionMargin}"
                AutomationProperties.LiveSetting="Polite"
                AutomationProperties.Name="{Binding HeroStatusTitle}"
                AutomationProperties.HelpText="{Binding HeroStatusSubtitle}">
         <StackPanel>
           <!-- Hero Connection Status Header -->
-          <Grid Margin="0,0,0,18">
+          <Grid Margin="0,0,0,16">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="Auto" />
               <ColumnDefinition Width="*" />
@@ -24,14 +24,14 @@
 
             <!-- Status Indicator Pill -->
             <Border Grid.Column="0"
-                    Width="52"
-                    Height="52"
-                    CornerRadius="26"
-                    Margin="0,0,16,0"
+                    Width="48"
+                    Height="48"
+                    CornerRadius="24"
+                    Margin="0,0,14,0"
                     VerticalAlignment="Center"
                     Background="{Binding HeroState, Converter={StaticResource VerdictToBrushConverter}}">
               <ui:SymbolIcon Symbol="ShieldCheckmark24"
-                             FontSize="26"
+                             FontSize="24"
                              Foreground="White"
                              HorizontalAlignment="Center"
                              VerticalAlignment="Center" />
@@ -40,27 +40,27 @@
             <!-- Status Title & Subtitle -->
             <StackPanel Grid.Column="1"
                         VerticalAlignment="Center"
-                        Margin="0,0,16,0">
+                        Margin="0,0,14,0">
               <ui:TextBlock FontTypography="TitleLarge"
                             Text="{Binding HeroStatusTitle}"
                             TextWrapping="Wrap" />
+              <TextBlock Margin="0,3,0,0"
+                         Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                         FontSize="14"
+                         Text="{Binding HeroStatusSubtitle}"
+                         TextWrapping="Wrap" />
               <ui:TextBlock Margin="0,4,0,0"
-                            Appearance="Secondary"
-                            FontTypography="Body"
-                            Text="{Binding HeroStatusSubtitle}"
-                            TextWrapping="Wrap" />
-              <ui:TextBlock Margin="0,6,0,0"
                             Foreground="{StaticResource PulseDangerBrush}"
                             Text="{Binding LastErrorMessage}"
                             TextWrapping="Wrap"
                             Visibility="{Binding LastErrorMessage, Converter={StaticResource NullToVisibilityConverter}}" />
             </StackPanel>
 
-            <!-- Manual Connect / Disconnect Toggle -->
+            <!-- Manual Connect / Disconnect Toggle (Secondary Power Switch) -->
             <ui:Button Grid.Column="2"
-                       MinWidth="148"
-                       Height="40"
-                       Padding="18,8"
+                       MinWidth="136"
+                       Height="38"
+                       Padding="14,6"
                        Appearance="Secondary"
                        VerticalAlignment="Center"
                        TabIndex="3"
@@ -76,33 +76,33 @@
           </Grid>
 
           <!-- Step 1: What do you want to open? -->
-          <Border Padding="16"
+          <Border Padding="18"
                   CornerRadius="8"
-                  Background="#1C212A"
-                  BorderBrush="#2D3545"
+                  Background="{DynamicResource PulseInnerPanelBrush}"
+                  BorderBrush="{DynamicResource PulseInnerPanelBorderBrush}"
                   BorderThickness="1">
             <StackPanel>
-              <DockPanel Margin="0,0,0,8">
+              <DockPanel Margin="0,0,0,10">
                 <Border DockPanel.Dock="Right"
-                        Padding="8,3"
+                        Padding="10,4"
                         CornerRadius="12"
-                        Background="#242C3A"
+                        Background="{DynamicResource PulseChipSurfaceBrush}"
                         VerticalAlignment="Center">
                   <TextBlock FontSize="11"
-                             Foreground="#CBD5E1">
-                    <Run Text="{conv:Localization Overview_QuickConnect_TargetLabel}" Foreground="#94A3B8" />
-                    <Run Text=": " Foreground="#94A3B8" />
-                    <Run FontWeight="SemiBold" Text="{Binding EffectiveTargetDomain, Mode=OneWay}" Foreground="#F8FAFC" />
+                             Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                    <Run Text="{conv:Localization Overview_QuickConnect_TargetLabel}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <Run Text=": " Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <Run FontWeight="SemiBold" Text="{Binding EffectiveTargetDomain, Mode=OneWay}" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                   </TextBlock>
                 </Border>
                 <StackPanel>
                   <TextBlock FontSize="15"
                              FontWeight="SemiBold"
-                             Foreground="#F8FAFC"
+                             Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                              Text="{conv:Localization Overview_QuickConnect_Title}" />
                   <TextBlock Margin="0,2,0,0"
                              FontSize="12"
-                             Foreground="#94A3B8"
+                             Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                              Text="{conv:Localization Overview_QuickConnect_Subtitle}"
                              TextWrapping="Wrap" />
                 </StackPanel>
@@ -145,11 +145,13 @@
                           AutomationProperties.Name="{conv:Localization Overview_QuickConnect_TargetLabel}"
                           AutomationProperties.HelpText="{conv:Localization Overview_QuickConnect_Subtitle}" />
 
-              <!-- Step 2: Primary Action CTAs -->
-              <WrapPanel Orientation="Horizontal" Margin="0,6,0,0">
+              <!-- Step 2: ONE Unmistakable Primary Action Bar -->
+              <WrapPanel Orientation="Horizontal" Margin="0,8,0,0" VerticalAlignment="Center">
                 <ui:Button Margin="0,0,10,6"
-                           Height="42"
-                           Padding="20,8"
+                           Height="44"
+                           Padding="24,8"
+                           FontSize="14"
+                           FontWeight="SemiBold"
                            Appearance="Primary"
                            TabIndex="1"
                            Content="{conv:Localization Overview_QuickConnect_Button}"
@@ -163,8 +165,8 @@
                 </ui:Button>
 
                 <ui:Button Margin="0,0,10,6"
-                           Height="42"
-                           Padding="16,8"
+                           Height="40"
+                           Padding="14,6"
                            Appearance="Secondary"
                            TabIndex="2"
                            Content="{conv:Localization Overview_QuickConnect_VerifyButton}"
@@ -188,101 +190,209 @@
                              Value="{Binding AutoSetupProgress}" />
                 <TextBlock Margin="0,6,0,0"
                            FontSize="12"
-                           Foreground="#CBD5E1"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                            Text="{Binding AutoSetupStepMessage}" />
               </StackPanel>
 
-              <!-- Step 3: Honest Verification Result Banner -->
+              <!-- Step 3: Live 3-Step Verification Checklist & Result Banner -->
               <Border Margin="0,12,0,0"
-                      Padding="14,10"
+                      Padding="14,12"
                       CornerRadius="8"
                       BorderThickness="1.5"
                       Visibility="{Binding HasVerificationResult, Converter={StaticResource BooleanToVisibilityConverter}}"
                       AutomationProperties.LiveSetting="Polite">
                 <Border.Style>
                   <Style TargetType="Border">
-                    <Setter Property="Background" Value="#2A1F12" />
-                    <Setter Property="BorderBrush" Value="#D97706" />
+                    <Setter Property="Background" Value="{DynamicResource PulseWarningSubtleBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource PulseWarningBorderBrush}" />
                     <Style.Triggers>
                       <DataTrigger Binding="{Binding IsTargetVerifiedWorking}" Value="True">
-                        <Setter Property="Background" Value="#10281E" />
-                        <Setter Property="BorderBrush" Value="#16A34A" />
+                        <Setter Property="Background" Value="{DynamicResource PulseSuccessSubtleBrush}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource PulseSuccessBorderBrush}" />
                       </DataTrigger>
                     </Style.Triggers>
                   </Style>
                 </Border.Style>
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                  </Grid.ColumnDefinitions>
+                <StackPanel>
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-                  <Border Grid.Column="0"
-                          Width="28"
-                          Height="28"
-                          CornerRadius="14"
-                          Margin="0,0,12,0"
-                          VerticalAlignment="Center">
-                    <Border.Style>
-                      <Style TargetType="Border">
-                        <Setter Property="Background" Value="#B45309" />
-                        <Style.Triggers>
-                          <DataTrigger Binding="{Binding IsTargetVerifiedWorking}" Value="True">
-                            <Setter Property="Background" Value="#15803D" />
-                          </DataTrigger>
-                        </Style.Triggers>
-                      </Style>
-                    </Border.Style>
-                    <ui:SymbolIcon FontSize="16" Foreground="White">
-                      <ui:SymbolIcon.Style>
-                        <Style TargetType="ui:SymbolIcon">
-                          <Setter Property="Symbol" Value="Warning24" />
+                    <Border Grid.Column="0"
+                            Width="28"
+                            Height="28"
+                            CornerRadius="14"
+                            Margin="0,0,12,0"
+                            VerticalAlignment="Center">
+                      <Border.Style>
+                        <Style TargetType="Border">
+                          <Setter Property="Background" Value="{DynamicResource PulseWarningBadgeBgBrush}" />
                           <Style.Triggers>
                             <DataTrigger Binding="{Binding IsTargetVerifiedWorking}" Value="True">
-                              <Setter Property="Symbol" Value="Checkmark24" />
+                              <Setter Property="Background" Value="{DynamicResource PulseSuccessBadgeBgBrush}" />
                             </DataTrigger>
                           </Style.Triggers>
                         </Style>
-                      </ui:SymbolIcon.Style>
-                    </ui:SymbolIcon>
-                  </Border>
+                      </Border.Style>
+                      <ui:SymbolIcon FontSize="16" Foreground="White">
+                        <ui:SymbolIcon.Style>
+                          <Style TargetType="ui:SymbolIcon">
+                            <Setter Property="Symbol" Value="Warning24" />
+                            <Style.Triggers>
+                              <DataTrigger Binding="{Binding IsTargetVerifiedWorking}" Value="True">
+                                <Setter Property="Symbol" Value="Checkmark24" />
+                              </DataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </ui:SymbolIcon.Style>
+                      </ui:SymbolIcon>
+                    </Border>
 
-                  <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
-                    <TextBlock FontSize="13"
-                               FontWeight="SemiBold"
-                               Foreground="#F8FAFC"
-                               Text="{Binding VerificationHeadline}"
-                               TextWrapping="Wrap" />
-                    <TextBlock Margin="0,2,0,0"
-                               FontSize="12"
-                               Foreground="#CBD5E1"
-                               Text="{Binding VerificationDetails}"
-                               TextWrapping="Wrap"
-                               Visibility="{Binding VerificationDetails, Converter={StaticResource NullToVisibilityConverter}}" />
-                  </StackPanel>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
+                      <TextBlock FontSize="13"
+                                 FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                 Text="{Binding VerificationHeadline}"
+                                 TextWrapping="Wrap" />
+                      <TextBlock Margin="0,2,0,0"
+                                 FontSize="12"
+                                 Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                 Text="{Binding VerificationDetails}"
+                                 TextWrapping="Wrap"
+                                 Visibility="{Binding VerificationDetails, Converter={StaticResource NullToVisibilityConverter}}" />
+                    </StackPanel>
 
-                  <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <ui:Button Margin="0,0,8,0"
-                               Padding="12,6"
-                               Appearance="Primary"
-                               Content="{conv:Localization Banner_BrowserDoh_Fix}"
-                               Command="{Binding FixBrowserDohFromOverviewCommand}"
-                               Visibility="{Binding NeedsBrowserDohAction, Converter={StaticResource BooleanToVisibilityConverter}}"
-                               AutomationProperties.Name="{conv:Localization Banner_BrowserDoh_Fix}"
-                               AutomationProperties.HelpText="{Binding DetectedBrowserDohText}" />
-                    <ui:Button Padding="12,6"
-                               Appearance="Secondary"
-                               Content="{conv:Localization Overview_QuickConnect_OpenBrowser}"
-                               Command="{Binding OpenTargetInBrowserCommand}"
-                               AutomationProperties.Name="{conv:Localization Overview_QuickConnect_OpenBrowser}"
-                               AutomationProperties.HelpText="{Binding EffectiveTargetDomain}">
-                      <ui:Button.Icon>
-                        <ui:SymbolIcon Symbol="Open24" />
-                      </ui:Button.Icon>
-                    </ui:Button>
-                  </StackPanel>
-                </Grid>
+                    <WrapPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                      <ui:Button Margin="0,0,8,0"
+                                 Padding="12,6"
+                                 Appearance="Primary"
+                                 Content="{conv:Localization Banner_BrowserDoh_Fix}"
+                                 Command="{Binding FixBrowserDohFromOverviewCommand}"
+                                 Visibility="{Binding NeedsBrowserDohAction, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                 AutomationProperties.Name="{conv:Localization Banner_BrowserDoh_Fix}"
+                                 AutomationProperties.HelpText="{Binding DetectedBrowserDohText}" />
+                      <ui:Button Margin="0,0,8,0"
+                                 Padding="12,6"
+                                 Appearance="Primary"
+                                 Content="{conv:Localization Overview_Check_Port53Fix}"
+                                 Command="{Binding SwitchToSafeProxyModeCommand}"
+                                 Visibility="{Binding NeedsPort53FallbackAction, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                 AutomationProperties.Name="{conv:Localization Overview_Check_Port53Fix}"
+                                 AutomationProperties.HelpText="{Binding Port53ConflictSummaryText}" />
+                      <ui:Button Padding="12,6"
+                                 Appearance="Secondary"
+                                 Content="{conv:Localization Overview_QuickConnect_OpenBrowser}"
+                                 Command="{Binding OpenTargetInBrowserCommand}"
+                                 AutomationProperties.Name="{conv:Localization Overview_QuickConnect_OpenBrowser}"
+                                 AutomationProperties.HelpText="{Binding EffectiveTargetDomain}">
+                        <ui:Button.Icon>
+                          <ui:SymbolIcon Symbol="Open24" />
+                        </ui:Button.Icon>
+                      </ui:Button>
+                    </WrapPanel>
+                  </Grid>
+
+                  <!-- 3-Step Live Diagnostic Checklist -->
+                  <UniformGrid Columns="3" Margin="0,12,0,0">
+                    <!-- Step 1: DNS Hook -->
+                    <Border Margin="0,0,8,0"
+                            Padding="10,7"
+                            CornerRadius="6"
+                            Background="{DynamicResource PulseInnerPanelBrush}"
+                            BorderBrush="{DynamicResource PulseInnerPanelBorderBrush}"
+                            BorderThickness="1">
+                      <StackPanel>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                          <Ellipse Width="8" Height="8" Margin="0,0,6,0">
+                            <Ellipse.Style>
+                              <Style TargetType="Ellipse">
+                                <Setter Property="Fill" Value="{StaticResource PulseWarningBrush}" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding IsChecklistDnsHooked}" Value="True">
+                                    <Setter Property="Fill" Value="{StaticResource PulseSuccessBrush}" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </Ellipse.Style>
+                          </Ellipse>
+                          <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" Text="{conv:Localization Overview_Check_Step1}" />
+                        </StackPanel>
+                        <TextBlock Margin="0,3,0,0"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   Text="{Binding ChecklistDnsHookSummary}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding ChecklistDnsHookSummary}" />
+                      </StackPanel>
+                    </Border>
+
+                    <!-- Step 2: Unblock IP -->
+                    <Border Margin="0,0,8,0"
+                            Padding="10,7"
+                            CornerRadius="6"
+                            Background="{DynamicResource PulseInnerPanelBrush}"
+                            BorderBrush="{DynamicResource PulseInnerPanelBorderBrush}"
+                            BorderThickness="1">
+                      <StackPanel>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                          <Ellipse Width="8" Height="8" Margin="0,0,6,0">
+                            <Ellipse.Style>
+                              <Style TargetType="Ellipse">
+                                <Setter Property="Fill" Value="{StaticResource PulseWarningBrush}" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding IsChecklistBypassIpResolved}" Value="True">
+                                    <Setter Property="Fill" Value="{StaticResource PulseSuccessBrush}" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </Ellipse.Style>
+                          </Ellipse>
+                          <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" Text="{conv:Localization Overview_Check_Step2}" />
+                        </StackPanel>
+                        <TextBlock Margin="0,3,0,0"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   Text="{Binding ChecklistBypassIpSummary}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding ChecklistBypassIpSummary}" />
+                      </StackPanel>
+                    </Border>
+
+                    <!-- Step 3: Site Access -->
+                    <Border Padding="10,7"
+                            CornerRadius="6"
+                            Background="{DynamicResource PulseInnerPanelBrush}"
+                            BorderBrush="{DynamicResource PulseInnerPanelBorderBrush}"
+                            BorderThickness="1">
+                      <StackPanel>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                          <Ellipse Width="8" Height="8" Margin="0,0,6,0">
+                            <Ellipse.Style>
+                              <Style TargetType="Ellipse">
+                                <Setter Property="Fill" Value="{StaticResource PulseWarningBrush}" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding IsChecklistHttpReachable}" Value="True">
+                                    <Setter Property="Fill" Value="{StaticResource PulseSuccessBrush}" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </Ellipse.Style>
+                          </Ellipse>
+                          <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" Text="{conv:Localization Overview_Check_Step3}" />
+                        </StackPanel>
+                        <TextBlock Margin="0,3,0,0"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   Text="{Binding ChecklistHttpReachableSummary}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding ChecklistHttpReachableSummary}" />
+                      </StackPanel>
+                    </Border>
+                  </UniformGrid>
+                </StackPanel>
               </Border>
             </StackPanel>
           </Border>
@@ -319,11 +429,11 @@
                 <ui:TextBlock FontTypography="BodyStrong"
                               Text="{Binding Title}"
                               TextWrapping="Wrap" />
-                <ui:TextBlock Margin="0,4,0,0"
-                              Appearance="Secondary"
-                              FontTypography="Caption"
-                              Text="{Binding Description}"
-                              TextWrapping="Wrap" />
+                <TextBlock Margin="0,4,0,0"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           FontSize="12"
+                           Text="{Binding Description}"
+                           TextWrapping="Wrap" />
               </StackPanel>
             </RadioButton>
           </DataTemplate>
@@ -339,10 +449,10 @@
                  Margin="0,0,12,12">
           <StackPanel>
             <StackPanel Orientation="Horizontal">
-              <ui:TextBlock Appearance="Secondary"
-                            FontTypography="Caption"
-                            Text="{conv:Localization Overview_Metric_TrustedUpstream}"
-                            VerticalAlignment="Center" />
+              <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                         FontSize="12"
+                         Text="{conv:Localization Overview_Metric_TrustedUpstream}"
+                         VerticalAlignment="Center" />
               <Border Margin="8,0,0,0"
                       Padding="7,2"
                       CornerRadius="6"
@@ -359,10 +469,10 @@
                           Text="{Binding TrustedUpstreamName}"
                           TextTrimming="CharacterEllipsis" />
 
-            <ui:TextBlock Margin="0,12,0,0"
-                          Appearance="Secondary"
-                          FontTypography="Caption"
-                          Text="{conv:Localization Overview_Metric_GeoUpstream}" />
+            <TextBlock Margin="0,12,0,0"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       FontSize="12"
+                       Text="{conv:Localization Overview_Metric_GeoUpstream}" />
             <ui:TextBlock Margin="0,2,0,12"
                           FontTypography="Body"
                           Text="{Binding ActiveGeoUnlockName}"
@@ -399,9 +509,9 @@
                  Padding="16"
                  Margin="0,0,12,12">
           <StackPanel>
-            <ui:TextBlock Appearance="Secondary"
-                          FontTypography="Caption"
-                          Text="{conv:Localization Overview_Metric_LatencyP50}" />
+            <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       FontSize="12"
+                       Text="{conv:Localization Overview_Metric_LatencyP50}" />
             <ui:TextBlock Margin="0,4,0,8"
                           FontTypography="Title"
                           Text="{Binding LatencyP50Ms, Converter={StaticResource LatencyFormatConverter}}" />
@@ -432,16 +542,16 @@
                  Padding="16"
                  Margin="0,0,12,12">
           <StackPanel>
-            <ui:TextBlock Appearance="Secondary"
-                          FontTypography="Caption"
-                          Text="{conv:Localization Overview_Metric_CacheHit}" />
+            <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       FontSize="12"
+                       Text="{conv:Localization Overview_Metric_CacheHit}" />
             <ui:TextBlock Margin="0,4,0,12"
                           FontTypography="Title"
                           Text="{Binding CacheHitRatePercent, StringFormat={}{0:F1}%}" />
 
-            <ui:TextBlock Appearance="Secondary"
-                          FontTypography="Caption"
-                          Text="{conv:Localization Overview_Metric_QueriesPerMin}" />
+            <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       FontSize="12"
+                       Text="{conv:Localization Overview_Metric_QueriesPerMin}" />
             <ui:TextBlock Margin="0,4,0,0"
                           FontTypography="Title"
                           Text="{Binding QueriesPerMinute, StringFormat={}{0:F1}}" />
@@ -453,9 +563,9 @@
                  Padding="16"
                  Margin="0,0,0,12">
           <StackPanel>
-            <ui:TextBlock Appearance="Secondary"
-                          FontTypography="Caption"
-                          Text="{conv:Localization Overview_Metric_InterceptionMode}" />
+            <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       FontSize="12"
+                       Text="{conv:Localization Overview_Metric_InterceptionMode}" />
             <ui:TextBlock Margin="0,4,0,12"
                           FontTypography="BodyStrong"
                           TextWrapping="Wrap">
@@ -467,9 +577,9 @@
               </ui:TextBlock.Text>
             </ui:TextBlock>
 
-            <ui:TextBlock Appearance="Secondary"
-                          FontTypography="Caption"
-                          Text="{conv:Localization Overview_Metric_RuntimeMode}" />
+            <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       FontSize="12"
+                       Text="{conv:Localization Overview_Metric_RuntimeMode}" />
             <ui:TextBlock Margin="0,4,0,0"
                           FontTypography="BodyStrong"
                           Text="{Binding RuntimeModeLabel}"

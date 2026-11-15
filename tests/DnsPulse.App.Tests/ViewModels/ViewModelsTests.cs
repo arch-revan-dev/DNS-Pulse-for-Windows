@@ -5,6 +5,9 @@ using System.Net.Http;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Windows;
+using DnsPulse.App.Converters;
 using DnsPulse.App.Data;
 using DnsPulse.App.Localization;
 using DnsPulse.App.Services;
@@ -14,6 +17,7 @@ using DnsPulse.Core.Routing;
 using DnsPulse.Core.Wire;
 using DnsPulse.Engine.Contracts;
 using DnsPulse.Engine.Diagnostics;
+using DnsPulse.Engine.Feeds;
 using DnsPulse.Engine.Pipeline;
 using DnsPulse.Platform.Windows.Autostart;
 using DnsPulse.Platform.Windows.Contracts;
@@ -28,6 +32,11 @@ namespace DnsPulse.App.Tests.ViewModels;
 
 public sealed class ViewModelsTests : IDisposable
 {
+    private static readonly JsonSerializerOptions CamelCaseJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true
+    };
     private readonly string _tempDir;
     private readonly string _dbPath;
 
@@ -780,16 +789,30 @@ public sealed class ViewModelsTests : IDisposable
         vm.AiGeoCount.Should().BeGreaterThan(0);
         vm.FastEncryptedCount.Should().BeGreaterThan(0);
         vm.StreamingGamingCount.Should().BeGreaterThan(0);
+        vm.AutoProxyCount.Should().BeGreaterThan(0);
         vm.CustomCount.Should().BeGreaterThan(0);
-        (vm.AiGeoCount + vm.FastEncryptedCount + vm.StreamingGamingCount + vm.CustomCount).Should().Be(vm.AllCount);
+        (vm.AiGeoCount + vm.FastEncryptedCount + vm.StreamingGamingCount + vm.AutoProxyCount + vm.CustomCount).Should().Be(vm.AllCount);
         vm.FilteredServers.Should().HaveCount(vm.AllCount);
 
-        vm.CategoryFilterOptions.Should().HaveCount(5);
+        vm.CategoryFilterOptions.Should().HaveCount(6);
         vm.CategoryFilterOptions.Single(static o => o.Category is null).Count.Should().Be(vm.AllCount);
         vm.CategoryFilterOptions.Single(static o => o.Category == ServerDisplayCategory.AiAndGeoUnlock).Count.Should().Be(vm.AiGeoCount);
         vm.CategoryFilterOptions.Single(static o => o.Category == ServerDisplayCategory.FastEncrypted).Count.Should().Be(vm.FastEncryptedCount);
         vm.CategoryFilterOptions.Single(static o => o.Category == ServerDisplayCategory.StreamingAndGaming).Count.Should().Be(vm.StreamingGamingCount);
+        vm.CategoryFilterOptions.Single(static o => o.Category == ServerDisplayCategory.AutoProxy).Count.Should().Be(vm.AutoProxyCount);
         vm.CategoryFilterOptions.Single(static o => o.Category == ServerDisplayCategory.CustomAndDiscovered).Count.Should().Be(vm.CustomCount);
+
+        vm.SelectedCategoryFilter = ServerDisplayCategory.AutoProxy;
+        vm.FilteredServers.Should().HaveCount(vm.AutoProxyCount);
+        vm.FilteredServers.Should().OnlyContain(static s => ServerCategoryClassifier.Classify(s) == ServerDisplayCategory.AutoProxy);
+        vm.FilteredServers.Should().Contain(static s => s.Protocol == DnsProtocol.SniProxy);
+
+        CategoryToLabelConverter categoryLabelConverter = new();
+        categoryLabelConverter.Convert(ServerDisplayCategory.AutoProxy, typeof(string), "Short", System.Globalization.CultureInfo.InvariantCulture)
+            .Should().Be(localization["Servers_Category_AutoProxy_Short"]);
+        TrustTierToBadgeBrushConverter badgeConverter = new();
+        badgeConverter.Convert(ServerDisplayCategory.AutoProxy, typeof(object), null, System.Globalization.CultureInfo.InvariantCulture)
+            .Should().NotBeNull();
 
         vm.SelectedCategoryFilter = ServerDisplayCategory.AiAndGeoUnlock;
         vm.FilteredServers.Should().HaveCount(vm.AiGeoCount);
@@ -935,6 +958,313 @@ public sealed class ViewModelsTests : IDisposable
         {
             await runtime.DisconnectAsync();
         }
+    }
+
+    [Fact]
+    public async Task OverviewViewModel_IncludesSniProxyNodes_And_ChecklistEnforcesActiveInterception()
+    {
+        IPulseRuntimeService runtime = Substitute.For<IPulseRuntimeService>();
+        SplitNamespaceRouter router = new();
+        ServiceStatusSnapshot current = new()
+        {
+            IsConnected = true,
+            IsHealthy = false,
+            ActiveMode = InterceptionMode.None,
+            InterceptionActive = false
+        };
+        runtime.Router.Returns(router);
+        runtime.CurrentStatus.Returns(_ => current);
+        runtime.RefreshStatusAsync(Arg.Any<CancellationToken>()).Returns(_ => Task.FromResult(current));
+        runtime.GetRecentTelemetryAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult<IReadOnlyList<DnsQueryTelemetryEvent>>([]));
+        runtime.InspectHostHealthAsync(Arg.Any<CancellationToken>()).Returns(new HostNetworkHealthSnapshot
+        {
+            Port53OccupantName = "ag_dns.exe",
+            Port53OccupantProcessId = 4242
+        });
+
+        DnsServerEntry sniProxyAi = new()
+        {
+            Id = "test_sni_ai",
+            Name = "SmartProxy AI Edge",
+            Protocol = DnsProtocol.SniProxy,
+            TrustTier = TrustTier.Tier4ExperimentalLab,
+            PrimaryIp = "198.51.100.77",
+            Port = 443,
+            SupportsBypass = true,
+            Tags = ["AI", "AutoProxy"]
+        };
+        DnsServerEntry trusted = new()
+        {
+            Id = "global_cf",
+            Name = "Cloudflare",
+            Protocol = DnsProtocol.DoH,
+            TrustTier = TrustTier.Tier1EncryptedTrusted,
+            PrimaryIp = "1.1.1.1",
+            DohUrl = "https://1.1.1.1/dns-query"
+        };
+
+        LocalizationService localization = new();
+        using OverviewViewModel vm = new(runtime, localization);
+        vm.ConfigureContextProviders(() => [sniProxyAi, trusted], () => new PulseAppSettings());
+
+        bool switchToPacInvoked = false;
+        vm.ConfigureOverviewCoordinators(switchToSafeProxyModeHandler: _ =>
+        {
+            switchToPacInvoked = true;
+            return Task.CompletedTask;
+        });
+
+        // SniProxy / Auto Proxy nodes are no longer filtered out of Geo-Unlock upstream selection.
+        vm.EnsureDefaultUpstreamsSelected([sniProxyAi, trusted]);
+        vm.SelectedGeoUnlockUpstream.Should().NotBeNull();
+        vm.SelectedGeoUnlockUpstream!.Id.Should().Be("test_sni_ai");
+
+        // Connected socket with ActiveMode == InterceptionMode.None must NOT claim Protected/Working.
+        await vm.VerifyAccessNowCommand.ExecuteAsync(null);
+        vm.IsChecklistDnsHooked.Should().BeFalse();
+        vm.IsTargetVerifiedWorking.Should().BeFalse();
+        vm.HasDegradedCondition.Should().BeTrue();
+        vm.NeedsPort53FallbackAction.Should().BeTrue();
+        vm.Port53ConflictSummaryText.Should().Contain("ag_dns.exe");
+
+        await vm.SwitchToSafeProxyModeCommand.ExecuteAsync(null);
+        switchToPacInvoked.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task MainShellViewModel_ConsolidatedBanner_Expands_And_DismissAllClearsAllActiveBanners()
+    {
+        LocalizationService localization = new();
+        IPulseRuntimeService runtime = CreateMockRuntime();
+        runtime.InspectHostHealthAsync(Arg.Any<CancellationToken>()).Returns(new HostNetworkHealthSnapshot
+        {
+            DetectedBrowserDohBypassBrowsers = ["Edge"],
+            Port53OccupantName = "ag_dns.exe",
+            Port53OccupantProcessId = 3131,
+            IsSmhnrDisabled = false,
+            ActiveInterfaceNames = ["Ethernet", "WireGuard Tunnel"]
+        });
+
+        using PulseCatalogRepository repo = new(_dbPath);
+        AppSettingsStore store = new(_tempDir, _tempDir);
+        await store.SaveAsync(new PulseAppSettings { AutoSyncFeedsOnStartup = false });
+        ThemeAppearanceService theme = new(static () => false, static () => 22631);
+        NetworkSnapshotJournal journal = new(_tempDir);
+
+        OverviewViewModel overview = new(runtime, localization, repo);
+        RoutingInspectorViewModel routing = new(runtime, localization);
+        ServersCatalogViewModel servers = new(repo, runtime, localization);
+        DiagnosticsDoctorViewModel diagnostics = new(runtime, repo, localization);
+        SettingsSafetyViewModel settings = new(store, new WindowsAutostartService(@"SOFTWARE\DnsPulseTests_NonExistentRun", "DnsPulseTest"), runtime, localization, theme, journal);
+
+        MainShellViewModel shell = new(
+            localization, runtime, repo, store, theme, overview, routing, servers, diagnostics, settings, journal,
+            antiCheatDetector: static () => (false, []));
+
+        await shell.InitializeAsync();
+
+        shell.ActiveBannerCount.Should().Be(3);
+        shell.HasActiveBanners.Should().BeTrue();
+        shell.HasMultipleActiveBanners.Should().BeTrue();
+        shell.IsNotificationPanelExpanded.Should().BeFalse();
+
+        shell.ToggleNotificationPanelExpandedCommand.Execute(null);
+        shell.IsNotificationPanelExpanded.Should().BeTrue();
+
+        await shell.DismissAllActiveBannersCommand.ExecuteAsync(null);
+
+        shell.ActiveBannerCount.Should().Be(0);
+        shell.HasActiveBanners.Should().BeFalse();
+        shell.HasMultipleActiveBanners.Should().BeFalse();
+        shell.IsNotificationPanelExpanded.Should().BeFalse();
+        shell.DismissedBannerCount.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task MainShellViewModel_StartupFeedSync_LoadsOfflineCacheSnapshot_And_RoutesDiscoveredDomains()
+    {
+        LocalizationService localization = new();
+        IPulseRuntimeService runtime = CreateMockRuntime();
+        using PulseCatalogRepository repo = new(_dbPath);
+        AppSettingsStore store = new(_tempDir, _tempDir);
+        await store.SaveAsync(new PulseAppSettings { AutoSyncFeedsOnStartup = false });
+
+        DnsServerEntry cachedServer = new()
+        {
+            Id = "feed_cached_comss",
+            Name = "Cached Community AI DNS",
+            Protocol = DnsProtocol.DoH,
+            TrustTier = TrustTier.Tier2VerifiedGeoUnlock,
+            PrimaryIp = "198.51.100.88",
+            DohUrl = "https://198.51.100.88/dns-query",
+            SupportsBypass = true,
+            Tags = ["AI"]
+        };
+
+        FeedCacheSnapshot cacheSnapshot = new(
+            DateTimeOffset.UtcNow,
+            ["cached-ai.example"],
+            [cachedServer]);
+
+        string cachePath = Path.Combine(Path.GetDirectoryName(store.SettingsFilePath)!, "dynamic_bypass_domains_cache.json");
+        await File.WriteAllTextAsync(cachePath, JsonSerializer.Serialize(cacheSnapshot, CamelCaseJsonOptions));
+
+        ThemeAppearanceService theme = new(static () => false, static () => 22631);
+        NetworkSnapshotJournal journal = new(_tempDir);
+        OverviewViewModel overview = new(runtime, localization, repo);
+        RoutingInspectorViewModel routing = new(runtime, localization);
+        ServersCatalogViewModel servers = new(repo, runtime, localization);
+        DiagnosticsDoctorViewModel diagnostics = new(runtime, repo, localization);
+        SettingsSafetyViewModel settings = new(store, new WindowsAutostartService(@"SOFTWARE\DnsPulseTests_NonExistentRun", "DnsPulseTest"), runtime, localization, theme, journal);
+
+        MainShellViewModel shell = new(
+            localization, runtime, repo, store, theme, overview, routing, servers, diagnostics, settings, journal,
+            antiCheatDetector: static () => (false, []));
+
+        await shell.InitializeAsync();
+        if (shell.LastStartupFeedSyncTask is not null)
+        {
+            await shell.LastStartupFeedSyncTask;
+        }
+
+        shell.Servers.AllServers.Should().Contain(static s => s.Id == "feed_cached_comss");
+        shell.Routing.CustomGeoUnlockDomains.Should().Contain("cached-ai.example");
+    }
+
+    [Fact]
+    public async Task HybridPulseRuntimeService_ForwardsFullConnectAndRoutingRequests_OverNamedPipe()
+    {
+        string pipeName = string.Concat("DnsPulse_TestPipe_", Guid.NewGuid().ToString("N"));
+        ServiceConnectRequest? capturedConnect = null;
+        ServiceRoutingConfigRequest? capturedRouting = null;
+
+        await using PulsePipeIpcServer server = new((req, _) =>
+        {
+            if (req.Command == PipeCommandNames.Connect && !string.IsNullOrWhiteSpace(req.PayloadJson))
+            {
+                capturedConnect = JsonSerializer.Deserialize<ServiceConnectRequest>(req.PayloadJson, CamelCaseJsonOptions);
+                ServiceStatusSnapshot connected = new()
+                {
+                    IsConnected = true,
+                    IsHealthy = true,
+                    ActiveMode = InterceptionMode.AdapterDns,
+                    InterceptionActive = true,
+                    BoundDnsPort = 53,
+                    ActiveTrustedUpstreamId = capturedConnect?.ActiveTrustedUpstreamId,
+                    ActiveGeoUnlockUpstreamId = capturedConnect?.ActiveGeoUnlockUpstreamId
+                };
+                return Task.FromResult(new PipeRpcResponse(req.RequestId, true, PayloadJson: JsonSerializer.Serialize(connected, CamelCaseJsonOptions)));
+            }
+
+            if (req.Command == PipeCommandNames.UpdateRoutingConfig && !string.IsNullOrWhiteSpace(req.PayloadJson))
+            {
+                capturedRouting = JsonSerializer.Deserialize<ServiceRoutingConfigRequest>(req.PayloadJson, CamelCaseJsonOptions);
+                ServiceStatusSnapshot updated = new()
+                {
+                    IsConnected = true,
+                    IsHealthy = true,
+                    ActiveMode = InterceptionMode.AdapterDns,
+                    InterceptionActive = true,
+                    ActiveGeoUnlockRulesCount = capturedRouting?.RoutingConfig?.GeoUnlockRules.Count ?? 0
+                };
+                return Task.FromResult(new PipeRpcResponse(req.RequestId, true, PayloadJson: JsonSerializer.Serialize(updated, CamelCaseJsonOptions)));
+            }
+
+            if (req.Command == PipeCommandNames.Disconnect)
+            {
+                ServiceStatusSnapshot disconnected = new() { IsConnected = false, IsHealthy = false, ActiveMode = InterceptionMode.None };
+                return Task.FromResult(new PipeRpcResponse(req.RequestId, true, PayloadJson: JsonSerializer.Serialize(disconnected, CamelCaseJsonOptions)));
+            }
+
+            return Task.FromResult(new PipeRpcResponse(req.RequestId, true, PayloadJson: "{}"));
+        }, pipeName: pipeName);
+        await server.StartAsync();
+
+        PulsePipeIpcClient client = new(pipeName, TimeSpan.FromSeconds(2));
+        NetworkSnapshotJournal journal = new(_tempDir);
+        HostNetworkHealthProvider health = new(enableOsProbes: false);
+        await using HybridPulseRuntimeService runtime = new(client, journal, health);
+
+        DnsServerEntry trusted = new()
+        {
+            Id = "cf_trusted",
+            Name = "Cloudflare",
+            Protocol = DnsProtocol.DoH,
+            TrustTier = TrustTier.Tier1EncryptedTrusted,
+            PrimaryIp = "1.1.1.1",
+            DohUrl = "https://1.1.1.1/dns-query"
+        };
+        DnsServerEntry geo = new()
+        {
+            Id = "sni_geo",
+            Name = "AutoProxy Edge",
+            Protocol = DnsProtocol.SniProxy,
+            TrustTier = TrustTier.Tier4ExperimentalLab,
+            PrimaryIp = "198.51.100.77",
+            Port = 443,
+            SupportsBypass = true,
+            Tags = ["AI"]
+        };
+
+        await runtime.UpdateRoutingConfigAsync(new SplitNamespaceRouterConfig
+        {
+            GeoUnlockRules = [new GeoUnlockRule("aistudio.google.com")]
+        });
+
+        ServiceStatusSnapshot status = await runtime.ConnectAsync(
+            trusted,
+            geo,
+            fallbackTrustedPool: [trusted],
+            settings: new PulseAppSettings
+            {
+                InterceptionMode = InterceptionMode.AdapterDns,
+                StrategyProfile = "SmartSplitDnsGeo",
+                BlockIpv6OnBypass = true,
+                EnableLocalTlsSplitPac = true
+            });
+
+        status.IsConnected.Should().BeTrue();
+        runtime.IsServiceMode.Should().BeTrue();
+        capturedConnect.Should().NotBeNull();
+        capturedConnect!.InterceptionMode.Should().Be(InterceptionMode.AdapterDns);
+        capturedConnect.StrategyProfile.Should().Be("SmartSplitDnsGeo");
+        capturedConnect.ActiveTrustedUpstreamId.Should().Be("cf_trusted");
+        capturedConnect.ActiveGeoUnlockUpstreamId.Should().Be("sni_geo");
+        capturedConnect.GeoUnlockUpstreams.Should().Contain(static s => s.Id == "sni_geo");
+        capturedConnect.RoutingConfig!.GeoUnlockRules.Should().ContainSingle(static r => r.Pattern == "aistudio.google.com");
+
+        await runtime.UpdateRoutingConfigAsync(new SplitNamespaceRouterConfig
+        {
+            GeoUnlockRules = [new GeoUnlockRule("aistudio.google.com"), new GeoUnlockRule("chatgpt.com")]
+        });
+
+        capturedRouting.Should().NotBeNull();
+        capturedRouting!.RoutingConfig!.GeoUnlockRules.Should().HaveCount(2);
+
+        await runtime.DisconnectAsync();
+    }
+
+    [Fact]
+    public void ThemeAppearanceService_AppliesDarkLightHighContrastAndCompactTokens()
+    {
+        ResourceDictionary resources = [];
+
+        ThemeAppearanceService.ApplyResourceTokenOverrides(resources, Wpf.Ui.Appearance.ApplicationTheme.Dark, ThemeAccentPreset.Emerald, highContrast: false);
+        resources["PulseInnerPanelBrush"].Should().NotBeNull();
+        resources["PulseHeaderSurfaceBrush"].Should().NotBeNull();
+
+        ThemeAppearanceService.ApplyResourceTokenOverrides(resources, Wpf.Ui.Appearance.ApplicationTheme.Light, ThemeAccentPreset.Azure, highContrast: false);
+        System.Windows.Media.SolidColorBrush lightInner = (System.Windows.Media.SolidColorBrush)resources["PulseInnerPanelBrush"]!;
+        lightInner.Color.R.Should().BeGreaterThan(200);
+
+        ThemeAppearanceService.ApplyResourceTokenOverrides(resources, Wpf.Ui.Appearance.ApplicationTheme.HighContrast, ThemeAccentPreset.Emerald, highContrast: true);
+        ((System.Windows.Media.SolidColorBrush)resources["PulseSuccessSubtleBrush"]!).Color.Should().Be(System.Windows.SystemColors.WindowColor);
+
+        ThemeAppearanceService.ApplyCompactTokens(resources, isCompact: true);
+        ((Thickness)resources["PulsePagePadding"]!).Left.Should().Be(16);
+
+        ThemeAppearanceService.ApplyCompactTokens(resources, isCompact: false);
+        ((Thickness)resources["PulsePagePadding"]!).Left.Should().Be(24);
     }
 
     private static int FindAvailableDualPort()

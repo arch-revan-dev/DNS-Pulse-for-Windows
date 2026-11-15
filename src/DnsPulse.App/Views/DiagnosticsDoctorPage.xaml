@@ -5,7 +5,7 @@
              xmlns:conv="clr-namespace:DnsPulse.App.Converters">
   <ScrollViewer VerticalScrollBarVisibility="Auto"
                 HorizontalScrollBarVisibility="Disabled"
-                Padding="20,16,20,24">
+                Padding="{DynamicResource PulsePagePadding}">
     <StackPanel MaxWidth="1280">
       <!-- 6-Layer Diagnostics Doctor Controls -->
       <ui:Card Padding="16" Margin="0,0,0,12">
@@ -140,16 +140,16 @@
                                 VerticalAlignment="Center"
                                 Text="{Binding LayerName}"
                                 TextTrimming="CharacterEllipsis" />
-                  <ui:TextBlock Grid.Column="2"
-                                Appearance="Secondary"
-                                FontTypography="Caption"
-                                VerticalAlignment="Center"
-                                Text="{Binding Duration, Converter={StaticResource LatencyFormatConverter}}" />
+                  <TextBlock Grid.Column="2"
+                             Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                             FontSize="12"
+                             VerticalAlignment="Center"
+                             Text="{Binding Duration, Converter={StaticResource LatencyFormatConverter}}" />
                 </Grid>
-                <ui:TextBlock Appearance="Secondary"
-                              FontTypography="Caption"
-                              Text="{Binding Summary}"
-                              TextWrapping="Wrap" />
+                <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           FontSize="12"
+                           Text="{Binding Summary}"
+                           TextWrapping="Wrap" />
               </StackPanel>
             </ui:Card>
           </DataTemplate>
@@ -180,11 +180,12 @@
             <ui:TextBlock FontTypography="Subtitle"
                           Text="{Binding VerdictTitle}"
                           TextWrapping="Wrap" />
-            <ui:TextBlock Margin="0,4,0,0"
-                          Appearance="Secondary"
-                          Text="{Binding VerdictReason}"
-                          TextWrapping="Wrap"
-                          Visibility="{Binding VerdictReason, Converter={StaticResource NullToVisibilityConverter}}" />
+            <TextBlock Margin="0,4,0,0"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       FontSize="13"
+                       Text="{Binding VerdictReason}"
+                       TextWrapping="Wrap"
+                       Visibility="{Binding VerdictReason, Converter={StaticResource NullToVisibilityConverter}}" />
             <ui:TextBlock Margin="0,6,0,0"
                           FontTypography="BodyStrong"
                           Text="{Binding RemediationTitle}"
@@ -221,8 +222,8 @@
           <Border Margin="0,0,0,12"
                   Padding="12,10"
                   CornerRadius="8"
-                  Background="#1C212A"
-                  BorderBrush="#D97706"
+                  Background="{DynamicResource PulseWarningSubtleBrush}"
+                  BorderBrush="{DynamicResource PulseWarningBorderBrush}"
                   BorderThickness="1">
             <Grid>
               <Grid.ColumnDefinitions>
@@ -235,17 +236,17 @@
                       CornerRadius="13"
                       Margin="0,0,12,0"
                       VerticalAlignment="Top"
-                      Background="#B45309">
+                      Background="{DynamicResource PulseWarningBadgeBgBrush}">
                 <ui:SymbolIcon Symbol="Warning24" FontSize="14" Foreground="White" />
               </Border>
               <StackPanel Grid.Column="1">
                 <TextBlock FontSize="13"
                            FontWeight="SemiBold"
-                           Foreground="#F8FAFC"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                            Text="{conv:Localization Diag_Lab_Title}" />
                 <TextBlock Margin="0,3,0,0"
                            FontSize="12"
-                           Foreground="#CBD5E1"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                            Text="{conv:Localization Diag_Lab_Disclaimer}"
                            TextWrapping="Wrap" />
               </StackPanel>
@@ -295,11 +296,11 @@
             </ui:Button>
           </WrapPanel>
 
-          <ui:TextBlock Margin="0,0,0,8"
-                        Appearance="Secondary"
-                        FontTypography="Caption"
-                        Text="{Binding LabProgressText}"
-                        Visibility="{Binding LabProgressText, Converter={StaticResource NullToVisibilityConverter}}" />
+          <TextBlock Margin="0,0,0,8"
+                     Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                     FontSize="12"
+                     Text="{Binding LabProgressText}"
+                     Visibility="{Binding LabProgressText, Converter={StaticResource NullToVisibilityConverter}}" />
 
           <ListView MaxHeight="190"
                     Style="{StaticResource PulseDarkCardListViewStyle}"
@@ -312,8 +313,8 @@
                 <Border Padding="10,7"
                         Margin="0,0,0,4"
                         CornerRadius="6"
-                        Background="#1C212A"
-                        BorderBrush="#2D3545"
+                        Background="{DynamicResource PulseInnerPanelBrush}"
+                        BorderBrush="{DynamicResource PulseInnerPanelBorderBrush}"
                         BorderThickness="1">
                   <Grid>
                     <Grid.ColumnDefinitions>
@@ -324,14 +325,14 @@
                     <TextBlock Grid.Column="0"
                                FontSize="12"
                                FontWeight="SemiBold"
-                               Foreground="#F8FAFC"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                                VerticalAlignment="Center"
                                Text="{Binding Name}"
                                TextTrimming="CharacterEllipsis" />
                     <TextBlock Grid.Column="1"
                                Margin="12,0,0,0"
                                FontSize="12"
-                               Foreground="#94A3B8"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                VerticalAlignment="Center"
                                Text="{Binding EndpointLabel}"
                                TextTrimming="CharacterEllipsis" />
@@ -339,7 +340,7 @@
                                Margin="12,0,0,0"
                                FontSize="12"
                                FontWeight="SemiBold"
-                               Foreground="#CBD5E1"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                                VerticalAlignment="Center"
                                Text="{Binding LatencyP50Ms, Converter={StaticResource LatencyFormatConverter}}" />
                   </Grid>
@@ -429,7 +430,7 @@
             </Border>
 
             <StackPanel Grid.Column="1" VerticalAlignment="Center">
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Diag_Lan_DnsEndpoint}" />
+              <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Text="{conv:Localization Diag_Lan_DnsEndpoint}" />
               <StackPanel Orientation="Horizontal" Margin="0,2,0,10">
                 <ui:TextBlock FontFamily="Consolas"
                               FontTypography="BodyStrong"
@@ -446,7 +447,7 @@
                 </ui:Button>
               </StackPanel>
 
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Diag_Lan_PacUrl}" />
+              <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Text="{conv:Localization Diag_Lan_PacUrl}" />
               <StackPanel Orientation="Horizontal" Margin="0,2,0,10">
                 <ui:TextBlock FontFamily="Consolas"
                               FontTypography="BodyStrong"
@@ -463,7 +464,7 @@
                 </ui:Button>
               </StackPanel>
 
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Diag_Lan_ProxyEndpoint}" />
+              <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Text="{conv:Localization Diag_Lan_ProxyEndpoint}" />
               <ui:TextBlock Margin="0,2,0,0"
                             FontFamily="Consolas"
                             FontTypography="BodyStrong"

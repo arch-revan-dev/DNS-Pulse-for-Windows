@@ -25,7 +25,8 @@ public sealed class UpstreamClientRegistryTests
             DnsProtocol.DoQ,
             DnsProtocol.DnsCrypt,
             DnsProtocol.AnonymizedDnsCrypt,
-            DnsProtocol.ODoH
+            DnsProtocol.ODoH,
+            DnsProtocol.SniProxy
         ];
 
         foreach (DnsProtocol protocol in expectedProtocols)
@@ -34,7 +35,7 @@ public sealed class UpstreamClientRegistryTests
             client!.Protocol.Should().Be(protocol);
         }
 
-        Action unsupported = () => registry.GetClient(DnsProtocol.SniProxy);
+        Action unsupported = () => registry.GetClient((DnsProtocol)999);
         unsupported.Should().Throw<NotSupportedException>();
     }
 

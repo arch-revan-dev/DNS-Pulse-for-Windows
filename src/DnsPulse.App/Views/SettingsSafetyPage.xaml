@@ -5,7 +5,7 @@
              xmlns:conv="clr-namespace:DnsPulse.App.Converters">
   <ScrollViewer VerticalScrollBarVisibility="Auto"
                 HorizontalScrollBarVisibility="Disabled"
-                Padding="20,16,20,24">
+                Padding="{DynamicResource PulsePagePadding}">
     <StackPanel MaxWidth="1040">
       <!-- Startup & Tray -->
       <ui:TextBlock FontTypography="Subtitle"
@@ -86,16 +86,17 @@
           <!-- Anti-Cheat Status Card -->
           <Border Padding="12,9"
                   CornerRadius="8"
-                  Background="#1C212A"
                   BorderThickness="1"
                   AutomationProperties.LiveSetting="Polite"
                   AutomationProperties.Name="{Binding AntiCheatStatusMessage}">
             <Border.Style>
               <Style TargetType="Border">
-                <Setter Property="BorderBrush" Value="#2563EB" />
+                <Setter Property="Background" Value="{DynamicResource PulseInfoSubtleBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource PulseInfoBorderBrush}" />
                 <Style.Triggers>
                   <DataTrigger Binding="{Binding IsWfpAntiCheatBlocked}" Value="True">
-                    <Setter Property="BorderBrush" Value="#DC2626" />
+                    <Setter Property="Background" Value="{DynamicResource PulseDangerSubtleBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource PulseDangerBorderBrush}" />
                   </DataTrigger>
                 </Style.Triggers>
               </Style>
@@ -113,10 +114,10 @@
                       VerticalAlignment="Center">
                 <Border.Style>
                   <Style TargetType="Border">
-                    <Setter Property="Background" Value="#1D4ED8" />
+                    <Setter Property="Background" Value="{DynamicResource PulseInfoBadgeBgBrush}" />
                     <Style.Triggers>
                       <DataTrigger Binding="{Binding IsWfpAntiCheatBlocked}" Value="True">
-                        <Setter Property="Background" Value="#B91C1C" />
+                        <Setter Property="Background" Value="{DynamicResource PulseDangerBadgeBgBrush}" />
                       </DataTrigger>
                     </Style.Triggers>
                   </Style>
@@ -137,7 +138,7 @@
               <TextBlock Grid.Column="1"
                          VerticalAlignment="Center"
                          FontSize="12"
-                         Foreground="#F8FAFC"
+                         Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                          Text="{Binding AntiCheatStatusMessage}"
                          TextWrapping="Wrap" />
             </Grid>
@@ -145,7 +146,7 @@
 
           <WrapPanel Orientation="Horizontal" Margin="0,12,0,0">
             <StackPanel Margin="0,0,16,8">
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_PoolStrategy}" />
+              <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Text="{conv:Localization Settings_PoolStrategy}" />
               <ComboBox Width="190"
                         Margin="0,4,0,0"
                         ItemsSource="{Binding AvailablePoolStrategies}"
@@ -167,7 +168,7 @@
               </ComboBox>
             </StackPanel>
             <StackPanel Margin="0,0,16,8">
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_BootstrapDns}" />
+              <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Text="{conv:Localization Settings_BootstrapDns}" />
               <ComboBox Width="165"
                         Margin="0,4,0,0"
                         ItemsSource="{Binding AvailableBootstrapProviders}"
@@ -189,7 +190,7 @@
               </ComboBox>
             </StackPanel>
             <StackPanel Margin="0,0,16,8">
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_ProbeTimeoutMs}" />
+              <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Text="{conv:Localization Settings_ProbeTimeoutMs}" />
               <ui:TextBox Width="140"
                           Margin="0,4,0,0"
                           Text="{Binding ProbeTimeoutMs, UpdateSourceTrigger=PropertyChanged}"
@@ -197,7 +198,7 @@
                           AutomationProperties.HelpText="{conv:Localization Settings_ProbeTimeoutMs}" />
             </StackPanel>
             <StackPanel Margin="0,0,0,8">
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_BenchmarkConcurrency}" />
+              <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Text="{conv:Localization Settings_BenchmarkConcurrency}" />
               <ui:TextBox Width="140"
                           Margin="0,4,0,0"
                           Text="{Binding BenchmarkConcurrency, UpdateSourceTrigger=PropertyChanged}"
@@ -207,14 +208,14 @@
           </WrapPanel>
 
           <!-- Configurable Local Ports -->
-          <ui:TextBlock Margin="0,8,0,6"
-                        Appearance="Secondary"
-                        FontTypography="Caption"
-                        FontWeight="SemiBold"
-                        Text="{conv:Localization Settings_Ports_Title}" />
+          <TextBlock Margin="0,8,0,6"
+                     Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                     FontSize="12"
+                     FontWeight="SemiBold"
+                     Text="{conv:Localization Settings_Ports_Title}" />
           <WrapPanel Orientation="Horizontal">
             <StackPanel Margin="0,0,16,8">
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_Port_Dns}" />
+              <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Text="{conv:Localization Settings_Port_Dns}" />
               <ui:TextBox Width="160"
                           Margin="0,4,0,0"
                           Text="{Binding LocalDnsPort, UpdateSourceTrigger=PropertyChanged}"
@@ -222,7 +223,7 @@
                           AutomationProperties.HelpText="{conv:Localization Settings_Ports_Title}" />
             </StackPanel>
             <StackPanel Margin="0,0,16,8">
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_Port_Doh}" />
+              <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Text="{conv:Localization Settings_Port_Doh}" />
               <ui:TextBox Width="150"
                           Margin="0,4,0,0"
                           Text="{Binding LocalDohPort, UpdateSourceTrigger=PropertyChanged}"
@@ -230,7 +231,7 @@
                           AutomationProperties.HelpText="{conv:Localization Settings_Ports_Title}" />
             </StackPanel>
             <StackPanel Margin="0,0,16,8">
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_Port_Proxy}" />
+              <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Text="{conv:Localization Settings_Port_Proxy}" />
               <ui:TextBox Width="150"
                           Margin="0,4,0,0"
                           Text="{Binding LocalProxyPort, UpdateSourceTrigger=PropertyChanged}"
@@ -238,7 +239,7 @@
                           AutomationProperties.HelpText="{conv:Localization Settings_Ports_Title}" />
             </StackPanel>
             <StackPanel Margin="0,0,0,8">
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_Port_Pac}" />
+              <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Text="{conv:Localization Settings_Port_Pac}" />
               <ui:TextBox Width="150"
                           Margin="0,4,0,0"
                           Text="{Binding LocalPacPort, UpdateSourceTrigger=PropertyChanged}"
@@ -347,10 +348,10 @@
                          AutomationProperties.HelpText="{conv:Localization Settings_Appearance_Title}" />
       </ui:CardControl>
 
-      <ui:TextBlock Margin="4,0,0,16"
-                    Appearance="Secondary"
-                    FontTypography="Caption"
-                    Text="{Binding BackdropStatusText}" />
+      <TextBlock Margin="4,0,0,16"
+                 Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                 FontSize="12"
+                 Text="{Binding BackdropStatusText}" />
 
       <!-- Verified Updates -->
       <ui:CardExpander Header="{conv:Localization Settings_Updates_Title}"
@@ -360,14 +361,14 @@
           <ui:SymbolIcon Symbol="ArrowDownload24" />
         </ui:CardExpander.Icon>
         <StackPanel>
-          <ui:TextBlock Margin="0,0,0,8"
-                        Appearance="Secondary"
-                        FontTypography="Caption"
-                        Text="{Binding CurrentAppVersionText}" />
+          <TextBlock Margin="0,0,0,8"
+                     Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                     FontSize="12"
+                     Text="{Binding CurrentAppVersionText}" />
 
           <WrapPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,8">
             <StackPanel Margin="0,0,16,8">
-              <ui:TextBlock Appearance="Secondary" FontTypography="Caption" Text="{conv:Localization Settings_UpdateChannel}" />
+              <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Text="{conv:Localization Settings_UpdateChannel}" />
               <ComboBox Width="170"
                         Margin="0,4,0,0"
                         ItemsSource="{Binding AvailableUpdateChannels}"
@@ -462,11 +463,11 @@
                        Value="{Binding UpdateProgressPercent, Mode=OneWay}"
                        Visibility="{Binding IsUpdating, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
-          <ui:TextBlock Appearance="Secondary"
-                        FontTypography="Caption"
-                        Text="{Binding UpdateStatusMessage}"
-                        TextWrapping="Wrap"
-                        Visibility="{Binding UpdateStatusMessage, Converter={StaticResource NullToVisibilityConverter}}" />
+          <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                     FontSize="12"
+                     Text="{Binding UpdateStatusMessage}"
+                     TextWrapping="Wrap"
+                     Visibility="{Binding UpdateStatusMessage, Converter={StaticResource NullToVisibilityConverter}}" />
         </StackPanel>
       </ui:CardExpander>
 
@@ -521,22 +522,22 @@
           </WrapPanel>
 
           <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-            <ui:TextBlock Margin="0,0,6,0"
-                          Appearance="Secondary"
-                          FontTypography="Caption"
-                          Text="{conv:Localization Settings_LogsPathLabel}" />
-            <ui:TextBlock Appearance="Secondary"
-                          FontTypography="Caption"
-                          Text="{Binding LogDirectoryPath}"
-                          TextTrimming="CharacterEllipsis" />
+            <TextBlock Margin="0,0,6,0"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       FontSize="12"
+                       Text="{conv:Localization Settings_LogsPathLabel}" />
+            <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       FontSize="12"
+                       Text="{Binding LogDirectoryPath}"
+                       TextTrimming="CharacterEllipsis" />
           </StackPanel>
 
-          <ui:TextBlock Margin="0,8,0,0"
-                        Appearance="Secondary"
-                        FontTypography="Caption"
-                        Text="{Binding SafetyStatusMessage}"
-                        TextWrapping="Wrap"
-                        Visibility="{Binding SafetyStatusMessage, Converter={StaticResource NullToVisibilityConverter}}" />
+          <TextBlock Margin="0,8,0,0"
+                     Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                     FontSize="12"
+                     Text="{Binding SafetyStatusMessage}"
+                     TextWrapping="Wrap"
+                     Visibility="{Binding SafetyStatusMessage, Converter={StaticResource NullToVisibilityConverter}}" />
         </StackPanel>
       </ui:Card>
     </StackPanel>

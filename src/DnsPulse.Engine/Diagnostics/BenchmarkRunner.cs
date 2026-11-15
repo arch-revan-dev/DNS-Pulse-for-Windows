@@ -1,6 +1,9 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using DnsPulse.Core.Models;
+using DnsPulse.Core.Wire;
 using DnsPulse.Engine.Contracts;
 
 namespace DnsPulse.Engine.Diagnostics;
@@ -130,13 +133,13 @@ public sealed class BenchmarkRunner
                 {
                     channel.Writer.TryComplete(ex);
                 }
-                catch (InvalidOperationException ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     channel.Writer.TryComplete(ex);
                 }
-                catch (ArgumentException ex)
+                finally
                 {
-                    channel.Writer.TryComplete(ex);
+                    channel.Writer.TryComplete();
                 }
             },
             cancellationToken);
@@ -178,6 +181,7 @@ public sealed class BenchmarkRunner
         return results;
     }
 
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Isolates unexpected per-server probe failures so batch benchmarks always stream and complete cleanly.")]
     private async Task BenchmarkSingleAsync(
         int index,
         DnsServerEntry server,
@@ -188,17 +192,64 @@ public sealed class BenchmarkRunner
         Func<int> incrementCompleted,
         CancellationToken cancellationToken)
     {
-        DiagnosticReport report = await _diagnosticEngine.DiagnoseAsync(
-            targetDomain,
-            server,
-            probeOptions,
-            cancellationToken).ConfigureAwait(false);
+        DiagnosticReport report;
+        try
+        {
+            report = await _diagnosticEngine.DiagnoseAsync(
+                targetDomain,
+                server,
+                probeOptions,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            report = CreateFailedFallbackReport(targetDomain, server, ex);
+        }
 
         DnsServerEntry updated = ApplyReportToServer(server, report);
         int completed = incrementCompleted();
         await writer.WriteAsync(
             new BenchmarkProgressUpdate(index, completed, totalCount, updated, report),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private static DiagnosticReport CreateFailedFallbackReport(
+        string targetDomain,
+        DnsServerEntry server,
+        Exception exception)
+    {
+        string reason = string.Create(
+            CultureInfo.InvariantCulture,
+            $"Diagnostic probe failed for '{server.Name}': {exception.Message}");
+
+        return new DiagnosticReport
+        {
+            TargetDomain = targetDomain,
+            Upstream = server,
+            StartedAtUtc = DateTimeOffset.UtcNow,
+            TotalDuration = TimeSpan.Zero,
+            Verdict = DiagnosticVerdict.Unknown,
+            Reason = reason,
+            Remediation = new RecommendedRemediation(
+                RemediationActionKind.None,
+                "Retry Probe",
+                reason,
+                targetDomain),
+            Layers =
+            [
+                new DiagnosticLayerResult(
+                    2,
+                    "Transport Reachability & Latency",
+                    DiagnosticLayerStatus.Failed,
+                    TimeSpan.Zero,
+                    reason)
+            ],
+            PacketLossPercent = 100
+        };
     }
 
     private static DnsServerEntry ApplyReportToServer(DnsServerEntry server, DiagnosticReport report)
@@ -233,6 +284,22 @@ public sealed class BenchmarkRunner
             resolvedStrings[i] = report.ResolvedAddresses[i].ToString();
         }
 
+        DiagnosticLayerResult? layer4 = null;
+        foreach (DiagnosticLayerResult layer in report.Layers)
+        {
+            if (layer.LayerNumber == 4)
+            {
+                layer4 = layer;
+                break;
+            }
+        }
+
+        bool? port443Ok = report.TlsHandshakeSucceeded
+            ? true
+            : layer4?.Status == DiagnosticLayerStatus.Failed
+                ? false
+                : server.Port443Ok;
+
         return server with
         {
             LastLatencyMs = report.LatencyP50Ms,
@@ -246,7 +313,7 @@ public sealed class BenchmarkRunner
             VerdictReason = report.Reason,
             ResolvedIps = resolvedStrings,
             CompanionPassed = report.CompanionPassed,
-            Port443Ok = report.TlsHandshakeSucceeded ? true : server.Port443Ok,
+            Port443Ok = port443Ok,
             HttpStatus = report.HttpStatusCode,
             LastCheckedDomain = report.TargetDomain,
             LastCheckedAt = report.StartedAtUtc,

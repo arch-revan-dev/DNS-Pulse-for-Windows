@@ -2,12 +2,14 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using DnsPulse.Core.Models;
 using DnsPulse.Core.Routing;
 using DnsPulse.Core.Security;
 using DnsPulse.Core.Wire;
 using DnsPulse.Engine.Cache;
 using DnsPulse.Engine.Contracts;
+using DnsPulse.Engine.Transports;
 
 namespace DnsPulse.Engine.Pipeline;
 
@@ -23,6 +25,7 @@ public sealed class PulseCoreDnsEngine : IPulseDnsResolver
     private readonly Func<DnsProtocol, IDnsUpstreamClient> _clientFactory;
     private readonly QueryTelemetryBuffer _telemetry;
     private PulseCoreEngineOptions _options;
+    private IPAddress? _lastLearnedSmartProxyIp;
 
     public PulseCoreDnsEngine(
         SplitNamespaceRouter router,
@@ -65,12 +68,83 @@ public sealed class PulseCoreDnsEngine : IPulseDnsResolver
     public QueryTelemetryBuffer Telemetry => _telemetry;
 
     /// <summary>
+    /// Gets the most recent verified non-direct IPv4 proxy address learned from Zone 3 Geo-Unlock answers, if any.
+    /// </summary>
+    public IPAddress? LastLearnedSmartProxyIp => Volatile.Read(ref _lastLearnedSmartProxyIp);
+
+    /// <summary>
     /// Atomically swaps engine options (such as Zone 1 / Zone 3 upstreams or Zone 4 pool strategy).
     /// </summary>
     public void UpdateOptions(PulseCoreEngineOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         Interlocked.Exchange(ref _options, options);
+        Interlocked.Exchange(ref _lastLearnedSmartProxyIp, null);
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="host"/> maps to Zone 3 Geo-Unlock
+    /// (without being security-pinned) or Zone 2 Block/Protect, where direct bootstrap fallback must never run.
+    /// </summary>
+    public bool IsGeoUnlockOrBlocked(string host) => _router.IsGeoUnlockOrBlocked(host);
+
+    /// <summary>
+    /// Resolves destination IP addresses for sidecar/proxy forwarding via <see cref="ResolveAsync"/>.
+    /// Zone 2 blocked and Zone 3 Geo-Unlock domains never fall back to <paramref name="nonGeoDirectFallbackAsync"/>,
+    /// guaranteeing Geo-Unlock hosts never leak to unproxied bootstrap resolvers (such as <c>1.1.1.1</c>).
+    /// </summary>
+    public async Task<IReadOnlyList<IPAddress>> ResolveHostAddressesForProxyAsync(
+        string host,
+        Func<string, CancellationToken, Task<IReadOnlyList<IPAddress>>>? nonGeoDirectFallbackAsync = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(host);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        string trimmed = host.Trim().TrimEnd('.');
+        if (IPAddress.TryParse(trimmed, out IPAddress? literalIp))
+        {
+            return [literalIp];
+        }
+
+        RouteDecision decision = _router.Route(trimmed);
+        if (decision.IsBlocked)
+        {
+            return [];
+        }
+
+        bool forbidDirectFallback = !decision.IsSecurityPinned && decision.Zone == RouteZone.Zone3GeoUnlock;
+
+        ushort queryId = (ushort)RandomNumberGenerator.GetInt32(1, ushort.MaxValue + 1);
+        DnsMessage query = DnsMessage.CreateQuery(queryId, trimmed, DnsRecordType.A);
+        DnsMessage response = await ResolveAsync(query, cancellationToken).ConfigureAwait(false);
+
+        List<IPAddress> addresses = [];
+        if (response.EffectiveResponseCode == DnsResponseCode.NoError)
+        {
+            foreach (DnsResourceRecord record in response.Answers)
+            {
+                if (record.RecordType == DnsRecordType.A &&
+                    record.Address is not null &&
+                    !IpSafetyInspector.IsPrivateOrBogon(record.Address))
+                {
+                    addresses.Add(record.Address);
+                }
+            }
+        }
+
+        if (addresses.Count > 0)
+        {
+            return addresses;
+        }
+
+        if (forbidDirectFallback || nonGeoDirectFallbackAsync is null)
+        {
+            return [];
+        }
+
+        IReadOnlyList<IPAddress> fallback = await nonGeoDirectFallbackAsync(trimmed, cancellationToken).ConfigureAwait(false);
+        return fallback ?? [];
     }
 
     public async Task<DnsMessage> ResolveAsync(DnsMessage query, CancellationToken cancellationToken = default)
@@ -293,6 +367,19 @@ public sealed class PulseCoreDnsEngine : IPulseDnsResolver
             return ResolveSniProxy(query, question, eligible[0], options);
         }
 
+        // Enforce IPv4-only / clean empty NOERROR on Geo-Unlock AAAA (28) and optional HTTPS/SVCB stripping.
+        if ((options.GeoUnlockIpv4Only && question.RecordType == DnsRecordType.AAAA) ||
+            (options.DropHttpsSvcbOnGeoUnlock && question.RecordType is DnsRecordType.HTTPS or DnsRecordType.SVCB))
+        {
+            return new ResolutionResult(
+                CreateEmptyNoErrorResponse(query),
+                eligible[0].Name,
+                eligible[0].Protocol,
+                RewrittenSvcb: true,
+                Cacheable: true,
+                question.RecordType == DnsRecordType.AAAA ? "Zone3Ipv4OnlyEmptyAaaa" : "Zone3DroppedHttpsSvcb");
+        }
+
         PoolExecutionResult outcome = await _poolManager.QueryPoolAsync(
             eligible,
             options.Zone3Strategy,
@@ -303,6 +390,34 @@ public sealed class PulseCoreDnsEngine : IPulseDnsResolver
 
         if (!outcome.Succeeded || outcome.QueryResult is null || outcome.ServerUsed is null)
         {
+            if (question.RecordType is DnsRecordType.AAAA or DnsRecordType.HTTPS or DnsRecordType.SVCB)
+            {
+                return new ResolutionResult(
+                    CreateEmptyNoErrorResponse(query),
+                    outcome.ServerUsed?.Name ?? eligible[0].Name,
+                    outcome.ServerUsed?.Protocol ?? eligible[0].Protocol,
+                    RewrittenSvcb: true,
+                    Cacheable: false,
+                    "Zone3EmptyNoDataFallback");
+            }
+
+            if (question.RecordType == DnsRecordType.A &&
+                options.EnableLearnedSmartProxyFallback &&
+                Volatile.Read(ref _lastLearnedSmartProxyIp) is IPAddress learnedIp)
+            {
+                DnsMessage fallbackMessage = SniProxyDnsClient.BuildSynthesizedResponse(
+                    query,
+                    learnedIp,
+                    options.SniProxySyntheticTtlSeconds);
+                return new ResolutionResult(
+                    fallbackMessage,
+                    "LearnedSmartProxy",
+                    DnsProtocol.SniProxy,
+                    RewrittenSvcb: false,
+                    Cacheable: false,
+                    "Zone3LearnedSmartProxyFallback");
+            }
+
             return new ResolutionResult(
                 CreateErrorResponse(query, DnsResponseCode.ServFail),
                 outcome.ServerUsed?.Name ?? "Zone3GeoUnlock",
@@ -325,8 +440,10 @@ public sealed class PulseCoreDnsEngine : IPulseDnsResolver
         }
 
         DnsMessage original = outcome.QueryResult.Response;
-        DnsMessage rewritten = HttpsSvcbRouteRewriter.Rewrite(original, geoUnlockIpv4Only: true);
+        DnsMessage rewritten = HttpsSvcbRouteRewriter.Rewrite(original, geoUnlockIpv4Only: options.GeoUnlockIpv4Only);
         bool svcbChanged = !ReferenceEquals(rewritten, original);
+
+        TryLearnSmartProxyIp(question.Name, rewritten);
 
         return new ResolutionResult(
             rewritten,
@@ -335,6 +452,40 @@ public sealed class PulseCoreDnsEngine : IPulseDnsResolver
             RewrittenSvcb: svcbChanged,
             Cacheable: true,
             "Zone3SmartDnsResolved");
+    }
+
+    private void TryLearnSmartProxyIp(string domain, DnsMessage response)
+    {
+        foreach (DnsResourceRecord record in response.Answers)
+        {
+            if (record.RecordType == DnsRecordType.A &&
+                record.Address is not null &&
+                record.Address.AddressFamily == AddressFamily.InterNetwork &&
+                !IpSafetyInspector.IsPrivateOrBogon(record.Address) &&
+                !AntiDirectAndGeoSignatures.IsDirectServiceIp(record.Address, domain))
+            {
+                Interlocked.Exchange(ref _lastLearnedSmartProxyIp, record.Address);
+                return;
+            }
+        }
+    }
+
+    private static DnsMessage CreateEmptyNoErrorResponse(DnsMessage query)
+    {
+        return new DnsMessage
+        {
+            Header = new DnsHeader
+            {
+                Id = query.Header.Id,
+                IsResponse = true,
+                OpCode = query.Header.OpCode,
+                RecursionDesired = query.Header.RecursionDesired,
+                RecursionAvailable = true,
+                ResponseCode = DnsResponseCode.NoError,
+                QuestionCount = (ushort)query.Questions.Count
+            },
+            Questions = query.Questions
+        };
     }
 
     private static ResolutionResult ResolveSniProxy(
@@ -388,19 +539,7 @@ public sealed class PulseCoreDnsEngine : IPulseDnsResolver
         }
 
         // For AAAA, HTTPS (65), and SVCB (64), return clean NOERROR NODATA so clients route over IPv4 A to SNI-Proxy.
-        DnsMessage noData = new()
-        {
-            Header = new DnsHeader
-            {
-                Id = query.Header.Id,
-                IsResponse = true,
-                RecursionDesired = query.Header.RecursionDesired,
-                RecursionAvailable = true,
-                ResponseCode = DnsResponseCode.NoError,
-                QuestionCount = (ushort)query.Questions.Count
-            },
-            Questions = query.Questions
-        };
+        DnsMessage noData = CreateEmptyNoErrorResponse(query);
 
         bool stripped = question.RecordType is DnsRecordType.AAAA or DnsRecordType.HTTPS or DnsRecordType.SVCB;
         return new ResolutionResult(
@@ -469,6 +608,27 @@ public sealed class PulseCoreDnsEngine : IPulseDnsResolver
         DnsServerEntry server,
         CancellationToken cancellationToken)
     {
+        if (server.Protocol == DnsProtocol.SniProxy)
+        {
+            string rawIp = !string.IsNullOrWhiteSpace(server.SmartProxyIp) ? server.SmartProxyIp : server.PrimaryIp;
+            if (!IPAddress.TryParse(rawIp, out IPAddress? proxyIp) || IpSafetyInspector.IsPrivateOrBogon(proxyIp))
+            {
+                throw new InvalidOperationException(
+                    string.Create(CultureInfo.InvariantCulture, $"SNI-Proxy upstream '{server.Name}' has no valid public IP."));
+            }
+
+            PulseCoreEngineOptions currentOptions = Volatile.Read(ref _options);
+            DnsMessage synthesized = SniProxyDnsClient.BuildSynthesizedResponse(
+                query,
+                proxyIp,
+                currentOptions.SniProxySyntheticTtlSeconds);
+            return Task.FromResult(new UpstreamQueryResult(
+                synthesized,
+                TimeSpan.FromMilliseconds(1),
+                string.Create(CultureInfo.InvariantCulture, $"smartproxy://{proxyIp}:{server.Port ?? 443}"),
+                DnsProtocol.SniProxy));
+        }
+
         IDnsUpstreamClient client = _clientFactory(server.Protocol);
         return client.QueryAsync(query, server, cancellationToken);
     }

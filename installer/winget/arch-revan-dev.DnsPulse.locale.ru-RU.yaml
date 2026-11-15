@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.6.0.schema.json
 
 PackageIdentifier: arch-revan-dev.DnsPulse
-PackageVersion: 2.0.3
+PackageVersion: 2.0.4
 PackageLocale: ru-RU
 Publisher: DNS Pulse Open Source Contributors
 PublisherUrl: https://github.com/arch-revan-dev/DNS-Pulse-for-Windows
@@ -26,6 +26,6 @@ Tags:
   - privacy
   - networking
   - diagnostics
-ReleaseNotesUrl: https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/tag/v2.0.3
+ReleaseNotesUrl: https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/tag/v2.0.4
 ManifestType: locale
 ManifestVersion: 1.6.0

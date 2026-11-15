@@ -66,8 +66,25 @@ public sealed class ServerCategoryClassifierTests
         ServerCategoryClassifier.SupportsAiDomain(tier3Level3).Should().BeFalse();
 
         DnsServerEntry sniProxy = flagships.First(static s => s.Protocol == DnsProtocol.SniProxy);
-        ServerCategoryClassifier.Classify(sniProxy).Should().Be(ServerDisplayCategory.CustomAndDiscovered);
-        ServerCategoryClassifier.SupportsAiDomain(sniProxy).Should().BeFalse();
+        ServerCategoryClassifier.Classify(sniProxy).Should().Be(ServerDisplayCategory.AutoProxy);
+        ServerCategoryClassifier.SupportsAiDomain(sniProxy).Should().BeTrue();
+        ServerCategoryClassifier.SupportsTargetDomain(sniProxy, "gemini.google.com").Should().BeTrue();
+        ServerCategoryClassifier.SupportsTargetDomain(sniProxy, "open.spotify.com").Should().BeTrue();
+        ServerCategoryClassifier.SupportsTargetDomain(sniProxy, "discord.com").Should().BeTrue();
+
+        DnsServerEntry dnsAutoProxy = new()
+        {
+            Id = "custom_autoproxy_dns",
+            Name = "Auto Proxy SmartDNS",
+            Protocol = DnsProtocol.DoH,
+            TrustTier = TrustTier.Tier2VerifiedGeoUnlock,
+            Category = "Auto Proxy",
+            Tags = ["auto-proxy", "ai"],
+            SupportsBypass = true,
+            DohUrl = "https://autoproxy.example/dns-query"
+        };
+        ServerCategoryClassifier.Classify(dnsAutoProxy).Should().Be(ServerDisplayCategory.AutoProxy);
+        ServerCategoryClassifier.IsAutoProxyServer(dnsAutoProxy).Should().BeTrue();
 
         DnsServerEntry customServer = new()
         {
@@ -94,5 +111,16 @@ public sealed class ServerCategoryClassifierTests
         ServerCategoryClassifier.IsAiDomain("xbox.com").Should().BeFalse();
         ServerCategoryClassifier.IsAiDomain(null).Should().BeFalse();
         ServerCategoryClassifier.IsAiDomain("   ").Should().BeFalse();
+    }
+
+    [Fact]
+    public void ClassifyTargetDomain_MapsAiStreamingGamingSocialAndGeneral()
+    {
+        ServerCategoryClassifier.ClassifyTargetDomain("aistudio.google.com").Should().Be(TargetDomainClass.Ai);
+        ServerCategoryClassifier.ClassifyTargetDomain("open.spotify.com").Should().Be(TargetDomainClass.Streaming);
+        ServerCategoryClassifier.ClassifyTargetDomain("www.youtube.com").Should().Be(TargetDomainClass.Streaming);
+        ServerCategoryClassifier.ClassifyTargetDomain("login.live.com").Should().Be(TargetDomainClass.Gaming);
+        ServerCategoryClassifier.ClassifyTargetDomain("discord.com").Should().Be(TargetDomainClass.Social);
+        ServerCategoryClassifier.ClassifyTargetDomain("one.one.one.one").Should().Be(TargetDomainClass.General);
     }
 }

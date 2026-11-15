@@ -13,6 +13,7 @@ using DnsPulse.Core.Routing;
 using DnsPulse.Core.Security;
 using DnsPulse.Core.Wire;
 using DnsPulse.Engine.Contracts;
+using DnsPulse.Engine.Transports;
 
 namespace DnsPulse.Engine.Diagnostics;
 
@@ -293,6 +294,11 @@ public sealed class SixLayerDiagnosticEngine
         DiagnosticProbeOptions options,
         CancellationToken cancellationToken)
     {
+        if (upstream.Protocol == DnsProtocol.SniProxy)
+        {
+            return await ExecuteSniProxyLayer2Async(domain, upstream, options, cancellationToken).ConfigureAwait(false);
+        }
+
         Stopwatch layerSw = Stopwatch.StartNew();
         int sampleCount = Math.Clamp(options.TransportProbeSamples, 1, 16);
         IDnsUpstreamClient client = _clientFactory(upstream.Protocol);
@@ -383,7 +389,140 @@ public sealed class SixLayerDiagnosticEngine
             }
         }
 
+        return BuildLayer2Outcome(
+            layerSw.Elapsed,
+            rttsMs,
+            failureCount,
+            sampleCount,
+            upstream.Protocol,
+            sampleResponse,
+            sawTlsAuthFailure,
+            sawTransportResetOrTimeout,
+            lastError ?? "All upstream transport probe samples failed.");
+    }
+
+    private static async Task<Layer2Outcome> ExecuteSniProxyLayer2Async(
+        string domain,
+        DnsServerEntry upstream,
+        DiagnosticProbeOptions options,
+        CancellationToken cancellationToken)
+    {
+        Stopwatch layerSw = Stopwatch.StartNew();
+        int sampleCount = Math.Clamp(options.TransportProbeSamples, 1, 16);
+
+        IPEndPoint? configuredEndpoint = ResolveTlsEndpoint(upstream, [], [], options);
+        if (configuredEndpoint is null)
+        {
+            layerSw.Stop();
+            return new Layer2Outcome(
+                new DiagnosticLayerResult(
+                    2,
+                    "Transport Reachability & Latency",
+                    DiagnosticLayerStatus.Failed,
+                    layerSw.Elapsed,
+                    "SNI-Proxy upstream is missing a valid IPv4/IPv6 proxy address."),
+                SampleResponse: null,
+                P50Ms: null,
+                P95Ms: null,
+                JitterMs: null,
+                PacketLossPercent: 100,
+                SawTlsAuthFailure: false,
+                SawTransportResetOrTimeout: true);
+        }
+
+        // Preserve declared SmartProxyIp/PrimaryIp in synthetic DNS answer when OverrideTlsEndpoint redirects TLS to localhost in tests.
+        string? rawDeclaredIp = !string.IsNullOrWhiteSpace(upstream.SmartProxyIp) ? upstream.SmartProxyIp : upstream.PrimaryIp;
+        IPAddress syntheticAnswerIp = IPAddress.TryParse(rawDeclaredIp, out IPAddress? parsedDeclared)
+            ? parsedDeclared
+            : configuredEndpoint.Address;
+
+        List<double> rttsMs = new(sampleCount);
+        int failureCount = 0;
+        bool sawTransportResetOrTimeout = false;
+        string? lastError = null;
+
+        for (int index = 0; index < sampleCount; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            using CancellationTokenSource sampleCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            sampleCts.CancelAfter(options.ProbeTimeout);
+
+            Stopwatch sampleSw = Stopwatch.StartNew();
+            try
+            {
+                using TcpClient tcp = new(configuredEndpoint.AddressFamily);
+                await tcp.ConnectAsync(configuredEndpoint.Address, configuredEndpoint.Port, sampleCts.Token).ConfigureAwait(false);
+                sampleSw.Stop();
+                rttsMs.Add(Math.Max(0.01, sampleSw.Elapsed.TotalMilliseconds));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (SocketException ex)
+            {
+                sampleSw.Stop();
+                failureCount++;
+                sawTransportResetOrTimeout = true;
+                lastError = ex.Message;
+            }
+            catch (IOException ex)
+            {
+                sampleSw.Stop();
+                failureCount++;
+                sawTransportResetOrTimeout = true;
+                lastError = ex.Message;
+            }
+            catch (TimeoutException ex)
+            {
+                sampleSw.Stop();
+                failureCount++;
+                sawTransportResetOrTimeout = true;
+                lastError = ex.Message;
+            }
+            catch (OperationCanceledException)
+            {
+                sampleSw.Stop();
+                failureCount++;
+                sawTransportResetOrTimeout = true;
+                lastError = "SNI-Proxy TCP:443 probe timed out.";
+            }
+        }
+
         layerSw.Stop();
+
+        DnsMessage? sampleResponse = rttsMs.Count > 0
+            ? SniProxyDnsClient.BuildSynthesizedResponse(
+                DnsMessage.CreateQuery((ushort)RandomNumberGenerator.GetInt32(1, ushort.MaxValue + 1), domain, DnsRecordType.A),
+                syntheticAnswerIp)
+            : null;
+
+        return BuildLayer2Outcome(
+            layerSw.Elapsed,
+            rttsMs,
+            failureCount,
+            sampleCount,
+            upstream.Protocol,
+            sampleResponse,
+            sawTlsAuthFailure: false,
+            sawTransportResetOrTimeout,
+            lastError ?? "All SNI-Proxy TCP:443 probe samples failed.",
+            summaryPrefix: string.Create(CultureInfo.InvariantCulture, $"TCP:{configuredEndpoint.Port} "));
+    }
+
+    private static Layer2Outcome BuildLayer2Outcome(
+        TimeSpan elapsed,
+        List<double> rttsMs,
+        int failureCount,
+        int sampleCount,
+        DnsProtocol protocol,
+        DnsMessage? sampleResponse,
+        bool sawTlsAuthFailure,
+        bool sawTransportResetOrTimeout,
+        string fallbackError,
+        string summaryPrefix = "")
+    {
         double packetLossPercent = (failureCount * 100.0) / sampleCount;
 
         if (rttsMs.Count == 0)
@@ -392,7 +531,7 @@ public sealed class SixLayerDiagnosticEngine
             {
                 ["samples"] = sampleCount.ToString(CultureInfo.InvariantCulture),
                 ["packetLossPercent"] = packetLossPercent.ToString("F1", CultureInfo.InvariantCulture),
-                ["protocol"] = upstream.Protocol.ToString()
+                ["protocol"] = protocol.ToString()
             };
 
             return new Layer2Outcome(
@@ -400,8 +539,8 @@ public sealed class SixLayerDiagnosticEngine
                     2,
                     "Transport Reachability & Latency",
                     DiagnosticLayerStatus.Failed,
-                    layerSw.Elapsed,
-                    lastError ?? "All upstream transport probe samples failed.",
+                    elapsed,
+                    fallbackError,
                     failMetrics),
                 SampleResponse: null,
                 P50Ms: null,
@@ -422,7 +561,8 @@ public sealed class SixLayerDiagnosticEngine
             ["p50Ms"] = p50.ToString("F2", CultureInfo.InvariantCulture),
             ["p95Ms"] = p95.ToString("F2", CultureInfo.InvariantCulture),
             ["jitterMs"] = jitter.ToString("F2", CultureInfo.InvariantCulture),
-            ["packetLossPercent"] = packetLossPercent.ToString("F1", CultureInfo.InvariantCulture)
+            ["packetLossPercent"] = packetLossPercent.ToString("F1", CultureInfo.InvariantCulture),
+            ["protocol"] = protocol.ToString()
         };
 
         DiagnosticLayerStatus status = failureCount > 0
@@ -431,10 +571,10 @@ public sealed class SixLayerDiagnosticEngine
 
         string summary = string.Create(
             CultureInfo.InvariantCulture,
-            $"p50={p50:F1}ms, p95={p95:F1}ms, jitter={jitter:F1}ms, loss={packetLossPercent:F0}%");
+            $"{summaryPrefix}p50={p50:F1}ms, p95={p95:F1}ms, jitter={jitter:F1}ms, loss={packetLossPercent:F0}%");
 
         return new Layer2Outcome(
-            new DiagnosticLayerResult(2, "Transport Reachability & Latency", status, layerSw.Elapsed, summary, metrics),
+            new DiagnosticLayerResult(2, "Transport Reachability & Latency", status, elapsed, summary, metrics),
             sampleResponse,
             p50,
             p95,
@@ -820,12 +960,16 @@ public sealed class SixLayerDiagnosticEngine
         }
 
         string probePath = options.HttpProbePath ?? GetDefaultProbePath(domain);
+        bool requireGoogleSignature = upstream.Protocol == DnsProtocol.SniProxy
+            && AntiDirectAndGeoSignatures.IsStrictGoogleAiDomain(domain);
+
         HttpProbeOutcome primaryProbe = await ProbeHttpsEndpointAsync(
             domain,
             probePath,
             layer4.Endpoint,
             options,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            requireGoogleSignature).ConfigureAwait(false);
 
         if (primaryProbe.TlsMitmRejected)
         {
@@ -849,6 +993,7 @@ public sealed class SixLayerDiagnosticEngine
 
         bool? companionPassed = null;
         bool companionMitm = false;
+        bool companionGatewayFailure = false;
 
         if (options.ProbeCompanionDomains)
         {
@@ -869,12 +1014,14 @@ public sealed class SixLayerDiagnosticEngine
                         continue;
                     }
 
+                    string companionPath = GetDefaultProbePath(companion);
                     HttpProbeOutcome compProbe = await ProbeHttpsEndpointAsync(
                         companion,
-                        "/",
+                        companionPath,
                         companionEndpoint,
                         options,
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken,
+                        requireGoogleAiSignature: false).ConfigureAwait(false);
 
                     if (compProbe.TlsMitmRejected)
                     {
@@ -887,6 +1034,12 @@ public sealed class SixLayerDiagnosticEngine
                     if (compProbe.IsGeoBlocked || compProbe.IsGatewayFailure)
                     {
                         allCompanionsOk = false;
+                        if (compProbe.IsGatewayFailure)
+                        {
+                            companionGatewayFailure = true;
+                            geoReason ??= string.Create(CultureInfo.InvariantCulture, $"Companion '{companion}' relay failure: {compProbe.Detail}");
+                        }
+
                         if (compProbe.IsGeoBlocked)
                         {
                             isGeoBlocked = true;
@@ -951,9 +1104,14 @@ public sealed class SixLayerDiagnosticEngine
                 TlsMitmOnCompanion: false);
         }
 
-        DiagnosticLayerStatus status = primaryProbe.IsGatewayFailure || primaryProbe.IsTransportFailure || companionPassed == false
-            ? DiagnosticLayerStatus.Warning
-            : DiagnosticLayerStatus.Passed;
+        bool relayFailed = upstream.Protocol == DnsProtocol.SniProxy
+            && (primaryProbe.IsGatewayFailure || primaryProbe.IsTransportFailure || companionGatewayFailure);
+
+        DiagnosticLayerStatus status = relayFailed
+            ? DiagnosticLayerStatus.Failed
+            : primaryProbe.IsGatewayFailure || primaryProbe.IsTransportFailure || companionPassed == false
+                ? DiagnosticLayerStatus.Warning
+                : DiagnosticLayerStatus.Passed;
 
         return new Layer5Outcome(
             new DiagnosticLayerResult(
@@ -961,13 +1119,14 @@ public sealed class SixLayerDiagnosticEngine
                 "Application & Companion API Geo-Probe",
                 status,
                 sw.Elapsed,
-                primaryProbe.Detail,
+                relayFailed ? (geoReason ?? primaryProbe.Detail) : primaryProbe.Detail,
                 metrics),
             primaryProbe.StatusCode,
             IsGeoBlocked: false,
             companionPassed,
-            GeoReason: null,
-            TlsMitmOnCompanion: false);
+            GeoReason: relayFailed ? (geoReason ?? primaryProbe.Detail) : null,
+            TlsMitmOnCompanion: false,
+            IsRelayFailure: relayFailed);
     }
 
     private static Layer6Outcome ExecuteLayer6(
@@ -1070,6 +1229,16 @@ public sealed class SixLayerDiagnosticEngine
                 "Target service is geo-restricted on this path. Route this domain through a Tier 2 verified Geo-Unlock resolver.",
                 domain);
         }
+        else if (layer5.IsRelayFailure)
+        {
+            verdict = DiagnosticVerdict.IpBlockedByIsp;
+            reason = layer5.GeoReason ?? layer5.Result.Summary;
+            remediation = new RecommendedRemediation(
+                RemediationActionKind.DeploySelfHostedVps,
+                "Switch SNI-Proxy Relay or Deploy Self-Hosted VPS",
+                "SNI-Proxy relay returned an upstream gateway/HTTP error or non-authentic response.",
+                domain);
+        }
         else if (layer1.HasBrowserDohBypass)
         {
             verdict = DiagnosticVerdict.BrowserDohBypass;
@@ -1117,7 +1286,8 @@ public sealed class SixLayerDiagnosticEngine
         string path,
         IPEndPoint connectEndpoint,
         DiagnosticProbeOptions options,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool requireGoogleAiSignature = false)
     {
         using CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(options.ProbeTimeout);
@@ -1194,6 +1364,22 @@ public sealed class SixLayerDiagnosticEngine
                     Detail: string.Create(CultureInfo.InvariantCulture, $"Upstream gateway failure HTTP {statusCode}."));
             }
 
+            if (requireGoogleAiSignature)
+            {
+                bool hasGoogleSignature = AntiDirectAndGeoSignatures.HasGoogleAiSignature(location)
+                    || AntiDirectAndGeoSignatures.HasGoogleAiSignature(bodySnippet);
+                if (statusCode >= 400 || (!string.IsNullOrEmpty(bodySnippet) && !hasGoogleSignature))
+                {
+                    return new HttpProbeOutcome(
+                        statusCode,
+                        IsGeoBlocked: false,
+                        IsGatewayFailure: true,
+                        IsTransportFailure: false,
+                        TlsMitmRejected: false,
+                        Detail: string.Create(CultureInfo.InvariantCulture, $"SNI-Proxy relay returned invalid or non-Google response (HTTP {statusCode})."));
+                }
+            }
+
             return new HttpProbeOutcome(
                 statusCode,
                 IsGeoBlocked: false,
@@ -1242,6 +1428,11 @@ public sealed class SixLayerDiagnosticEngine
             options.CompanionEndpointOverrides.TryGetValue(companionDomain, out IPEndPoint? overridden))
         {
             return overridden;
+        }
+
+        if (upstream.Protocol == DnsProtocol.SniProxy)
+        {
+            return ResolveTlsEndpoint(upstream, [], [], options);
         }
 
         IDnsUpstreamClient client = _clientFactory(upstream.Protocol);
@@ -1614,7 +1805,8 @@ public sealed class SixLayerDiagnosticEngine
         bool IsGeoBlocked,
         bool? CompanionPassed,
         string? GeoReason,
-        bool TlsMitmOnCompanion);
+        bool TlsMitmOnCompanion,
+        bool IsRelayFailure = false);
 
     private sealed record Layer6Outcome(
         DiagnosticLayerResult Result,

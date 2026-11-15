@@ -8,13 +8,16 @@ using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using DnsPulse.Core.Cryptography;
 using DnsPulse.Core.Security;
 using DnsPulse.Engine.Contracts;
+using Microsoft.Win32;
 
 namespace DnsPulse.Platform.Windows.Updates;
 
@@ -695,10 +698,52 @@ public sealed class VerifiedAppUpdateService : IDisposable
     }
 
     /// <summary>
+    /// Returns <see langword="true"/> when silent installer upgrade requires UAC elevation
+    /// (for example, application is installed under <c>Program Files</c>, target directory is not writable,
+    /// or <c>DnsPulseService</c> is registered in Windows SCM).
+    /// </summary>
+    public static bool RequiresElevationForInstall(string? targetDirectory = null)
+    {
+        if (IsCurrentProcessElevated())
+        {
+            return false;
+        }
+
+        string dir = Path.GetFullPath(string.IsNullOrWhiteSpace(targetDirectory)
+            ? GetTargetApplicationDirectory()
+            : targetDirectory);
+
+        string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        string programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+
+        if ((!string.IsNullOrWhiteSpace(programFiles) && IsSubPathOf(dir, programFiles))
+            || (!string.IsNullOrWhiteSpace(programFilesX86) && IsSubPathOf(dir, programFilesX86)))
+        {
+            return true;
+        }
+
+        if (IsWindowsServiceRegistered("DnsPulseService"))
+        {
+            return true;
+        }
+
+        return !IsDirectoryWritable(dir);
+    }
+
+    /// <summary>
     /// Builds a <see cref="ProcessStartInfo"/> that launches the staged Inno Setup installer silently
-    /// (<c>/VERYSILENT /SUPPRESSMSGBOXES /NORESTART</c>).
+    /// (<c>/VERYSILENT /SUPPRESSMSGBOXES /NORESTART</c>), automatically requesting UAC elevation when required.
     /// </summary>
     public static ProcessStartInfo CreateSilentInstallerStartInfo(string stagedInstallerPath)
+    {
+        return CreateSilentInstallerStartInfo(stagedInstallerPath, requireElevation: RequiresElevationForInstall());
+    }
+
+    /// <summary>
+    /// Builds a <see cref="ProcessStartInfo"/> that launches the staged Inno Setup installer silently
+    /// (<c>/VERYSILENT /SUPPRESSMSGBOXES /NORESTART</c>), optionally requesting UAC elevation via <c>runas</c>.
+    /// </summary>
+    public static ProcessStartInfo CreateSilentInstallerStartInfo(string stagedInstallerPath, bool requireElevation)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stagedInstallerPath);
 
@@ -708,13 +753,106 @@ public sealed class VerifiedAppUpdateService : IDisposable
             throw new FileNotFoundException("Staged installer binary does not exist.", fullPath);
         }
 
-        return new ProcessStartInfo
+        ProcessStartInfo startInfo = new()
         {
             FileName = fullPath,
             Arguments = SilentInnoSetupArguments,
             UseShellExecute = true,
             WorkingDirectory = Path.GetDirectoryName(fullPath) ?? string.Empty
         };
+
+        if (requireElevation)
+        {
+            startInfo.Verb = "runas";
+        }
+
+        return startInfo;
+    }
+
+    private static bool IsCurrentProcessElevated()
+    {
+        try
+        {
+            using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+            WindowsPrincipal principal = new(identity);
+            return principal.IsInRole(WindowsBuiltInRole.Administrator);
+        }
+        catch (SecurityException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsWindowsServiceRegistered(string serviceName)
+    {
+        try
+        {
+            using RegistryKey? key = Registry.LocalMachine.OpenSubKey(
+                string.Concat(@"SYSTEM\CurrentControlSet\Services\", serviceName),
+                writable: false);
+            return key is not null;
+        }
+        catch (SecurityException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsSubPathOf(string candidatePath, string rootPath)
+    {
+        string normalizedCandidate = Path.GetFullPath(candidatePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string normalizedRoot = Path.GetFullPath(rootPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (normalizedCandidate.Equals(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return normalizedCandidate.StartsWith(
+            string.Concat(normalizedRoot, Path.DirectorySeparatorChar),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsDirectoryWritable(string directoryPath)
+    {
+        try
+        {
+            if (!Directory.Exists(directoryPath))
+            {
+                return false;
+            }
+
+            string probePath = Path.Combine(directoryPath, string.Create(CultureInfo.InvariantCulture, $".write-probe-{Guid.NewGuid():N}.tmp"));
+            using (FileStream fs = new(probePath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose))
+            {
+                fs.WriteByte(0x01);
+            }
+
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+        catch (SecurityException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
     }
 
     /// <summary>

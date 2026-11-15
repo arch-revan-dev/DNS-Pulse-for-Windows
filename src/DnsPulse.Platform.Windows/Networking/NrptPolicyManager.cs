@@ -60,7 +60,7 @@ public static class NrptPolicyManager
     }
 
     /// <summary>
-    /// Creates PulseCore NRPT split-DNS rules routing the specified domains to <paramref name="dnsIp"/>.
+    /// Creates PulseCore NRPT split-DNS rules routing the specified domains to <paramref name="dnsIp"/> on port 53.
     /// </summary>
     public static void ApplySplitRules(IPAddress dnsIp, int port, IReadOnlyList<string> domains)
     {
@@ -68,6 +68,12 @@ public static class NrptPolicyManager
         ArgumentNullException.ThrowIfNull(domains);
         ArgumentOutOfRangeException.ThrowIfLessThan(port, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(port, 65535);
+
+        if (port != 53)
+        {
+            throw new NotSupportedException(
+                string.Create(CultureInfo.InvariantCulture, $"Windows NRPT split-DNS requires DNS port 53, but received port {port}."));
+        }
 
         RemoveAllPulseNrptRules();
 
@@ -141,13 +147,12 @@ public static class NrptPolicyManager
 
     private static string FormatDnsEndpoint(IPAddress dnsIp, int port)
     {
-        if (port == 53)
+        if (port != 53)
         {
-            return dnsIp.ToString();
+            throw new NotSupportedException(
+                string.Create(CultureInfo.InvariantCulture, $"Windows NRPT GenericDNSServers only accepts plain IP addresses on port 53, not port {port}."));
         }
 
-        return dnsIp.AddressFamily == AddressFamily.InterNetworkV6
-            ? string.Create(CultureInfo.InvariantCulture, $"[{dnsIp}]:{port}")
-            : string.Create(CultureInfo.InvariantCulture, $"{dnsIp}:{port}");
+        return dnsIp.ToString();
     }
 }

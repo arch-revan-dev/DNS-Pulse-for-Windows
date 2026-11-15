@@ -14,6 +14,7 @@ public sealed class TrustTierToBadgeBrushConverter : IValueConverter, IMultiValu
     private static readonly SolidColorBrush AiGeoBrush = CreateFrozenBrush(0x1D, 0x4E, 0xD8);
     private static readonly SolidColorBrush FastEncryptedBrush = CreateFrozenBrush(0x15, 0x80, 0x3D);
     private static readonly SolidColorBrush StreamingGamingBrush = CreateFrozenBrush(0x0F, 0x76, 0x6E);
+    private static readonly SolidColorBrush AutoProxyBrush = CreateFrozenBrush(0x02, 0x84, 0xC7);
     private static readonly SolidColorBrush CustomBrush = CreateFrozenBrush(0x6D, 0x28, 0xD9);
     private static readonly SolidColorBrush LabBrush = CreateFrozenBrush(0xB4, 0x53, 0x09);
 
@@ -80,6 +81,7 @@ public sealed class TrustTierToBadgeBrushConverter : IValueConverter, IMultiValu
             ServerDisplayCategory.AiAndGeoUnlock => AiGeoBrush,
             ServerDisplayCategory.FastEncrypted => FastEncryptedBrush,
             ServerDisplayCategory.StreamingAndGaming => StreamingGamingBrush,
+            ServerDisplayCategory.AutoProxy => AutoProxyBrush,
             ServerDisplayCategory.CustomAndDiscovered => CustomBrush,
             _ => CustomBrush
         };
@@ -95,6 +97,8 @@ public sealed class TrustTierToBadgeBrushConverter : IValueConverter, IMultiValu
             (ServerDisplayCategory.FastEncrypted, false) => "Servers_Category_FastEncrypted",
             (ServerDisplayCategory.StreamingAndGaming, true) => "Servers_Category_StreamingGaming_Short",
             (ServerDisplayCategory.StreamingAndGaming, false) => "Servers_Category_StreamingGaming",
+            (ServerDisplayCategory.AutoProxy, true) => "Servers_Category_AutoProxy_Short",
+            (ServerDisplayCategory.AutoProxy, false) => "Servers_Category_AutoProxy",
             (ServerDisplayCategory.CustomAndDiscovered, true) => "Servers_Category_Custom_Short",
             (ServerDisplayCategory.CustomAndDiscovered, false) => "Servers_Category_Custom",
             _ => "Servers_Category_Custom_Short"

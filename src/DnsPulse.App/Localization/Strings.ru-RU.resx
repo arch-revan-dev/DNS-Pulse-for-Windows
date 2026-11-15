@@ -68,6 +68,11 @@
   <data name="Overview_Step_Verifying" xml:space="preserve"><value>Проверяем доступ...</value></data>
   <data name="Overview_Step_Success" xml:space="preserve"><value>Доступ открыт!</value></data>
   <data name="Overview_Step_Failed" xml:space="preserve"><value>Не удалось подтвердить доступ — откройте диагностику</value></data>
+  <data name="Overview_Check_Title" xml:space="preserve"><value>Проверка обхода</value></data>
+  <data name="Overview_Check_Step1" xml:space="preserve"><value>1. Перехват DNS</value></data>
+  <data name="Overview_Check_Step2" xml:space="preserve"><value>2. Рабочий IP</value></data>
+  <data name="Overview_Check_Step3" xml:space="preserve"><value>3. Доступ к сайту</value></data>
+  <data name="Overview_Check_Port53Fix" xml:space="preserve"><value>Перейти в прокси-режим</value></data>
   <data name="Overview_QuickService_AiStudio" xml:space="preserve"><value>Google AI Studio и Gemini</value></data>
   <data name="Overview_QuickService_ChatGpt" xml:space="preserve"><value>OpenAI / ChatGPT</value></data>
   <data name="Overview_QuickService_Claude" xml:space="preserve"><value>Anthropic Claude</value></data>
@@ -159,6 +164,9 @@
   <data name="Servers_Category_Custom" xml:space="preserve"><value>Свои / Найденные</value></data>
   <data name="Servers_Category_Custom_Desc" xml:space="preserve"><value>Добавленные вами серверы, личные VPS и узлы, найденные при ручном сканировании.</value></data>
   <data name="Servers_Category_Custom_Short" xml:space="preserve"><value>Свой</value></data>
+  <data name="Servers_Category_AutoProxy" xml:space="preserve"><value>Авто-прокси (SNI)</value></data>
+  <data name="Servers_Category_AutoProxy_Desc" xml:space="preserve"><value>Умные TLS SNI-прокси для обхода блокировок ИИ и стриминга без влияния на обычные сайты.</value></data>
+  <data name="Servers_Category_AutoProxy_Short" xml:space="preserve"><value>Авто-прокси</value></data>
   <data name="Servers_Badge_Trust_Fast" xml:space="preserve"><value>Шифрованный</value></data>
   <data name="Servers_Badge_Trust_Geo" xml:space="preserve"><value>Обход блоков</value></data>
   <data name="Servers_Badge_Trust_Custom" xml:space="preserve"><value>Свой</value></data>

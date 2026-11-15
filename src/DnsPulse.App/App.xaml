@@ -24,6 +24,9 @@
       <Thickness x:Key="MarginMd">12</Thickness>
       <Thickness x:Key="MarginLg">16</Thickness>
       <Thickness x:Key="MarginXl">24</Thickness>
+      <Thickness x:Key="PulsePagePadding">24,16,24,24</Thickness>
+      <Thickness x:Key="PulseHeroPadding">22</Thickness>
+      <Thickness x:Key="PulseSectionMargin">0,0,0,16</Thickness>
 
       <CornerRadius x:Key="CornerRadiusControl">4</CornerRadius>
       <CornerRadius x:Key="CornerRadiusCard">8</CornerRadius>
@@ -37,6 +40,28 @@
       <SolidColorBrush x:Key="PulseInfoBrush" Color="#3B82F6" />
       <SolidColorBrush x:Key="PulseWarningBrush" Color="#F59E0B" />
       <SolidColorBrush x:Key="PulseDangerBrush" Color="#EF4444" />
+
+      <!-- Theme-Adaptive Surface & Semantic Brushes (Updated by ThemeAppearanceService on theme switch) -->
+      <SolidColorBrush x:Key="PulseInnerPanelBrush" Color="#1A2029" />
+      <SolidColorBrush x:Key="PulseInnerPanelBorderBrush" Color="#2C3544" />
+      <SolidColorBrush x:Key="PulseHeaderSurfaceBrush" Color="#151A22" />
+      <SolidColorBrush x:Key="PulseChipSurfaceBrush" Color="#262E3D" />
+      <SolidColorBrush x:Key="PulseCountBadgeBgBrush" Color="#33000000" />
+      <SolidColorBrush x:Key="PulseProtocolBadgeBgBrush" Color="#1E3A5F" />
+      <SolidColorBrush x:Key="PulseProtocolBadgeFgBrush" Color="#93C5FD" />
+      <SolidColorBrush x:Key="PulseAccentSubtleBrush" Color="#22047857" />
+      <SolidColorBrush x:Key="PulseSuccessSubtleBrush" Color="#122A20" />
+      <SolidColorBrush x:Key="PulseSuccessBorderBrush" Color="#16A34A" />
+      <SolidColorBrush x:Key="PulseSuccessBadgeBgBrush" Color="#15803D" />
+      <SolidColorBrush x:Key="PulseInfoSubtleBrush" Color="#152338" />
+      <SolidColorBrush x:Key="PulseInfoBorderBrush" Color="#2563EB" />
+      <SolidColorBrush x:Key="PulseInfoBadgeBgBrush" Color="#1D4ED8" />
+      <SolidColorBrush x:Key="PulseWarningSubtleBrush" Color="#2B2012" />
+      <SolidColorBrush x:Key="PulseWarningBorderBrush" Color="#D97706" />
+      <SolidColorBrush x:Key="PulseWarningBadgeBgBrush" Color="#B45309" />
+      <SolidColorBrush x:Key="PulseDangerSubtleBrush" Color="#2C161A" />
+      <SolidColorBrush x:Key="PulseDangerBorderBrush" Color="#DC2626" />
+      <SolidColorBrush x:Key="PulseDangerBadgeBgBrush" Color="#B91C1C" />
 
       <!-- Converters -->
       <conv:LocConverter x:Key="LocConverter" />
@@ -253,7 +278,7 @@
                 <Trigger Property="IsChecked" Value="True">
                   <Setter TargetName="CardBorder" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                   <Setter TargetName="CardBorder" Property="BorderThickness" Value="2" />
-                  <Setter TargetName="CardBorder" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                  <Setter TargetName="CardBorder" Property="Background" Value="{DynamicResource PulseAccentSubtleBrush}" />
                 </Trigger>
               </ControlTemplate.Triggers>
             </ControlTemplate>

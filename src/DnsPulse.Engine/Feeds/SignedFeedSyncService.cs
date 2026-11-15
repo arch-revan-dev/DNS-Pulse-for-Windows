@@ -26,7 +26,10 @@ public enum FeedVerificationMode
     RequireSigned = 0,
 
     /// <summary>Explicit opt-in permitting unsigned community feeds while still rejecting any invalid/tampered signatures.</summary>
-    AllowUnsignedFeeds = 1
+    AllowUnsignedFeeds = 1,
+
+    /// <summary>Permits the 4 built-in trusted community feeds without Ed25519 signatures while still failing closed on unknown unsigned third-party feeds.</summary>
+    BuiltInCommunityTrusted = 2
 }
 
 /// <summary>
@@ -104,6 +107,25 @@ public sealed record FeedSyncSummary(
     IReadOnlyList<DnsServerEntry> AggregatedServers);
 
 /// <summary>
+/// Persisted offline snapshot of synced bypass domains and discovered community servers
+/// (compatible with mobile <c>dynamic_bypass_domains_cache.json</c> semantics).
+/// </summary>
+public sealed record FeedCacheSnapshot(
+    DateTimeOffset SavedAtUtc,
+    IReadOnlyList<string> BypassDomains,
+    IReadOnlyList<DnsServerEntry> DiscoveredServers);
+
+/// <summary>
+/// Combined startup feed sync result including offline cache fallback and updated domain/server totals.
+/// </summary>
+public sealed record FeedStartupSyncResult(
+    FeedSyncSummary? NetworkSummary,
+    IReadOnlyList<string> EffectiveBypassDomains,
+    IReadOnlyList<DnsServerEntry> EffectiveDiscoveredServers,
+    bool LoadedFromCache,
+    bool UpdatedCacheFromNetwork);
+
+/// <summary>
 /// Fetches and cryptographically verifies online domain and resolver feeds using an
 /// <see cref="IBootstrapResolver"/>-backed <see cref="HttpClient"/> and <see cref="SignedManifestVerifier"/>.
 /// </summary>
@@ -113,6 +135,12 @@ public sealed partial class SignedFeedSyncService : IDisposable
     private const int MaxFeedPayloadBytes = 4 * 1024 * 1024;
     private static readonly char[] WhitespaceSeparators = [' ', '\t'];
     private static readonly string[] LineSeparators = ["\r\n", "\n"];
+    private static readonly JsonSerializerOptions CacheJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+        WriteIndented = true
+    };
 
     public static IReadOnlyList<FeedSourceDescriptor> BuiltInFeeds { get; } =
     [
@@ -219,6 +247,166 @@ public sealed partial class SignedFeedSyncService : IDisposable
             [.. serverMap.Values]);
     }
 
+    /// <summary>
+    /// Loads cached bypass domains and servers from <paramref name="cacheFilePath"/> if present,
+    /// then synchronizes built-in (or custom) feeds using <paramref name="mode"/> (defaulting to
+    /// <see cref="FeedVerificationMode.BuiltInCommunityTrusted"/>) and persists refreshed offline results.
+    /// Never throws on individual feed network failures or corrupt cache files.
+    /// </summary>
+    public async Task<FeedStartupSyncResult> SyncStartupFeedsAsync(
+        string? cacheFilePath,
+        FeedVerificationMode mode = FeedVerificationMode.BuiltInCommunityTrusted,
+        bool loadCacheFirst = true,
+        IReadOnlyList<FeedSourceDescriptor>? feeds = null,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        FeedCacheSnapshot? cached = null;
+        if (loadCacheFirst && !string.IsNullOrWhiteSpace(cacheFilePath))
+        {
+            cached = await LoadCachedSnapshotAsync(cacheFilePath, cancellationToken).ConfigureAwait(false);
+        }
+
+        bool loadedFromCache = cached is not null
+            && (cached.BypassDomains.Count > 0 || cached.DiscoveredServers.Count > 0);
+
+        FeedSyncSummary summary = await SyncAllAsync(mode, feeds, cancellationToken).ConfigureAwait(false);
+
+        bool hasNetworkDomains = summary.AggregatedBypassDomains.Count > 0;
+        bool hasNetworkServers = summary.AggregatedServers.Count > 0;
+        bool updatedFromNetwork = hasNetworkDomains || hasNetworkServers;
+
+        IReadOnlyList<string> effectiveDomains = hasNetworkDomains
+            ? summary.AggregatedBypassDomains
+            : (cached?.BypassDomains ?? []);
+
+        IReadOnlyList<DnsServerEntry> effectiveServers = hasNetworkServers
+            ? summary.AggregatedServers
+            : (cached?.DiscoveredServers ?? []);
+
+        if (updatedFromNetwork && !string.IsNullOrWhiteSpace(cacheFilePath))
+        {
+            FeedCacheSnapshot updatedSnapshot = new(
+                DateTimeOffset.UtcNow,
+                effectiveDomains,
+                effectiveServers);
+            await SaveCachedSnapshotAsync(cacheFilePath, updatedSnapshot, cancellationToken).ConfigureAwait(false);
+        }
+
+        return new FeedStartupSyncResult(
+            summary,
+            effectiveDomains,
+            effectiveServers,
+            loadedFromCache,
+            updatedFromNetwork);
+    }
+
+    /// <summary>
+    /// Reads a cached feed snapshot from <paramref name="cacheFilePath"/> (supporting both
+    /// <see cref="FeedCacheSnapshot"/> JSON and mobile <c>dynamic_bypass_domains_cache.json</c> domain lists).
+    /// Returns <see langword="null"/> if the file does not exist or cannot be parsed.
+    /// </summary>
+    public static async Task<FeedCacheSnapshot?> LoadCachedSnapshotAsync(
+        string cacheFilePath,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(cacheFilePath) || !File.Exists(cacheFilePath))
+        {
+            return null;
+        }
+
+        try
+        {
+            string json = await File.ReadAllTextAsync(cacheFilePath, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+
+            using JsonDocument doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                List<string> rawDomains = ReadStringArray(doc.RootElement);
+                return new FeedCacheSnapshot(DateTimeOffset.UtcNow, rawDomains, []);
+            }
+
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            FeedCacheSnapshot? typed = JsonSerializer.Deserialize<FeedCacheSnapshot>(json, CacheJsonOptions);
+            if (typed is not null && (typed.BypassDomains.Count > 0 || typed.DiscoveredServers.Count > 0))
+            {
+                return typed;
+            }
+
+            if (doc.RootElement.TryGetProperty("domains", out JsonElement domainsElement) &&
+                domainsElement.ValueKind == JsonValueKind.Array)
+            {
+                List<string> domains = ReadStringArray(domainsElement);
+                return new FeedCacheSnapshot(DateTimeOffset.UtcNow, domains, []);
+            }
+
+            return typed;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Atomically persists <paramref name="snapshot"/> as UTF-8 JSON to <paramref name="cacheFilePath"/>.
+    /// </summary>
+    public static async Task SaveCachedSnapshotAsync(
+        string cacheFilePath,
+        FeedCacheSnapshot snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(cacheFilePath);
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        string? directory = Path.GetDirectoryName(cacheFilePath);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        string tempPath = string.Concat(cacheFilePath, ".tmp");
+        try
+        {
+            string json = JsonSerializer.Serialize(snapshot, CacheJsonOptions);
+            await File.WriteAllTextAsync(tempPath, json, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+            File.Move(tempPath, cacheFilePath, overwrite: true);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (IOException)
+        {
+            // Ignore transient disk/lock errors during background cache persistence.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Ignore read-only path errors during background cache persistence.
+        }
+    }
+
     public async Task<FeedSyncItemResult> SyncSingleAsync(
         FeedSourceDescriptor descriptor,
         FeedVerificationMode mode = FeedVerificationMode.RequireSigned,
@@ -231,16 +419,21 @@ public sealed partial class SignedFeedSyncService : IDisposable
         bool hasSignatureUrl = !string.IsNullOrWhiteSpace(descriptor.SignatureUrl);
         bool hasManifestUrl = !string.IsNullOrWhiteSpace(descriptor.ManifestUrl);
 
-        if ((!hasPublicKey || !hasSignatureUrl) && mode == FeedVerificationMode.RequireSigned)
+        if (!hasPublicKey || !hasSignatureUrl)
         {
-            return new FeedSyncItemResult(
-                descriptor.Id,
-                descriptor.Name,
-                descriptor.Kind,
-                FeedVerificationStatus.RejectedMissingSignature,
-                [],
-                [],
-                "Rejected unsigned feed in RequireSigned mode (missing Ed25519 public key or detached signature URL).");
+            bool allowUnsigned = mode == FeedVerificationMode.AllowUnsignedFeeds ||
+                (mode == FeedVerificationMode.BuiltInCommunityTrusted && IsTrustedBuiltInCommunityFeed(descriptor));
+            if (!allowUnsigned)
+            {
+                return new FeedSyncItemResult(
+                    descriptor.Id,
+                    descriptor.Name,
+                    descriptor.Kind,
+                    FeedVerificationStatus.RejectedMissingSignature,
+                    [],
+                    [],
+                    "Rejected unsigned feed in RequireSigned mode (missing Ed25519 public key or detached signature URL).");
+            }
         }
 
         (byte[]? payloadBytes, string? usedUrl, string? fetchError) = await FetchWithFallbackAsync(
@@ -940,6 +1133,45 @@ public sealed partial class SignedFeedSyncService : IDisposable
         }
 
         return sb.ToString().Trim('_');
+    }
+
+    private static bool IsTrustedBuiltInCommunityFeed(FeedSourceDescriptor descriptor)
+    {
+        if (!Uri.TryCreate(descriptor.FeedUrl, UriKind.Absolute, out Uri? feedUri) ||
+            !feedUri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        foreach (FeedSourceDescriptor builtIn in BuiltInFeeds)
+        {
+            if (string.Equals(descriptor.Id, builtIn.Id, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(descriptor.FeedUrl, builtIn.FeedUrl, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(descriptor.FallbackFeedUrl, builtIn.FallbackFeedUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static List<string> ReadStringArray(JsonElement arrayElement)
+    {
+        List<string> items = [];
+        foreach (JsonElement element in arrayElement.EnumerateArray())
+        {
+            if (element.ValueKind == JsonValueKind.String)
+            {
+                string? val = element.GetString();
+                if (!string.IsNullOrWhiteSpace(val))
+                {
+                    items.Add(val.Trim());
+                }
+            }
+        }
+
+        return items;
     }
 
     [GeneratedRegex(@"https://[A-Za-z0-9.\-]+(?::\d{1,5})?/[^\s)\]`""'<>]*dns-query[^\s)\]`""'<>]*", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]

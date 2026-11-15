@@ -1,19 +1,31 @@
+using System.Globalization;
 using System.Net;
 using System.ServiceProcess;
+using System.Text.Json;
 using DnsPulse.Core.Models;
 using DnsPulse.Core.Routing;
 using DnsPulse.Engine.Bootstrap;
 using DnsPulse.Engine.Cache;
 using DnsPulse.Engine.Contracts;
+using DnsPulse.Engine.Diagnostics;
 using DnsPulse.Engine.Pipeline;
 using DnsPulse.Engine.Transports;
 using DnsPulse.Platform.Windows;
+using DnsPulse.Platform.Windows.Autostart;
 using DnsPulse.Platform.Windows.Contracts;
 using DnsPulse.Platform.Windows.Interception;
+using DnsPulse.Platform.Windows.Ipc;
 using DnsPulse.Platform.Windows.Networking;
 using DnsPulse.Platform.Windows.Recovery;
+using DnsPulse.Platform.Windows.Updates;
 using DnsPulse.Service;
 using Microsoft.Extensions.Logging;
+
+JsonSerializerOptions ipcJsonOptions = new()
+{
+    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    PropertyNameCaseInsensitive = true
+};
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddSingleton<ILoggerProvider, ServiceFileLoggerProvider>();
@@ -28,42 +40,26 @@ builder.Services.Configure<HostOptions>(options =>
 });
 
 builder.Services.AddSingleton(_ => new NetworkSnapshotJournal());
-builder.Services.AddSingleton(_ => new HostNetworkHealthProvider(enableOsProbes: true));
+builder.Services.AddSingleton(_ => new AppSettingsStore());
+builder.Services.AddSingleton(sp => new HostNetworkHealthProvider(
+    enableOsProbes: true,
+    desiredDnsPortProvider: () => sp.GetRequiredService<DefaultPulseRuntimeBackend>().ConfiguredDnsPort));
 builder.Services.AddSingleton<IHostNetworkHealthProvider>(sp => sp.GetRequiredService<HostNetworkHealthProvider>());
 builder.Services.AddSingleton(_ => new LoopbackPortSelector());
-builder.Services.AddSingleton(_ => new AdapterDnsInterceptor());
-builder.Services.AddSingleton(_ => new NrptSplitInterceptor());
-builder.Services.AddSingleton(_ => new LocalProxyPacInterceptor());
 builder.Services.AddSingleton(_ => new WfpDivertInterceptor(AntiCheatGuard.DetectActiveAntiCheat));
 
 builder.Services.AddSingleton(sp =>
 {
     LoopbackPortSelector portSelector = sp.GetRequiredService<LoopbackPortSelector>();
     IPAddress preferredLoopback = IPAddress.Loopback;
-    try
+    if (portSelector.TrySelectAvailableDnsEndpoint(53, out IPAddress? selectedEndpoint))
     {
-        preferredLoopback = portSelector.SelectAvailableDnsEndpoint(53);
-    }
-    catch (InvalidOperationException)
-    {
-        // Keep 127.0.0.1 fallback if port 53 cannot be probed prior to service activation.
+        preferredLoopback = selectedEndpoint;
     }
 
     return new PulseServiceOptions
     {
         PreferredLoopbackAddress = preferredLoopback
-    };
-});
-
-builder.Services.AddSingleton<IDnsInterceptor>(sp =>
-{
-    PulseServiceOptions options = sp.GetRequiredService<PulseServiceOptions>();
-    return options.InterceptionMode switch
-    {
-        InterceptionMode.SplitNrpt => sp.GetRequiredService<NrptSplitInterceptor>(),
-        InterceptionMode.LocalProxyPacOnly => sp.GetRequiredService<LocalProxyPacInterceptor>(),
-        InterceptionMode.WfpDivertPlugin => sp.GetRequiredService<WfpDivertInterceptor>(),
-        _ => sp.GetRequiredService<AdapterDnsInterceptor>()
     };
 });
 
@@ -83,6 +79,14 @@ builder.Services.AddSingleton(sp =>
 
 builder.Services.AddSingleton(sp =>
 {
+    IBootstrapResolver bootstrapResolver = sp.GetRequiredService<IBootstrapResolver>();
+    UpstreamClientRegistry registry = sp.GetRequiredService<UpstreamClientRegistry>();
+    IHostNetworkHealthProvider healthProvider = sp.GetRequiredService<IHostNetworkHealthProvider>();
+    return new SixLayerDiagnosticEngine(bootstrapResolver, registry.GetClient, healthProvider);
+});
+
+builder.Services.AddSingleton(sp =>
+{
     IHostNetworkHealthProvider healthProvider = sp.GetRequiredService<IHostNetworkHealthProvider>();
     return new NetworkResilienceWatcher(async ct =>
     {
@@ -91,15 +95,17 @@ builder.Services.AddSingleton(sp =>
     });
 });
 
-builder.Services.AddSingleton<IPulseRuntimeBackend>(sp =>
+builder.Services.AddSingleton(sp =>
 {
     PulseServiceOptions options = sp.GetRequiredService<PulseServiceOptions>();
     PulseCoreDnsEngine engine = sp.GetRequiredService<PulseCoreDnsEngine>();
+    SplitNamespaceRouter splitRouter = sp.GetRequiredService<SplitNamespaceRouter>();
     OptimisticDnsCache cache = sp.GetRequiredService<OptimisticDnsCache>();
     UpstreamPoolManager poolManager = sp.GetRequiredService<UpstreamPoolManager>();
-    IDnsInterceptor interceptor = sp.GetRequiredService<IDnsInterceptor>();
+    LoopbackPortSelector portSelector = sp.GetRequiredService<LoopbackPortSelector>();
     NetworkSnapshotJournal journal = sp.GetRequiredService<NetworkSnapshotJournal>();
     IBootstrapResolver bootstrapResolver = sp.GetRequiredService<IBootstrapResolver>();
+    WfpDivertInterceptor wfpInterceptor = sp.GetRequiredService<WfpDivertInterceptor>();
     ILogger<DefaultPulseRuntimeBackend> logger = sp.GetRequiredService<ILogger<DefaultPulseRuntimeBackend>>();
 
     string[] initialSplitDomains =
@@ -114,7 +120,7 @@ builder.Services.AddSingleton<IPulseRuntimeBackend>(sp =>
         engine,
         cache,
         poolManager,
-        dnsInterceptor: interceptor,
+        dnsInterceptor: null,
         emergencyRollbackHandler: async ct =>
         {
             NetworkRestoredResult result = await journal.RecoverIfDirtyAsync(ct).ConfigureAwait(false);
@@ -124,10 +130,127 @@ builder.Services.AddSingleton<IPulseRuntimeBackend>(sp =>
         },
         sidecarHostResolver: (host, ct) => bootstrapResolver.ResolveHostAsync(host, ct),
         initialSplitDomains: initialSplitDomains,
-        logger: logger);
+        logger: logger,
+        router: splitRouter,
+        loopbackPortSelector: portSelector,
+        journal: journal,
+        interceptorFactory: (mode, pacUrl, blockIpv6OnBypass) => mode switch
+        {
+            InterceptionMode.SplitNrpt => new NrptSplitInterceptor(),
+            InterceptionMode.LocalProxyPacOnly => new LocalProxyPacInterceptor(pacUrl: pacUrl),
+            InterceptionMode.WfpDivertPlugin => wfpInterceptor,
+            _ => new AdapterDnsInterceptor(blockIpv6OnBypass: blockIpv6OnBypass)
+        });
 });
+builder.Services.AddSingleton<IPulseRuntimeBackend>(sp => sp.GetRequiredService<DefaultPulseRuntimeBackend>());
 
-builder.Services.AddHostedService<DnsPulseWorkerService>();
+builder.Services.AddHostedService(sp =>
+{
+    DefaultPulseRuntimeBackend concreteBackend = sp.GetRequiredService<DefaultPulseRuntimeBackend>();
+    PulseServiceOptions options = sp.GetRequiredService<PulseServiceOptions>();
+    ILogger<DnsPulseWorkerService> logger = sp.GetRequiredService<ILogger<DnsPulseWorkerService>>();
+    IHostApplicationLifetime lifetime = sp.GetRequiredService<IHostApplicationLifetime>();
+    IHostNetworkHealthProvider healthProvider = sp.GetRequiredService<IHostNetworkHealthProvider>();
+    SixLayerDiagnosticEngine diagnosticEngine = sp.GetRequiredService<SixLayerDiagnosticEngine>();
+    UpstreamPoolManager poolManager = sp.GetRequiredService<UpstreamPoolManager>();
+    NetworkSnapshotJournal journal = sp.GetRequiredService<NetworkSnapshotJournal>();
+    AppSettingsStore settingsStore = sp.GetRequiredService<AppSettingsStore>();
+
+    return new DnsPulseWorkerService(
+        concreteBackend,
+        options,
+        logger,
+        lifetime,
+        extensionHandler: async (request, ct) =>
+        {
+            switch (request.Command)
+            {
+                case PipeCommandNames.RunDiagnostics:
+                    {
+                        ServiceDiagnosticsRequest? diagRequest = null;
+                        if (!string.IsNullOrWhiteSpace(request.PayloadJson))
+                        {
+                            diagRequest = JsonSerializer.Deserialize<ServiceDiagnosticsRequest>(request.PayloadJson, ipcJsonOptions);
+                        }
+
+                        HostNetworkHealthSnapshot hostHealth = await healthProvider.InspectAsync(ct).ConfigureAwait(false);
+                        DiagnosticReport? report = null;
+                        if (!string.IsNullOrWhiteSpace(diagRequest?.TargetDomain))
+                        {
+                            DnsServerEntry? upstream = diagRequest.Upstream ??
+                                (poolManager.Zone4Servers.Count > 0 ? poolManager.Zone4Servers[0] : null);
+                            if (upstream is not null)
+                            {
+                                DiagnosticProbeOptions probeOptions = new()
+                                {
+                                    ProbeTimeout = TimeSpan.FromMilliseconds(Math.Clamp(diagRequest.TimeoutMs ?? 4000, 500, 15000))
+                                };
+                                report = await diagnosticEngine.DiagnoseAsync(
+                                    diagRequest.TargetDomain.Trim(),
+                                    upstream,
+                                    probeOptions,
+                                    ct).ConfigureAwait(false);
+                            }
+                        }
+
+                        ServiceDiagnosticsResponse responsePayload = new(
+                            concreteBackend.GetStatus(),
+                            hostHealth,
+                            report);
+                        return new PipeRpcResponse(
+                            request.RequestId,
+                            true,
+                            PayloadJson: JsonSerializer.Serialize(responsePayload, ipcJsonOptions));
+                    }
+
+                case PipeCommandNames.ExportBundle:
+                    {
+                        ServiceExportBundleRequest? exportRequest = null;
+                        if (!string.IsNullOrWhiteSpace(request.PayloadJson))
+                        {
+                            exportRequest = JsonSerializer.Deserialize<ServiceExportBundleRequest>(request.PayloadJson, ipcJsonOptions);
+                        }
+
+                        string outputPath = !string.IsNullOrWhiteSpace(exportRequest?.OutputZipPath)
+                            ? Path.GetFullPath(exportRequest.OutputZipPath.Trim())
+                            : Path.Combine(
+                                Path.GetTempPath(),
+                                string.Create(CultureInfo.InvariantCulture, $"DnsPulse-Diagnostics-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.zip"));
+
+                        PulseAppSettings settings = await settingsStore.LoadAsync(ct).ConfigureAwait(false);
+                        HostNetworkHealthSnapshot hostHealth = await healthProvider.InspectAsync(ct).ConfigureAwait(false);
+                        PrePulseNetworkSnapshot? snapshot = journal.TryLoadVerifiedSnapshot(out _);
+                        IReadOnlyList<DnsQueryTelemetryEvent>? telemetry =
+                            !settings.ZeroDiskQueryLogging
+                                ? concreteBackend.GetRecentTelemetry(200)
+                                : null;
+                        string logDirectory = ServiceFileLoggerProvider.GetDefaultServiceLogDirectory();
+
+                        await DiagnosticBundleExporter.ExportRedactedBundleAsync(
+                            outputPath,
+                            settings,
+                            snapshot,
+                            hostHealth,
+                            telemetry,
+                            logDirectory,
+                            ct).ConfigureAwait(false);
+
+                        ServiceExportBundleResponse responsePayload = new(outputPath);
+                        return new PipeRpcResponse(
+                            request.RequestId,
+                            true,
+                            PayloadJson: JsonSerializer.Serialize(responsePayload, ipcJsonOptions));
+                    }
+
+                default:
+                    return new PipeRpcResponse(
+                        request.RequestId,
+                        false,
+                        "NotSupported",
+                        string.Create(CultureInfo.InvariantCulture, $"Command '{request.Command}' is not supported."));
+            }
+        });
+});
 
 using IHost host = builder.Build();
 ILogger platformLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("DnsPulse.Platform");

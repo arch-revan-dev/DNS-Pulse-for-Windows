@@ -1,3 +1,6 @@
+using System.Net;
+using DnsPulse.Core.Security;
+
 namespace DnsPulse.Core.Models;
 
 /// <summary>
@@ -8,7 +11,20 @@ public enum ServerDisplayCategory
     AiAndGeoUnlock = 0,
     FastEncrypted = 1,
     StreamingAndGaming = 2,
-    CustomAndDiscovered = 3
+    CustomAndDiscovered = 3,
+    AutoProxy = 4
+}
+
+/// <summary>
+/// Service class assigned to a target benchmark or diagnostic domain.
+/// </summary>
+public enum TargetDomainClass
+{
+    General = 0,
+    Ai = 1,
+    Streaming = 2,
+    Gaming = 3,
+    Social = 4
 }
 
 /// <summary>
@@ -30,6 +46,27 @@ public static class ServerCategoryClassifier
         "perplexity",
         "anti-sanction"
     };
+
+    private static readonly HashSet<string> AutoProxyTags = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "auto-proxy",
+        "autoproxy",
+        "smartproxy",
+        "sni443"
+    };
+
+    private static readonly string[] ExtraStreamingDomains =
+    [
+        "youtube.com",
+        "youtu.be",
+        "googlevideo.com"
+    ];
+
+    private static readonly string[] ExtraGamingDomains =
+    [
+        "steampowered.com",
+        "epicgames.com"
+    ];
 
     private static readonly string[] GamingStreamingTagTokens =
     [
@@ -57,11 +94,45 @@ public static class ServerCategoryClassifier
     ];
 
     /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="server"/> is an Auto-Proxy (SNI-Proxy / smartproxy://)
+    /// relay or a DNS entry explicitly tagged for Auto-Proxy routing.
+    /// </summary>
+    public static bool IsAutoProxyServer(DnsServerEntry server)
+    {
+        ArgumentNullException.ThrowIfNull(server);
+
+        if (server.Protocol == DnsProtocol.SniProxy)
+        {
+            return true;
+        }
+
+        if (string.Equals(server.Category, "Auto Proxy", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        foreach (string tag in server.Tags)
+        {
+            if (!string.IsNullOrWhiteSpace(tag) && AutoProxyTags.Contains(tag.Trim()))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Classifies <paramref name="server"/> into its user-facing <see cref="ServerDisplayCategory"/>.
     /// </summary>
     public static ServerDisplayCategory Classify(DnsServerEntry server)
     {
         ArgumentNullException.ThrowIfNull(server);
+
+        if (IsAutoProxyServer(server))
+        {
+            return ServerDisplayCategory.AutoProxy;
+        }
 
         if (!server.IsBuiltin ||
             server.TrustTier is TrustTier.Tier3CustomOrSelfHosted or TrustTier.Tier4ExperimentalLab)
@@ -115,22 +186,25 @@ public static class ServerCategoryClassifier
     }
 
     /// <summary>
-    /// Returns <see langword="true"/> when <paramref name="server"/> is an eligible Geo-Unlock DNS resolver
-    /// for AI services (such as <c>aistudio.google.com</c> and <c>gemini.google.com</c>), strictly excluding
-    /// gaming-only DNS nodes and raw SNI relays.
+    /// Returns <see langword="true"/> when <paramref name="server"/> is an eligible Geo-Unlock resolver or
+    /// Auto-Proxy SNI relay for AI services (such as <c>aistudio.google.com</c> and <c>gemini.google.com</c>),
+    /// strictly excluding gaming-only DNS nodes and non-bypass resolvers.
     /// </summary>
     public static bool SupportsAiDomain(DnsServerEntry server)
     {
         ArgumentNullException.ThrowIfNull(server);
 
-        if (!server.SupportsBypass || server.Protocol == DnsProtocol.SniProxy)
+        if (!server.SupportsBypass || IsGamingOnlyGeoServer(server))
         {
             return false;
         }
 
-        if (IsGamingOnlyGeoServer(server))
+        if (server.Protocol == DnsProtocol.SniProxy)
         {
-            return false;
+            return HasValidProxyEndpoint(server)
+                && (server.TrustTier is TrustTier.Tier2VerifiedGeoUnlock
+                    or TrustTier.Tier3CustomOrSelfHosted
+                    or TrustTier.Tier4ExperimentalLab);
         }
 
         return server.TrustTier is TrustTier.Tier2VerifiedGeoUnlock or TrustTier.Tier3CustomOrSelfHosted;
@@ -155,28 +229,89 @@ public static class ServerCategoryClassifier
     }
 
     /// <summary>
+    /// Classifies <paramref name="domain"/> into its service category (<see cref="TargetDomainClass"/>).
+    /// </summary>
+    public static TargetDomainClass ClassifyTargetDomain(string? domain)
+    {
+        if (string.IsNullOrWhiteSpace(domain))
+        {
+            return TargetDomainClass.General;
+        }
+
+        if (IsAiDomain(domain))
+        {
+            return TargetDomainClass.Ai;
+        }
+
+        if (MatchesAnyBuiltinDomain(domain, BuiltInCatalogPresets.BuiltinStreamingDomains)
+            || MatchesAnyBuiltinDomain(domain, ExtraStreamingDomains))
+        {
+            return TargetDomainClass.Streaming;
+        }
+
+        if (MatchesAnyBuiltinDomain(domain, BuiltInCatalogPresets.BuiltinGamingDomains)
+            || MatchesAnyBuiltinDomain(domain, ExtraGamingDomains))
+        {
+            return TargetDomainClass.Gaming;
+        }
+
+        if (MatchesAnyBuiltinDomain(domain, BuiltInCatalogPresets.BuiltinSocialDomains))
+        {
+            return TargetDomainClass.Social;
+        }
+
+        return TargetDomainClass.General;
+    }
+
+    /// <summary>
     /// Returns <see langword="true"/> when <paramref name="domain"/> matches a built-in AI domain or one of its subdomains.
     /// </summary>
     public static bool IsAiDomain(string? domain)
     {
-        return MatchesAnyBuiltinDomain(domain, BuiltInCatalogPresets.BuiltinAiDomains);
+        return AntiDirectAndGeoSignatures.IsStrictGoogleAiDomain(domain)
+            || MatchesAnyBuiltinDomain(domain, BuiltInCatalogPresets.BuiltinAiDomains);
     }
 
     /// <summary>
-    /// Returns <see langword="true"/> when <paramref name="server"/> is an eligible Geo-Unlock candidate for <paramref name="domain"/>.
+    /// Returns <see langword="true"/> when <paramref name="server"/> is an eligible Geo-Unlock or Auto-Proxy candidate for <paramref name="domain"/>.
     /// </summary>
     public static bool SupportsTargetDomain(DnsServerEntry server, string? domain)
     {
         ArgumentNullException.ThrowIfNull(server);
 
-        if (string.IsNullOrWhiteSpace(domain) || IsAiDomain(domain))
+        if (string.IsNullOrWhiteSpace(domain))
         {
             return SupportsAiDomain(server);
         }
 
-        return server.SupportsBypass
-            && server.Protocol != DnsProtocol.SniProxy
-            && (server.TrustTier is TrustTier.Tier2VerifiedGeoUnlock or TrustTier.Tier3CustomOrSelfHosted);
+        if (!server.SupportsBypass)
+        {
+            return false;
+        }
+
+        TargetDomainClass domainClass = ClassifyTargetDomain(domain);
+        if (domainClass == TargetDomainClass.Ai)
+        {
+            return SupportsAiDomain(server);
+        }
+
+        if (server.Protocol == DnsProtocol.SniProxy)
+        {
+            return HasValidProxyEndpoint(server)
+                && (server.TrustTier is TrustTier.Tier2VerifiedGeoUnlock
+                    or TrustTier.Tier3CustomOrSelfHosted
+                    or TrustTier.Tier4ExperimentalLab);
+        }
+
+        return server.TrustTier is TrustTier.Tier2VerifiedGeoUnlock or TrustTier.Tier3CustomOrSelfHosted;
+    }
+
+    private static bool HasValidProxyEndpoint(DnsServerEntry server)
+    {
+        string rawIp = !string.IsNullOrWhiteSpace(server.SmartProxyIp)
+            ? server.SmartProxyIp
+            : server.PrimaryIp;
+        return IPAddress.TryParse(rawIp, out IPAddress? ip) && IpSafetyInspector.IsPublicRoutable(ip);
     }
 
     private static bool MatchesAnyBuiltinDomain(string? domain, IReadOnlyList<string> candidates)

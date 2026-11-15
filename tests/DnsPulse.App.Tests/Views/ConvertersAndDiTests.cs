@@ -302,6 +302,193 @@ public sealed class ConvertersAndDiTests : IDisposable
         provider.GetRequiredService<TrayIconService>().Should().NotBeNull();
     }
 
+    [Fact]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Captures any STA thread exception cleanly for test assertion.")]
+    public void LocalizationExtension_RefreshesBoundTextBlock_WhenLanguageSwitchesAtRuntime()
+    {
+        Exception? threadException = null;
+        string? russianText = null;
+        string? englishText = null;
+
+        Thread sta = new(() =>
+        {
+            try
+            {
+                LocalizationService localization = new();
+                localization.SetLanguage("ru-RU", updateThreadCulture: false);
+                LocalizationSource.Instance.Attach(localization);
+
+                const string xaml = """
+                    <StackPanel xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                                xmlns:conv="clr-namespace:DnsPulse.App.Converters;assembly=DnsPulse">
+                        <TextBlock x:Name="PlainLabel" Text="{conv:Localization Overview_QuickConnect_Title}" />
+                        <ui:TextBlock x:Name="UiLabel" Text="{conv:Localization Settings_PoolStrategy}" />
+                        <ui:CardControl x:Name="CardLabel" Header="{conv:Localization Settings_Language}" />
+                        <TextBlock><Run x:Name="RunLabel" Text="{conv:Localization Overview_QuickConnect_Title}" /></TextBlock>
+                    </StackPanel>
+                    """;
+
+                System.Windows.Controls.StackPanel panel = (System.Windows.Controls.StackPanel)System.Windows.Markup.XamlReader.Parse(xaml);
+                System.Windows.Controls.TextBlock plain = (System.Windows.Controls.TextBlock)panel.FindName("PlainLabel")!;
+                Wpf.Ui.Controls.TextBlock uiLabel = (Wpf.Ui.Controls.TextBlock)panel.FindName("UiLabel")!;
+                Wpf.Ui.Controls.CardControl cardLabel = (Wpf.Ui.Controls.CardControl)panel.FindName("CardLabel")!;
+                System.Windows.Documents.Run runLabel = (System.Windows.Documents.Run)panel.FindName("RunLabel")!;
+                russianText = plain.Text;
+
+                localization.SetLanguage("en-US", updateThreadCulture: false);
+                englishText = $"{plain.Text}|{uiLabel.Text}|{cardLabel.Header}|{runLabel.Text}";
+            }
+            catch (Exception ex)
+            {
+                threadException = ex;
+            }
+        });
+
+        sta.SetApartmentState(ApartmentState.STA);
+        sta.Start();
+        sta.Join();
+
+        threadException.Should().BeNull();
+        russianText.Should().NotBeNullOrWhiteSpace();
+        englishText.Should().Be("What do you want to open?|Server Selection Mode|Display Language|What do you want to open?");
+    }
+
+    [Fact]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Captures any STA thread exception cleanly for test assertion.")]
+    public void MainWindowAndPages_RefreshLocalizationAndThemeBrushes_AtRuntime()
+    {
+        Exception? threadException = null;
+        string? overviewQuickBefore = null;
+        string? overviewQuickAfter = null;
+        string? settingsPoolAfter = null;
+        System.Windows.Media.Color darkSecondaryColor = default;
+        System.Windows.Media.Color lightSecondaryColor = default;
+
+        Thread sta = new(() =>
+        {
+            try
+            {
+                string dbPath = Path.Combine(_tempDir, "ui-switch-catalog.db");
+                string settingsDir = Path.Combine(_tempDir, "ui-switch-settings");
+                string journalDir = Path.Combine(_tempDir, "ui-switch-journal");
+
+                using ServiceProvider provider = App.BuildServiceProvider(services =>
+                {
+                    services.AddSingleton(new PulseCatalogRepository(dbPath));
+                    services.AddSingleton(new AppSettingsStore(settingsDir, settingsDir));
+                    services.AddSingleton(new NetworkSnapshotJournal(journalDir));
+                    services.AddSingleton(new ThemeAppearanceService(static () => false, static () => 22631));
+                    services.AddSingleton(new WindowsAutostartService(@"SOFTWARE\DnsPulseTests_Headless", "DnsPulseTest"));
+                });
+
+                LocalizationService localization = provider.GetRequiredService<LocalizationService>();
+                localization.SetLanguage("ru-RU", updateThreadCulture: false);
+                LocalizationSource.Instance.Attach(localization);
+
+                System.Windows.Application.ResourceAssembly ??= typeof(App).Assembly;
+                if (System.Windows.Application.Current is null)
+                {
+                    App app = new(suppressStartup: true)
+                    {
+                        ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown
+                    };
+                    app.InitializeComponent();
+                }
+
+                ThemeAppearanceService theme = provider.GetRequiredService<ThemeAppearanceService>();
+                theme.ApplyTheme(isDarkTheme: true, "Emerald");
+
+                MainShellViewModel shell = provider.GetRequiredService<MainShellViewModel>();
+                DnsPulse.App.Views.MainWindow mainWindow = provider.GetRequiredService<DnsPulse.App.Views.MainWindow>();
+                mainWindow.Width = 1100;
+                mainWindow.Height = 760;
+                mainWindow.ShowInTaskbar = false;
+                mainWindow.WindowStyle = System.Windows.WindowStyle.None;
+                mainWindow.Show();
+                PumpDispatcher();
+                shell.NavigateTo(ShellPageKind.Settings);
+                PumpDispatcher();
+
+                DnsPulse.App.Views.OverviewPage overviewPage = provider.GetRequiredService<DnsPulse.App.Views.OverviewPage>();
+                DnsPulse.App.Views.SettingsSafetyPage settingsPage = provider.GetRequiredService<DnsPulse.App.Views.SettingsSafetyPage>();
+
+                System.Windows.Controls.TextBlock? overviewTitle = FindVisualOrLogicalText(overviewPage, "Что нужно открыть?");
+                System.Windows.Controls.TextBlock? poolLabel = FindVisualOrLogicalText(settingsPage, "Выбор сервера из списка");
+                overviewQuickBefore = overviewTitle?.Text;
+                darkSecondaryColor = ((System.Windows.Media.SolidColorBrush)poolLabel!.Foreground).Color;
+
+                theme.ApplyTheme(isDarkTheme: false, "Emerald");
+                localization.SetLanguage("en-US", updateThreadCulture: false);
+                PumpDispatcher();
+
+                overviewQuickAfter = overviewTitle?.Text;
+                settingsPoolAfter = poolLabel.Text;
+                lightSecondaryColor = ((System.Windows.Media.SolidColorBrush)poolLabel.Foreground).Color;
+                mainWindow.AllowClose();
+                mainWindow.Close();
+                PumpDispatcher();
+            }
+            catch (Exception ex)
+            {
+                threadException = ex;
+            }
+            finally
+            {
+                System.Windows.Threading.Dispatcher.CurrentDispatcher.InvokeShutdown();
+            }
+        });
+
+        sta.SetApartmentState(ApartmentState.STA);
+        sta.Start();
+        sta.Join();
+
+        threadException.Should().BeNull();
+        overviewQuickBefore.Should().Be("Что нужно открыть?");
+        overviewQuickAfter.Should().Be("What do you want to open?");
+        settingsPoolAfter.Should().Be("Server Selection Mode");
+        darkSecondaryColor.R.Should().BeGreaterThan(200);
+        lightSecondaryColor.R.Should().Be(0);
+        lightSecondaryColor.A.Should().BeGreaterThan(120);
+    }
+
+    private static void PumpDispatcher()
+    {
+        System.Windows.Threading.DispatcherFrame frame = new();
+        System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
+            System.Windows.Threading.DispatcherPriority.Background,
+            new System.Windows.Threading.DispatcherOperationCallback(static state =>
+            {
+                ((System.Windows.Threading.DispatcherFrame)state).Continue = false;
+                return null;
+            }),
+            frame);
+        System.Windows.Threading.Dispatcher.PushFrame(frame);
+    }
+
+    private static System.Windows.Controls.TextBlock? FindVisualOrLogicalText(System.Windows.DependencyObject root, string text)
+    {
+        if (root is System.Windows.Controls.TextBlock tb && string.Equals(tb.Text, text, StringComparison.Ordinal))
+        {
+            return tb;
+        }
+
+        foreach (object child in System.Windows.LogicalTreeHelper.GetChildren(root))
+        {
+            if (child is System.Windows.DependencyObject depChild)
+            {
+                System.Windows.Controls.TextBlock? found = FindVisualOrLogicalText(depChild, text);
+                if (found is not null)
+                {
+                    return found;
+                }
+            }
+        }
+
+        return null;
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_tempDir))

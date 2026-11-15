@@ -358,6 +358,7 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
 
         _localization.SetLanguage(SelectedLanguageCode);
         ApplyThemeSafely(IsDarkTheme, SelectedAccentPreset);
+        _themeService.ApplyCompactMode(CompactMode);
         OnPropertyChanged(nameof(BackdropStatusText));
         OnPropertyChanged(nameof(IsWfpAntiCheatBlocked));
     }
@@ -849,6 +850,7 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
     {
         if (!_isLoading)
         {
+            _themeService.ApplyCompactMode(value);
             ScheduleAutoSave(delayMs: 50);
         }
     }

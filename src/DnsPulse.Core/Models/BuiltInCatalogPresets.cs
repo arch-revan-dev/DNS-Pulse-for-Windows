@@ -146,6 +146,27 @@ public static class BuiltInCatalogPresets
         "parsec.app"
     ];
 
+    public static IReadOnlyList<string> BuiltinSocialDomains { get; } =
+    [
+        "discord.com",
+        "discord.gg",
+        "discordapp.com",
+        "cdn.discordapp.com",
+        "media.discordapp.net",
+        "gateway.discord.gg",
+        "instagram.com",
+        "www.instagram.com",
+        "facebook.com",
+        "x.com",
+        "twitter.com",
+        "tiktok.com",
+        "reddit.com",
+        "www.reddit.com",
+        "threads.net",
+        "linkedin.com",
+        "medium.com"
+    ];
+
     public static IReadOnlyList<string> AllBuiltinBypassDomains { get; } = BuildCombinedBypassDomains();
 
     private static readonly string[] GeoHideNodes =

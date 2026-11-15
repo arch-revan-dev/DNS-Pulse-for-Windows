@@ -242,6 +242,26 @@ public sealed class SplitNamespaceRouter
             TargetProfileId: snapshot.EncryptedTrustedProfileId);
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="domain"/> routes to Zone 3 Geo-Unlock
+    /// (without being security-pinned) or Zone 2 Block/Protect, meaning direct Zone 4 bootstrap fallback is forbidden.
+    /// </summary>
+    public bool IsGeoUnlockOrBlocked(string domain)
+    {
+        if (string.IsNullOrWhiteSpace(domain))
+        {
+            return false;
+        }
+
+        RouteDecision decision = Route(domain);
+        if (decision.IsBlocked)
+        {
+            return true;
+        }
+
+        return !decision.IsSecurityPinned && decision.Zone == RouteZone.Zone3GeoUnlock;
+    }
+
     private static bool TryMatchSecurityPin(
         DomainRadixTrie<byte> securityPinnedTrie,
         ReadOnlySpan<char> querySpan,

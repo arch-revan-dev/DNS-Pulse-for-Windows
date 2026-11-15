@@ -13,8 +13,9 @@ public sealed class LocalProxyPacInterceptor : IDnsInterceptor
 {
     private const int DefaultPacPort = 8080;
 
-    private readonly string? _configuredPacUrl;
+    private string? _configuredPacUrl;
     private string? _priorAutoConfigUrl;
+    private string? _activePacUrl;
     private bool _isActive;
 
     /// <summary>
@@ -29,6 +30,27 @@ public sealed class LocalProxyPacInterceptor : IDnsInterceptor
     /// <inheritdoc />
     public InterceptionMode Mode => InterceptionMode.LocalProxyPacOnly;
 
+    /// <summary>
+    /// Gets the configured target PAC URL (applied on activation).
+    /// </summary>
+    [SuppressMessage("Design", "CA1056:URI-like properties should not be strings", Justification = "Matches WinINet AutoConfigURL string contract.")]
+    public string? ConfiguredPacUrl => _configuredPacUrl;
+
+    /// <summary>
+    /// Gets the PAC URL most recently applied to WinINet, or <see langword="null"/> when inactive.
+    /// </summary>
+    [SuppressMessage("Design", "CA1056:URI-like properties should not be strings", Justification = "Matches WinINet AutoConfigURL string contract.")]
+    public string? ActivePacUrl => _activePacUrl;
+
+    /// <summary>
+    /// Updates the configured PAC URL (for example when an ephemeral <c>AutoPacServer</c> port binds).
+    /// </summary>
+    [SuppressMessage("Design", "CA1054:URI-like parameters should not be strings", Justification = "Matches WinINet AutoConfigURL string contract.")]
+    public void UpdatePacUrl(string? pacUrl)
+    {
+        _configuredPacUrl = string.IsNullOrWhiteSpace(pacUrl) ? null : pacUrl.Trim();
+    }
+
     /// <inheritdoc />
     public Task ActivateAsync(
         IPAddress localDnsIp,
@@ -42,6 +64,7 @@ public sealed class LocalProxyPacInterceptor : IDnsInterceptor
 
         string targetPacUrl = _configuredPacUrl ?? BuildDefaultPacUrl(localDnsIp, DefaultPacPort);
         _priorAutoConfigUrl = WinInetProxyManager.SetAutoConfigUrl(targetPacUrl);
+        _activePacUrl = targetPacUrl;
         _isActive = true;
 
         return Task.CompletedTask;
@@ -56,6 +79,7 @@ public sealed class LocalProxyPacInterceptor : IDnsInterceptor
         {
             WinInetProxyManager.RestoreAutoConfigUrl(_priorAutoConfigUrl);
             _priorAutoConfigUrl = null;
+            _activePacUrl = null;
             _isActive = false;
         }
 

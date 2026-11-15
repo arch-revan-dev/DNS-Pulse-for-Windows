@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
 
 PackageIdentifier: arch-revan-dev.DnsPulse
-PackageVersion: 2.0.3
+PackageVersion: 2.0.4
 Platform:
   - Windows.Desktop
 MinimumOSVersion: 10.0.19041.0
@@ -17,13 +17,13 @@ InstallerSwitches:
 UpgradeBehavior: install
 Commands:
   - dnspulse
-ReleaseDate: 2026-11-14
+ReleaseDate: 2026-11-15
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/download/v2.0.3/DNS-Pulse-win-x64-setup.exe
+    InstallerUrl: https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/download/v2.0.4/DNS-Pulse-win-x64-setup.exe
     InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
   - Architecture: arm64
-    InstallerUrl: https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/download/v2.0.3/DNS-Pulse-win-arm64-setup.exe
+    InstallerUrl: https://github.com/arch-revan-dev/DNS-Pulse-for-Windows/releases/download/v2.0.4/DNS-Pulse-win-arm64-setup.exe
     InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
 ManifestType: installer
 ManifestVersion: 1.6.0

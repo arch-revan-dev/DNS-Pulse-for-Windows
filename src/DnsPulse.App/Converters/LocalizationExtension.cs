@@ -67,12 +67,32 @@ public sealed class LocalizationSource : INotifyPropertyChanged
             _service.CultureChanged += OnServiceCultureChanged;
         }
 
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
+        RaiseIndexerChanged();
     }
 
     private void OnServiceCultureChanged(object? sender, CultureChangedEventArgs e)
     {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
+        RaiseIndexerChanged();
+    }
+
+    private void RaiseIndexerChanged()
+    {
+        System.Windows.Threading.Dispatcher? dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is { HasShutdownStarted: false, HasShutdownFinished: false } &&
+            dispatcher.Thread.IsAlive &&
+            !dispatcher.CheckAccess())
+        {
+            _ = dispatcher.BeginInvoke(NotifyPropertyChanged);
+            return;
+        }
+
+        NotifyPropertyChanged();
+    }
+
+    private void NotifyPropertyChanged()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(System.Windows.Data.Binding.IndexerName));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
 }
 
@@ -104,7 +124,7 @@ public sealed class LocalizationExtension : MarkupExtension
             return string.Empty;
         }
 
-        System.Windows.Data.Binding binding = new($"[{Key}]")
+        System.Windows.Data.Binding binding = new($"Item[{Key}]")
         {
             Source = LocalizationSource.Instance,
             Mode = BindingMode.OneWay,
@@ -112,7 +132,7 @@ public sealed class LocalizationExtension : MarkupExtension
         };
 
         if (serviceProvider.GetService(typeof(IProvideValueTarget)) is IProvideValueTarget target &&
-            target.TargetObject is Setter)
+            (target.TargetObject is Setter || target.TargetObject is not DependencyObject))
         {
             return binding;
         }

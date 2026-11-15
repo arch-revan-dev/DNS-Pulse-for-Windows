@@ -2,6 +2,21 @@
 
 Все значимые изменения в проекте **DNS Pulse** документируются в этом файле в формате [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
+## [2.0.4] - 2026-11-15
+
+### Добавлено и исправлено
+- **Паритет с мобильной версией (`SniProxy` / Auto Proxy, защита от утечек IPv6/HTTPS, автосинхронизация фидов):**
+  - Реализован `SniProxyDnsClient` и нативная 4-ступенчатая проверка узлов `SniProxy` (`smartproxy://`) в `SixLayerDiagnosticEngine`, добавлена категория `ServerDisplayCategory.AutoProxy`, классификация целевых доменов (`BuiltinSocialDomains` и проверка поддержки домена), а `BenchmarkRunner.StreamAsync` изолирует ошибки отдельных узлов и гарантированно завершает канал.
+  - В `PulseCoreDnsEngine` добавлены синтез пустых `NOERROR`-ответов для `AAAA` (`GeoUnlockIpv4Only`) и `HTTPS/SVCB` на Зоне 3, автообучение резервного Smart-Proxy IP (`LastLearnedSmartProxyIp`), а также `ResolveHostAddressesForProxyAsync` без утечки доменов Зоны 2/3 на прямой bootstrap-резолвер.
+  - Добавлена автосинхронизация встроенных списков доменов обхода при старте (`SignedFeedSyncService.SyncStartupFeedsAsync` в режиме `FeedVerificationMode.BuiltInCommunityTrusted` с сохранением офлайн-кэша `dynamic_bypass_domains_cache.json`).
+- **Устранение рассинхронизации Windows Service IPC (`DefaultPulseRuntimeBackend`, `DnsPulseWorkerService`, `HybridPulseRuntimeService`):**
+  - Расширен контракт Named Pipe IPC (`Connect` с полным `ServiceConnectRequest`, живые команды `UpdateRoutingConfig`, `UpdatePool`, `ConfigureEngine`, `ApplyProfile`, `UpdateBlocklist`, `RunDiagnostics`, `ExportBundle` и расширенный `ServiceStatusSnapshot`), благодаря чему служба `DnsPulseService` получает все правила Зон 1–4, выбранные серверы и режим перехвата без пустых пулов.
+- **Честный PAC-режим, совместимость с `ag_dns` (`127.0.0.53`) и обновление прав (`WinInetProxyManager`, `LoopbackPortSelector`, `VerifiedAppUpdateService`):**
+  - В режиме `LocalProxyPacOnly` (и при автоматическом откате с занятого порта 53) активируется `LocalProxyPacInterceptor` с реальным `AutoPacServer.PacUrl`, синхронизацией `AutoConfigURL` в пользовательской сессии WinINet и защитой NRPT от записи некорректных адресов с нестандартным портом.
+  - `Port53ConflictInspector` и `LoopbackPortSelector` игнорируют посторонние loopback-слушатели вроде `127.0.0.53` (`ag_dns`) при наличии свободных кандидатов `127.0.0.1` / `127.0.53.1..10`, а тихий установщик обновлений запрашивает повышение UAC при необходимости.
+- **Переработка интерфейса Fluent 2, адаптивные темы и живая смена языка (`DnsPulse.App`):**
+  - Внедрена единая палитра адаптивных кистей `Pulse*Brush` для тёмной, светлой и высококонтрастной тем и компактные токены отступов (`CompactMode`) на всех 5 страницах; обновлена главная страница `OverviewPage` с 3-шаговой живой проверкой подключения, объединённым сворачиваемым баннером предупреждений и мгновенным переключением локализации `en-US` / `ru-RU` без перезапуска (`463/463` тестов проходят в `Release`).
+
 ## [2.0.3] - 2026-11-14
 
 ### Исправлено и улучшено

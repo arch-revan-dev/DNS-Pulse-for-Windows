@@ -23,7 +23,7 @@
     <ui:TitleBar Grid.Row="0"
                  Title="{Binding WindowTitle}">
       <ui:TitleBar.Icon>
-        <ui:ImageIcon Source="pack://application:,,,/Assets/app.ico" />
+        <ui:ImageIcon Source="pack://application:,,,/DnsPulse;component/Assets/app.ico" />
       </ui:TitleBar.Icon>
       <ui:TitleBar.TrailingContent>
         <ui:Button Margin="0,0,8,0"
@@ -42,7 +42,7 @@
             <Border Margin="6,0,0,0"
                     Padding="6,1"
                     CornerRadius="10"
-                    Background="#B45309">
+                    Background="{DynamicResource PulseWarningBadgeBgBrush}">
               <TextBlock Text="{Binding DismissedBannerCount}"
                          FontSize="11"
                          FontWeight="SemiBold"
@@ -54,277 +54,250 @@
       </ui:TitleBar.TrailingContent>
     </ui:TitleBar>
 
-    <!-- Collapsible Proactive Advisory Notification Cards -->
-    <StackPanel Grid.Row="1" Margin="12,4,12,0">
-      <!-- Dirty Recovery Banner -->
-      <Border Margin="0,0,0,4"
-              Padding="12,7"
+    <!-- Single Compact Collapsible & Dismissible Advisory Bar -->
+    <StackPanel Grid.Row="1"
+                Margin="16,6,16,2"
+                Visibility="{Binding HasActiveBanners, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <Border Padding="12,8"
               CornerRadius="8"
-              Background="#1C212A"
-              BorderBrush="#D97706"
               BorderThickness="1"
-              Visibility="{Binding ShowDirtyRecoveryBanner, Converter={StaticResource BooleanToVisibilityConverter}}"
               AutomationProperties.LiveSetting="Polite"
-              AutomationProperties.Name="{conv:Localization Banner_DirtyRecovery_Title}"
-              AutomationProperties.HelpText="{Binding DirtyRecoverySummary}">
+              AutomationProperties.Name="{Binding PrimaryBannerTitle}"
+              AutomationProperties.HelpText="{Binding PrimaryBannerSummary}">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource PulseWarningSubtleBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PulseWarningBorderBrush}" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding IsPrimaryBannerInfo}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource PulseInfoSubtleBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource PulseInfoBorderBrush}" />
+              </DataTrigger>
+              <DataTrigger Binding="{Binding IsPrimaryBannerDanger}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource PulseDangerSubtleBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource PulseDangerBorderBrush}" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <Border Grid.Column="0"
-                  Width="24"
-                  Height="24"
-                  CornerRadius="12"
-                  Margin="0,0,10,0"
-                  VerticalAlignment="Center"
-                  Background="#B45309">
-            <ui:SymbolIcon Symbol="Warning24" FontSize="14" Foreground="White" />
-          </Border>
-          <TextBlock Grid.Column="1"
-                     VerticalAlignment="Center"
-                     Foreground="#F8FAFC"
-                     FontSize="12"
-                     TextTrimming="CharacterEllipsis"
-                     ToolTip="{Binding DirtyRecoverySummary}">
-            <Run FontWeight="SemiBold" Text="{conv:Localization Banner_DirtyRecovery_Title}" />
-            <Run Text=" — " Foreground="#94A3B8" />
-            <Run Text="{Binding DirtyRecoverySummary, Mode=OneWay}" Foreground="#CBD5E1" />
-          </TextBlock>
-          <ui:Button Grid.Column="2"
-                     Margin="8,0,0,0"
-                     Padding="7,3"
-                     Appearance="Secondary"
-                     Content="×"
-                     FontSize="14"
-                     FontWeight="SemiBold"
-                     Command="{Binding DismissDirtyRecoveryBannerCommand}"
-                     ToolTip="{conv:Localization Banner_Dismiss}"
-                     AutomationProperties.Name="{conv:Localization Banner_Dismiss}"
-                     AutomationProperties.HelpText="{conv:Localization Banner_DirtyRecovery_Title}" />
-        </Grid>
-      </Border>
 
-      <!-- Browser DoH Bypass Banner -->
-      <Border Margin="0,0,0,4"
-              Padding="12,7"
-              CornerRadius="8"
-              Background="#1C212A"
-              BorderBrush="#D97706"
-              BorderThickness="1"
-              Visibility="{Binding ShowBrowserDohBanner, Converter={StaticResource BooleanToVisibilityConverter}}"
-              AutomationProperties.LiveSetting="Polite"
-              AutomationProperties.Name="{conv:Localization Banner_BrowserDoh_Title}"
-              AutomationProperties.HelpText="{Binding BrowserDohBannerMessage}">
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
           <Border Grid.Column="0"
                   Width="24"
                   Height="24"
                   CornerRadius="12"
                   Margin="0,0,10,0"
-                  VerticalAlignment="Center"
-                  Background="#B45309">
-            <ui:SymbolIcon Symbol="Warning24" FontSize="14" Foreground="White" />
+                  VerticalAlignment="Center">
+            <Border.Style>
+              <Style TargetType="Border">
+                <Setter Property="Background" Value="{DynamicResource PulseWarningBadgeBgBrush}" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding IsPrimaryBannerInfo}" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource PulseInfoBadgeBgBrush}" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding IsPrimaryBannerDanger}" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource PulseDangerBadgeBgBrush}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Border.Style>
+            <ui:SymbolIcon FontSize="13" Foreground="White">
+              <ui:SymbolIcon.Style>
+                <Style TargetType="ui:SymbolIcon">
+                  <Setter Property="Symbol" Value="Warning24" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsPrimaryBannerInfo}" Value="True">
+                      <Setter Property="Symbol" Value="Info24" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding IsPrimaryBannerDanger}" Value="True">
+                      <Setter Property="Symbol" Value="ErrorCircle24" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </ui:SymbolIcon.Style>
+            </ui:SymbolIcon>
           </Border>
+
           <TextBlock Grid.Column="1"
                      VerticalAlignment="Center"
-                     Foreground="#F8FAFC"
+                     Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                      FontSize="12"
                      TextTrimming="CharacterEllipsis"
-                     ToolTip="{Binding BrowserDohBannerMessage}">
-            <Run FontWeight="SemiBold" Text="{conv:Localization Banner_BrowserDoh_Title}" />
-            <Run Text=" — " Foreground="#94A3B8" />
-            <Run Text="{Binding BrowserDohBannerMessage, Mode=OneWay}" Foreground="#CBD5E1" />
+                     ToolTip="{Binding PrimaryBannerSummary}">
+            <Run FontWeight="SemiBold" Text="{Binding PrimaryBannerTitle, Mode=OneWay}" />
+            <Run Text=" — " Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Run Text="{Binding PrimaryBannerSummary, Mode=OneWay}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
           </TextBlock>
+
           <ui:Button Grid.Column="2"
                      Margin="10,0,0,0"
                      Padding="10,4"
                      Appearance="Primary"
                      FontSize="12"
-                     Content="{conv:Localization Banner_BrowserDoh_Fix}"
-                     Command="{Binding FixBrowserDohCommand}"
-                     AutomationProperties.Name="{conv:Localization Banner_BrowserDoh_Fix}"
-                     AutomationProperties.HelpText="{Binding BrowserDohBannerMessage}" />
+                     Content="{Binding PrimaryBannerActionText}"
+                     Command="{Binding PrimaryBannerActionCommand}"
+                     Visibility="{Binding PrimaryBannerHasAction, Converter={StaticResource BooleanToVisibilityConverter}}"
+                     AutomationProperties.Name="{Binding PrimaryBannerActionText}"
+                     AutomationProperties.HelpText="{Binding PrimaryBannerSummary}" />
+
           <ui:Button Grid.Column="3"
                      Margin="6,0,0,0"
-                     Padding="7,3"
+                     Padding="9,4"
                      Appearance="Secondary"
-                     Content="×"
-                     FontSize="14"
-                     FontWeight="SemiBold"
-                     Command="{Binding DismissBrowserDohBannerCommand}"
-                     ToolTip="{conv:Localization Banner_Dismiss}"
-                     AutomationProperties.Name="{conv:Localization Banner_Dismiss}"
-                     AutomationProperties.HelpText="{conv:Localization Banner_BrowserDoh_Title}" />
-        </Grid>
-      </Border>
+                     FontSize="12"
+                     Command="{Binding ToggleNotificationPanelExpandedCommand}"
+                     Visibility="{Binding HasMultipleActiveBanners, Converter={StaticResource BooleanToVisibilityConverter}}"
+                     AutomationProperties.Name="{conv:Localization Banner_ShowNotifications}">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="+" FontWeight="SemiBold" />
+              <TextBlock Text="{Binding AdditionalBannerCount}" FontWeight="SemiBold" Margin="0,0,4,0" />
+              <ui:SymbolIcon FontSize="12">
+                <ui:SymbolIcon.Style>
+                  <Style TargetType="ui:SymbolIcon">
+                    <Setter Property="Symbol" Value="ChevronDown24" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding IsNotificationPanelExpanded}" Value="True">
+                        <Setter Property="Symbol" Value="ChevronUp24" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </ui:SymbolIcon.Style>
+              </ui:SymbolIcon>
+            </StackPanel>
+          </ui:Button>
 
-      <!-- Port 53 Conflict Banner -->
-      <Border Margin="0,0,0,4"
-              Padding="12,7"
-              CornerRadius="8"
-              Background="#1C212A"
-              BorderBrush="#D97706"
-              BorderThickness="1"
-              Visibility="{Binding ShowPort53ConflictBanner, Converter={StaticResource BooleanToVisibilityConverter}}"
-              AutomationProperties.LiveSetting="Polite"
-              AutomationProperties.Name="{conv:Localization Banner_Port53_Title}"
-              AutomationProperties.HelpText="{Binding Port53ConflictBannerMessage}">
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
-          <Border Grid.Column="0"
-                  Width="24"
-                  Height="24"
-                  CornerRadius="12"
-                  Margin="0,0,10,0"
-                  VerticalAlignment="Center"
-                  Background="#B45309">
-            <ui:SymbolIcon Symbol="Warning24" FontSize="14" Foreground="White" />
-          </Border>
-          <TextBlock Grid.Column="1"
-                     VerticalAlignment="Center"
-                     Foreground="#F8FAFC"
-                     FontSize="12"
-                     TextTrimming="CharacterEllipsis"
-                     ToolTip="{Binding Port53ConflictBannerMessage}">
-            <Run FontWeight="SemiBold" Text="{conv:Localization Banner_Port53_Title}" />
-            <Run Text=" — " Foreground="#94A3B8" />
-            <Run Text="{Binding Port53ConflictBannerMessage, Mode=OneWay}" Foreground="#CBD5E1" />
-          </TextBlock>
-          <ui:Button Grid.Column="2"
-                     Margin="10,0,0,0"
-                     Padding="10,4"
-                     Appearance="Primary"
-                     FontSize="12"
-                     Content="{conv:Localization Banner_Port53_Fix}"
-                     Command="{Binding FixPort53ConflictCommand}"
-                     AutomationProperties.Name="{conv:Localization Banner_Port53_Fix}"
-                     AutomationProperties.HelpText="{Binding Port53ConflictBannerMessage}" />
-          <ui:Button Grid.Column="3"
+          <ui:Button Grid.Column="4"
                      Margin="6,0,0,0"
-                     Padding="7,3"
+                     Padding="8,3"
                      Appearance="Secondary"
                      Content="×"
                      FontSize="14"
                      FontWeight="SemiBold"
-                     Command="{Binding DismissPort53ConflictBannerCommand}"
-                     ToolTip="{conv:Localization Banner_Dismiss}"
-                     AutomationProperties.Name="{conv:Localization Banner_Dismiss}"
-                     AutomationProperties.HelpText="{conv:Localization Banner_Port53_Title}" />
+                     Command="{Binding DismissAllActiveBannersCommand}"
+                     ToolTip="{conv:Localization Banner_HideNotifications}"
+                     AutomationProperties.Name="{conv:Localization Banner_HideNotifications}"
+                     AutomationProperties.HelpText="{Binding PrimaryBannerTitle}" />
         </Grid>
       </Border>
 
-      <!-- Multi-Network / VPN Advisory Banner -->
-      <Border Margin="0,0,0,4"
-              Padding="12,7"
-              CornerRadius="8"
-              Background="#1C212A"
-              BorderBrush="#2563EB"
-              BorderThickness="1"
-              Visibility="{Binding ShowVpnAdvisoryBanner, Converter={StaticResource BooleanToVisibilityConverter}}"
-              AutomationProperties.LiveSetting="Polite"
-              AutomationProperties.Name="{conv:Localization Banner_VpnAdvisory_Title}"
-              AutomationProperties.HelpText="{conv:Localization Banner_VpnAdvisory_Desc}">
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
-          <Border Grid.Column="0"
-                  Width="24"
-                  Height="24"
-                  CornerRadius="12"
-                  Margin="0,0,10,0"
-                  VerticalAlignment="Center"
-                  Background="#1D4ED8">
-            <ui:SymbolIcon Symbol="Info24" FontSize="14" Foreground="White" />
-          </Border>
-          <TextBlock Grid.Column="1"
-                     VerticalAlignment="Center"
-                     Foreground="#F8FAFC"
-                     FontSize="12"
-                     TextTrimming="CharacterEllipsis"
-                     ToolTip="{conv:Localization Banner_VpnAdvisory_Desc}">
-            <Run FontWeight="SemiBold" Text="{conv:Localization Banner_VpnAdvisory_Title}" />
-            <Run Text=" — " Foreground="#94A3B8" />
-            <Run Text="{conv:Localization Banner_VpnAdvisory_Desc}" Foreground="#CBD5E1" />
-          </TextBlock>
-          <ui:Button Grid.Column="2"
-                     Margin="8,0,0,0"
-                     Padding="7,3"
-                     Appearance="Secondary"
-                     Content="×"
-                     FontSize="14"
-                     FontWeight="SemiBold"
-                     Command="{Binding DismissVpnAdvisoryBannerCommand}"
-                     ToolTip="{conv:Localization Banner_Dismiss}"
-                     AutomationProperties.Name="{conv:Localization Banner_Dismiss}"
-                     AutomationProperties.HelpText="{conv:Localization Banner_VpnAdvisory_Title}" />
-        </Grid>
-      </Border>
+      <!-- Expanded Individual Advisories (shown only when user clicks +N) -->
+      <StackPanel Margin="0,6,0,0"
+                  Visibility="{Binding IsNotificationPanelExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <Border Margin="0,0,0,4"
+                Padding="10,6"
+                CornerRadius="6"
+                Background="{DynamicResource PulseInnerPanelBrush}"
+                BorderBrush="{DynamicResource PulseWarningBorderBrush}"
+                BorderThickness="1"
+                Visibility="{Binding ShowDirtyRecoveryBanner, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding DirtyRecoverySummary}">
+              <Run FontWeight="SemiBold" Text="{conv:Localization Banner_DirtyRecovery_Title}" />
+              <Run Text=" — " Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+              <Run Text="{Binding DirtyRecoverySummary, Mode=OneWay}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </TextBlock>
+            <ui:Button Grid.Column="1" Margin="8,0,0,0" Padding="7,2" Appearance="Secondary" Content="×" FontSize="12" Command="{Binding DismissDirtyRecoveryBannerCommand}" ToolTip="{conv:Localization Banner_Dismiss}" />
+          </Grid>
+        </Border>
 
-      <!-- Anti-Cheat Driver Advisory Banner -->
-      <Border Margin="0,0,0,4"
-              Padding="12,7"
-              CornerRadius="8"
-              Background="#1C212A"
-              BorderBrush="#DC2626"
-              BorderThickness="1"
-              Visibility="{Binding ShowAntiCheatBanner, Converter={StaticResource BooleanToVisibilityConverter}}"
-              AutomationProperties.LiveSetting="Polite"
-              AutomationProperties.Name="{conv:Localization Banner_AntiCheat_Title}"
-              AutomationProperties.HelpText="{Binding AntiCheatBannerMessage}">
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
-          <Border Grid.Column="0"
-                  Width="24"
-                  Height="24"
-                  CornerRadius="12"
-                  Margin="0,0,10,0"
-                  VerticalAlignment="Center"
-                  Background="#B91C1C">
-            <ui:SymbolIcon Symbol="ErrorCircle24" FontSize="14" Foreground="White" />
-          </Border>
-          <TextBlock Grid.Column="1"
-                     VerticalAlignment="Center"
-                     Foreground="#F8FAFC"
-                     FontSize="12"
-                     TextTrimming="CharacterEllipsis"
-                     ToolTip="{Binding AntiCheatBannerMessage}">
-            <Run FontWeight="SemiBold" Text="{conv:Localization Banner_AntiCheat_Title}" />
-            <Run Text=" — " Foreground="#94A3B8" />
-            <Run Text="{Binding AntiCheatBannerMessage, Mode=OneWay}" Foreground="#CBD5E1" />
-          </TextBlock>
-          <ui:Button Grid.Column="2"
-                     Margin="8,0,0,0"
-                     Padding="7,3"
-                     Appearance="Secondary"
-                     Content="×"
-                     FontSize="14"
-                     FontWeight="SemiBold"
-                     Command="{Binding DismissAntiCheatBannerCommand}"
-                     ToolTip="{conv:Localization Banner_Dismiss}"
-                     AutomationProperties.Name="{conv:Localization Banner_Dismiss}"
-                     AutomationProperties.HelpText="{conv:Localization Banner_AntiCheat_Title}" />
-        </Grid>
-      </Border>
+        <Border Margin="0,0,0,4"
+                Padding="10,6"
+                CornerRadius="6"
+                Background="{DynamicResource PulseInnerPanelBrush}"
+                BorderBrush="{DynamicResource PulseWarningBorderBrush}"
+                BorderThickness="1"
+                Visibility="{Binding ShowBrowserDohBanner, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding BrowserDohBannerMessage}">
+              <Run FontWeight="SemiBold" Text="{conv:Localization Banner_BrowserDoh_Title}" />
+              <Run Text=" — " Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+              <Run Text="{Binding BrowserDohBannerMessage, Mode=OneWay}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </TextBlock>
+            <ui:Button Grid.Column="1" Margin="8,0,0,0" Padding="10,3" Appearance="Primary" FontSize="11" Content="{conv:Localization Banner_BrowserDoh_Fix}" Command="{Binding FixBrowserDohCommand}" />
+            <ui:Button Grid.Column="2" Margin="6,0,0,0" Padding="7,2" Appearance="Secondary" Content="×" FontSize="12" Command="{Binding DismissBrowserDohBannerCommand}" ToolTip="{conv:Localization Banner_Dismiss}" />
+          </Grid>
+        </Border>
+
+        <Border Margin="0,0,0,4"
+                Padding="10,6"
+                CornerRadius="6"
+                Background="{DynamicResource PulseInnerPanelBrush}"
+                BorderBrush="{DynamicResource PulseWarningBorderBrush}"
+                BorderThickness="1"
+                Visibility="{Binding ShowPort53ConflictBanner, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Port53ConflictBannerMessage}">
+              <Run FontWeight="SemiBold" Text="{conv:Localization Banner_Port53_Title}" />
+              <Run Text=" — " Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+              <Run Text="{Binding Port53ConflictBannerMessage, Mode=OneWay}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </TextBlock>
+            <ui:Button Grid.Column="1" Margin="8,0,0,0" Padding="10,3" Appearance="Primary" FontSize="11" Content="{conv:Localization Banner_Port53_Fix}" Command="{Binding FixPort53ConflictCommand}" />
+            <ui:Button Grid.Column="2" Margin="6,0,0,0" Padding="7,2" Appearance="Secondary" Content="×" FontSize="12" Command="{Binding DismissPort53ConflictBannerCommand}" ToolTip="{conv:Localization Banner_Dismiss}" />
+          </Grid>
+        </Border>
+
+        <Border Margin="0,0,0,4"
+                Padding="10,6"
+                CornerRadius="6"
+                Background="{DynamicResource PulseInnerPanelBrush}"
+                BorderBrush="{DynamicResource PulseInfoBorderBrush}"
+                BorderThickness="1"
+                Visibility="{Binding ShowVpnAdvisoryBanner, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis" ToolTip="{conv:Localization Banner_VpnAdvisory_Desc}">
+              <Run FontWeight="SemiBold" Text="{conv:Localization Banner_VpnAdvisory_Title}" />
+              <Run Text=" — " Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+              <Run Text="{conv:Localization Banner_VpnAdvisory_Desc}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </TextBlock>
+            <ui:Button Grid.Column="1" Margin="8,0,0,0" Padding="7,2" Appearance="Secondary" Content="×" FontSize="12" Command="{Binding DismissVpnAdvisoryBannerCommand}" ToolTip="{conv:Localization Banner_Dismiss}" />
+          </Grid>
+        </Border>
+
+        <Border Padding="10,6"
+                CornerRadius="6"
+                Background="{DynamicResource PulseInnerPanelBrush}"
+                BorderBrush="{DynamicResource PulseDangerBorderBrush}"
+                BorderThickness="1"
+                Visibility="{Binding ShowAntiCheatBanner, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding AntiCheatBannerMessage}">
+              <Run FontWeight="SemiBold" Text="{conv:Localization Banner_AntiCheat_Title}" />
+              <Run Text=" — " Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+              <Run Text="{Binding AntiCheatBannerMessage, Mode=OneWay}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </TextBlock>
+            <ui:Button Grid.Column="1" Margin="8,0,0,0" Padding="7,2" Appearance="Secondary" Content="×" FontSize="12" Command="{Binding DismissAntiCheatBannerCommand}" ToolTip="{conv:Localization Banner_Dismiss}" />
+          </Grid>
+        </Border>
+      </StackPanel>
     </StackPanel>
 
     <!-- 5-Page Fluent 2 Navigation Shell -->

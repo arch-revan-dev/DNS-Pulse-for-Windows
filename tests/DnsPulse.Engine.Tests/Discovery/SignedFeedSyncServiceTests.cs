@@ -191,6 +191,78 @@ public sealed class SignedFeedSyncServiceTests
         SignedFeedSyncService.BuiltInFeeds.Select(f => f.FeedUrl).Should().Contain(ExpectedBuiltInFeedUrls);
     }
 
+    [Fact]
+    public async Task SyncStartupFeedsAsync_BuiltInCommunityTrusted_SavesAndFallsBackToOfflineCache_WhileRejectingUntrustedUnsigned()
+    {
+        byte[] hostsPayload = Encoding.UTF8.GetBytes("185.236.10.37 gemini.google.com\n185.236.10.37 aistudio.google.com\n");
+        byte[] quickDnsPayload = Encoding.UTF8.GetBytes("""
+            {
+              "profiles": [
+                { "name": "Geo Node", "primary_ip": "192.255.159.240", "doh_url": "https://smart.example/dns-query" }
+              ]
+            }
+            """);
+        byte[] mdPayload = Encoding.UTF8.GetBytes("Mirror: https://mirror.example/dns-query\n");
+
+        Dictionary<string, byte[]> onlineResponses = new(StringComparer.Ordinal)
+        {
+            [SignedFeedSyncService.BuiltInFeeds[0].FeedUrl] = hostsPayload,
+            [SignedFeedSyncService.BuiltInFeeds[1].FeedUrl] = quickDnsPayload,
+            [SignedFeedSyncService.BuiltInFeeds[2].FeedUrl] = mdPayload,
+            [SignedFeedSyncService.BuiltInFeeds[3].FeedUrl] = mdPayload
+        };
+
+        string cacheFile = Path.Combine(Path.GetTempPath(), $"dnspulse_feed_cache_{Guid.NewGuid():N}.json");
+        try
+        {
+            IBootstrapResolver bootstrap = Substitute.For<IBootstrapResolver>();
+
+            using (MockHttpMessageHandler onlineHandler = new(onlineResponses))
+            using (SignedFeedSyncService onlineService = new(bootstrap, customHandler: onlineHandler))
+            {
+                FeedStartupSyncResult startup = await onlineService.SyncStartupFeedsAsync(
+                    cacheFile,
+                    FeedVerificationMode.BuiltInCommunityTrusted);
+
+                startup.UpdatedCacheFromNetwork.Should().BeTrue();
+                startup.EffectiveBypassDomains.Should().Contain(["gemini.google.com", "aistudio.google.com"]);
+                startup.EffectiveDiscoveredServers.Should().HaveCountGreaterThanOrEqualTo(2);
+
+                // BuiltInCommunityTrusted MUST still fail closed on unknown unsigned third-party feeds!
+                FeedSourceDescriptor rogueUnsigned = new()
+                {
+                    Id = "rogue-unsigned",
+                    Name = "Rogue",
+                    Kind = FeedKind.BypassHosts,
+                    FeedUrl = "https://rogue.example/hosts"
+                };
+                FeedSyncItemResult rogueResult = await onlineService.SyncSingleAsync(
+                    rogueUnsigned,
+                    FeedVerificationMode.BuiltInCommunityTrusted);
+                rogueResult.VerificationStatus.Should().Be(FeedVerificationStatus.RejectedMissingSignature);
+            }
+
+            // Offline startup loads cached domains and servers cleanly when network returns 404.
+            using MockHttpMessageHandler offlineHandler = new(new Dictionary<string, byte[]>());
+            using SignedFeedSyncService offlineService = new(bootstrap, customHandler: offlineHandler);
+            FeedStartupSyncResult offlineStartup = await offlineService.SyncStartupFeedsAsync(
+                cacheFile,
+                FeedVerificationMode.BuiltInCommunityTrusted);
+
+            offlineStartup.LoadedFromCache.Should().BeTrue();
+            offlineStartup.UpdatedCacheFromNetwork.Should().BeFalse();
+            offlineStartup.EffectiveBypassDomains.Should().Contain(["gemini.google.com", "aistudio.google.com"]);
+            offlineStartup.EffectiveDiscoveredServers.Should().HaveCountGreaterThanOrEqualTo(2);
+        }
+        finally
+        {
+            if (File.Exists(cacheFile))
+            {
+                File.Delete(cacheFile);
+            }
+        }
+    }
+
     private sealed class MockHttpMessageHandler(IReadOnlyDictionary<string, byte[]> responses) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

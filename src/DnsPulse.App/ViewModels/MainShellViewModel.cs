@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DnsPulse.App.Data;
@@ -123,6 +124,9 @@ public sealed partial class MainShellViewModel : ObservableObject
     [ObservableProperty]
     private string _antiCheatNamesText = string.Empty;
 
+    [ObservableProperty]
+    private bool _isNotificationPanelExpanded;
+
     public MainShellViewModel(
         LocalizationService localization,
         IPulseRuntimeService runtimeService,
@@ -212,6 +216,146 @@ public sealed partial class MainShellViewModel : ObservableObject
 
     public bool HasDismissedBanners => DismissedBannerCount > 0;
 
+    /// <summary>
+    /// Exposes the background startup feed sync task started by <see cref="InitializeAsync"/>, if any.
+    /// </summary>
+    public Task? LastStartupFeedSyncTask { get; private set; }
+
+    public int ActiveBannerCount =>
+        (ShowDirtyRecoveryBanner ? 1 : 0) +
+        (ShowBrowserDohBanner ? 1 : 0) +
+        (ShowPort53ConflictBanner ? 1 : 0) +
+        (ShowVpnAdvisoryBanner ? 1 : 0) +
+        (ShowAntiCheatBanner ? 1 : 0);
+
+    public int AdditionalBannerCount => Math.Max(0, ActiveBannerCount - 1);
+
+    public bool HasActiveBanners => ActiveBannerCount > 0;
+
+    public bool HasMultipleActiveBanners => ActiveBannerCount > 1;
+
+    public bool IsPrimaryBannerDanger => ShowAntiCheatBanner;
+
+    public bool IsPrimaryBannerInfo =>
+        !ShowAntiCheatBanner &&
+        !ShowDirtyRecoveryBanner &&
+        !ShowPort53ConflictBanner &&
+        !ShowBrowserDohBanner &&
+        ShowVpnAdvisoryBanner;
+
+    public string PrimaryBannerTitle
+    {
+        get
+        {
+            if (ShowAntiCheatBanner)
+            {
+                return _localization["Banner_AntiCheat_Title"];
+            }
+
+            if (ShowDirtyRecoveryBanner)
+            {
+                return _localization["Banner_DirtyRecovery_Title"];
+            }
+
+            if (ShowPort53ConflictBanner)
+            {
+                return _localization["Banner_Port53_Title"];
+            }
+
+            if (ShowBrowserDohBanner)
+            {
+                return _localization["Banner_BrowserDoh_Title"];
+            }
+
+            if (ShowVpnAdvisoryBanner)
+            {
+                return _localization["Banner_VpnAdvisory_Title"];
+            }
+
+            return string.Empty;
+        }
+    }
+
+    public string PrimaryBannerSummary
+    {
+        get
+        {
+            if (ShowAntiCheatBanner)
+            {
+                return AntiCheatBannerMessage;
+            }
+
+            if (ShowDirtyRecoveryBanner)
+            {
+                return DirtyRecoverySummary;
+            }
+
+            if (ShowPort53ConflictBanner)
+            {
+                return Port53ConflictBannerMessage;
+            }
+
+            if (ShowBrowserDohBanner)
+            {
+                return BrowserDohBannerMessage;
+            }
+
+            if (ShowVpnAdvisoryBanner)
+            {
+                return _localization["Banner_VpnAdvisory_Desc"];
+            }
+
+            return string.Empty;
+        }
+    }
+
+    public bool PrimaryBannerHasAction =>
+        !ShowAntiCheatBanner &&
+        !ShowDirtyRecoveryBanner &&
+        (ShowPort53ConflictBanner || ShowBrowserDohBanner);
+
+    public string PrimaryBannerActionText
+    {
+        get
+        {
+            if (!ShowAntiCheatBanner && !ShowDirtyRecoveryBanner)
+            {
+                if (ShowPort53ConflictBanner)
+                {
+                    return _localization["Banner_Port53_Fix"];
+                }
+
+                if (ShowBrowserDohBanner)
+                {
+                    return _localization["Banner_BrowserDoh_Fix"];
+                }
+            }
+
+            return string.Empty;
+        }
+    }
+
+    public IRelayCommand? PrimaryBannerActionCommand
+    {
+        get
+        {
+            if (!ShowAntiCheatBanner && !ShowDirtyRecoveryBanner)
+            {
+                if (ShowPort53ConflictBanner)
+                {
+                    return FixPort53ConflictCommand;
+                }
+
+                if (ShowBrowserDohBanner)
+                {
+                    return FixBrowserDohCommand;
+                }
+            }
+
+            return null;
+        }
+    }
+
     public async Task InitializeAsync(
         CliLaunchOptions? cliOptions = null,
         CancellationToken cancellationToken = default)
@@ -246,7 +390,50 @@ public sealed partial class MainShellViewModel : ObservableObject
             await ApplyCliStartupOptionsAsync(cliOptions, cancellationToken).ConfigureAwait(false);
         }
 
+        string feedCachePath = GetFeedCacheFilePath();
+        if (loadedSettings.AutoSyncFeedsOnStartup || File.Exists(feedCachePath))
+        {
+            LastStartupFeedSyncTask = RunStartupFeedSyncSafelyAsync(
+                feedCachePath,
+                networkSyncEnabled: loadedSettings.AutoSyncFeedsOnStartup,
+                cancellationToken);
+        }
+
         IsInitialized = true;
+    }
+
+    private string GetFeedCacheFilePath()
+    {
+        string? settingsDir = Path.GetDirectoryName(_settingsStore.SettingsFilePath);
+        string resolvedDir = !string.IsNullOrWhiteSpace(settingsDir)
+            ? settingsDir
+            : Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "DnsPulse");
+        return Path.Combine(resolvedDir, "dynamic_bypass_domains_cache.json");
+    }
+
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Startup feed sync runs in the background and must never fail shell startup.")]
+    private async Task RunStartupFeedSyncSafelyAsync(
+        string cacheFilePath,
+        bool networkSyncEnabled,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using CancellationTokenSource timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(12));
+            await Servers.SyncStartupFeedsAsync(
+                cacheFilePath,
+                networkSyncEnabled: networkSyncEnabled,
+                cancellationToken: timeoutCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception)
+        {
+        }
     }
 
     [RelayCommand]
@@ -385,6 +572,91 @@ public sealed partial class MainShellViewModel : ObservableObject
         ShowDirtyRecoveryBanner = false;
     }
 
+    [RelayCommand]
+    private void ToggleNotificationPanelExpanded()
+    {
+        IsNotificationPanelExpanded = !IsNotificationPanelExpanded;
+    }
+
+    [RelayCommand]
+    public async Task DismissAllActiveBannersAsync(CancellationToken cancellationToken = default)
+    {
+        bool dirtyPersist = false;
+        ShowDirtyRecoveryBanner = false;
+        IsNotificationPanelExpanded = false;
+
+        if (ShowBrowserDohBanner)
+        {
+            ShowBrowserDohBanner = false;
+            _dismissedBrowserDohBanner = true;
+            dirtyPersist = true;
+        }
+
+        if (ShowPort53ConflictBanner)
+        {
+            ShowPort53ConflictBanner = false;
+            _dismissedPort53Banner = true;
+            dirtyPersist = true;
+        }
+
+        if (ShowVpnAdvisoryBanner)
+        {
+            ShowVpnAdvisoryBanner = false;
+            _dismissedVpnBanner = true;
+            dirtyPersist = true;
+        }
+
+        if (ShowAntiCheatBanner)
+        {
+            ShowAntiCheatBanner = false;
+            _dismissedAntiCheatBanner = true;
+            dirtyPersist = true;
+        }
+
+        if (dirtyPersist)
+        {
+            await PersistBannerDismissalFlagsAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    partial void OnShowDirtyRecoveryBannerChanged(bool value) => NotifyActiveBannerSummaryChanged();
+
+    partial void OnShowBrowserDohBannerChanged(bool value) => NotifyActiveBannerSummaryChanged();
+
+    partial void OnShowPort53ConflictBannerChanged(bool value) => NotifyActiveBannerSummaryChanged();
+
+    partial void OnShowVpnAdvisoryBannerChanged(bool value) => NotifyActiveBannerSummaryChanged();
+
+    partial void OnShowAntiCheatBannerChanged(bool value) => NotifyActiveBannerSummaryChanged();
+
+    partial void OnDirtyRecoverySummaryChanged(string value) => NotifyActiveBannerSummaryChanged();
+
+    partial void OnBrowserDohBrowsersTextChanged(string value) => NotifyActiveBannerSummaryChanged();
+
+    partial void OnPort53OccupantNameChanged(string value) => NotifyActiveBannerSummaryChanged();
+
+    partial void OnAntiCheatNamesTextChanged(string value) => NotifyActiveBannerSummaryChanged();
+
+    private void NotifyActiveBannerSummaryChanged()
+    {
+        if (ActiveBannerCount <= 1 && IsNotificationPanelExpanded)
+        {
+            IsNotificationPanelExpanded = false;
+        }
+
+        OnPropertyChanged(nameof(ActiveBannerCount));
+        OnPropertyChanged(nameof(AdditionalBannerCount));
+        OnPropertyChanged(nameof(HasActiveBanners));
+        OnPropertyChanged(nameof(HasMultipleActiveBanners));
+        OnPropertyChanged(nameof(IsPrimaryBannerDanger));
+        OnPropertyChanged(nameof(IsPrimaryBannerInfo));
+        OnPropertyChanged(nameof(PrimaryBannerTitle));
+        OnPropertyChanged(nameof(PrimaryBannerSummary));
+        OnPropertyChanged(nameof(PrimaryBannerHasAction));
+        OnPropertyChanged(nameof(PrimaryBannerActionText));
+        OnPropertyChanged(nameof(PrimaryBannerActionCommand));
+    }
+
     private void ApplyLoadedBannerFlags(PulseAppSettings settings)
     {
         _dismissedBrowserDohBanner = settings.DismissedBrowserDohBanner;
@@ -509,7 +781,8 @@ public sealed partial class MainShellViewModel : ObservableObject
                     current.SelectedTrustedUpstreamId = trustedId;
                     current.SelectedGeoUnlockUpstreamId = geoId;
                 }, ct).ConfigureAwait(false);
-            });
+            },
+            switchToSafeProxyModeHandler: FixPort53ConflictAsync);
 
         Routing.ConfigurePersistenceHandler(async (enabledPresetIds, customGeo, customBlock, customAllow, ct) =>
         {
@@ -611,5 +884,6 @@ public sealed partial class MainShellViewModel : ObservableObject
         OnPropertyChanged(nameof(BrowserDohBannerMessage));
         OnPropertyChanged(nameof(Port53ConflictBannerMessage));
         OnPropertyChanged(nameof(AntiCheatBannerMessage));
+        NotifyActiveBannerSummaryChanged();
     }
 }

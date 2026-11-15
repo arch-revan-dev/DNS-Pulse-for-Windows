@@ -372,6 +372,99 @@ public sealed class PulseCoreDnsEngineTests
         await dohClient.Received(2).QueryAsync(Arg.Any<DnsMessage>(), Arg.Any<DnsServerEntry>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task ResolveAsync_Zone3SmartDns_EnforcesIpv4OnlyAaaaNoErrorLearnedProxyFallbackAndNoDirectLeak()
+    {
+        using OptimisticDnsCache cache = new();
+        SplitNamespaceRouter router = new(new SplitNamespaceRouterConfig
+        {
+            GeoUnlockRules = [new GeoUnlockRule("gemini.google.com", "smart-ai")]
+        });
+
+        DnsServerEntry smartDns = new()
+        {
+            Id = "smart-ai",
+            Name = "Smart AI DoH",
+            Protocol = DnsProtocol.DoH,
+            TrustTier = TrustTier.Tier2VerifiedGeoUnlock,
+            PrimaryIp = "9.9.9.9",
+            DohUrl = "https://smart.example/dns-query",
+            SupportsBypass = true
+        };
+
+        DnsServerEntry tier1 = CreateTier1Doh("cf", "1.1.1.1", 5);
+        bool failSmartDns = false;
+
+        IDnsUpstreamClient dohClient = Substitute.For<IDnsUpstreamClient>();
+        dohClient.Protocol.Returns(DnsProtocol.DoH);
+        dohClient.QueryAsync(Arg.Any<DnsMessage>(), Arg.Any<DnsServerEntry>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                DnsMessage q = callInfo.ArgAt<DnsMessage>(0);
+                DnsServerEntry srv = callInfo.ArgAt<DnsServerEntry>(1);
+                if (srv.Id == "cf")
+                {
+                    throw new InvalidOperationException("Zone 3 Geo-Unlock must NEVER leak to Zone 4 Cloudflare 1.1.1.1!");
+                }
+
+                if (failSmartDns)
+                {
+                    return Task.FromException<UpstreamQueryResult>(new TimeoutException("Transient Smart-DNS timeout"));
+                }
+
+                return Task.FromResult(new UpstreamQueryResult(
+                    CreateAResponse(q, "185.236.10.37"),
+                    TimeSpan.FromMilliseconds(5),
+                    srv.DohUrl!,
+                    DnsProtocol.DoH));
+            });
+
+        UpstreamPoolManager pool = new([tier1]);
+        PulseCoreDnsEngine engine = new(
+            router,
+            cache,
+            pool,
+            new Dictionary<DnsProtocol, IDnsUpstreamClient> { [DnsProtocol.DoH] = dohClient },
+            new PulseCoreEngineOptions
+            {
+                GeoUnlockUpstreams = [smartDns],
+                GeoUnlockIpv4Only = true,
+                EnableLearnedSmartProxyFallback = true
+            });
+
+        // 1. AAAA on Zone 3 returns empty NOERROR without calling upstream IPv6 or leaking to 1.1.1.1.
+        DnsMessage aaaaResp = await engine.ResolveAsync(DnsMessage.CreateQuery(10, "gemini.google.com", DnsRecordType.AAAA));
+        aaaaResp.EffectiveResponseCode.Should().Be(DnsResponseCode.NoError);
+        aaaaResp.Answers.Should().BeEmpty();
+
+        // 2. First A succeeds and learns non-direct SmartProxy IP 185.236.10.37.
+        DnsMessage aResp = await engine.ResolveAsync(DnsMessage.CreateQuery(11, "gemini.google.com", DnsRecordType.A));
+        aResp.EffectiveResponseCode.Should().Be(DnsResponseCode.NoError);
+        engine.LastLearnedSmartProxyIp.Should().Be(IPAddress.Parse("185.236.10.37"));
+
+        // 3. After cache clear + transient Smart-DNS failure, resolves via learned SmartProxy IP (45s TTL) without Zone 4 leak.
+        cache.Clear();
+        failSmartDns = true;
+        DnsMessage learnedResp = await engine.ResolveAsync(DnsMessage.CreateQuery(12, "gemini.google.com", DnsRecordType.A));
+        learnedResp.EffectiveResponseCode.Should().Be(DnsResponseCode.NoError);
+        learnedResp.Answers.Should().ContainSingle(a =>
+            Equals(a.Address, IPAddress.Parse("185.236.10.37")) && a.TimeToLive == 45u);
+
+        // 4. Proxy host resolver refuses direct fallback for Zone 3 Geo-Unlock even on failure.
+        engine.UpdateOptions(new PulseCoreEngineOptions { GeoUnlockUpstreams = [], EnableLearnedSmartProxyFallback = false });
+        cache.Clear();
+        bool fallbackInvoked = false;
+        IReadOnlyList<IPAddress> proxyAddresses = await engine.ResolveHostAddressesForProxyAsync(
+            "gemini.google.com",
+            (_, _) =>
+            {
+                fallbackInvoked = true;
+                return Task.FromResult<IReadOnlyList<IPAddress>>([IPAddress.Parse("142.250.180.14")]);
+            });
+        proxyAddresses.Should().BeEmpty();
+        fallbackInvoked.Should().BeFalse();
+    }
+
     private static DnsServerEntry CreateTier1Doh(string id, string ip, double latencyMs)
     {
         return new DnsServerEntry

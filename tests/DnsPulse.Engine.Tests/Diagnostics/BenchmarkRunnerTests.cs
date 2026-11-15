@@ -107,6 +107,51 @@ public sealed class BenchmarkRunnerTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    [Fact]
+    public async Task StreamAsync_WhenOneServerThrowsUnexpectedException_IsolatesErrorAndCompletesChannel()
+    {
+        IBootstrapResolver bootstrap = Substitute.For<IBootstrapResolver>();
+        bootstrap.QueryBaselineAsync(Arg.Any<string>(), Arg.Any<DnsRecordType>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => BuildResponse(1, callInfo.ArgAt<string>(0), PublicIp, DnsResponseCode.NoError));
+
+        IDnsUpstreamClient client = Substitute.For<IDnsUpstreamClient>();
+        client.Protocol.Returns(DnsProtocol.DoH);
+        client.QueryAsync(Arg.Any<DnsMessage>(), Arg.Any<DnsServerEntry>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                DnsMessage query = callInfo.ArgAt<DnsMessage>(0);
+                return Task.FromResult(new UpstreamQueryResult(
+                    BuildResponse(query.Header.Id, query.Questions[0].Name, PublicIp, DnsResponseCode.NoError),
+                    TimeSpan.FromMilliseconds(8),
+                    "https://cloudflare-dns.com/dns-query",
+                    DnsProtocol.DoH));
+            });
+
+        Func<DnsProtocol, IDnsUpstreamClient> factory = protocol =>
+            protocol == DnsProtocol.DoH
+                ? client
+                : throw new NotSupportedException($"Missing client for {protocol}");
+
+        SixLayerDiagnosticEngine engine = new(bootstrap, factory);
+        BenchmarkRunner runner = new(engine);
+
+        DnsServerEntry healthy = CreateServer("ok", "Healthy DoH");
+        DnsServerEntry crashingProtocol = CreateServer("bad", "Broken DoQ") with { Protocol = DnsProtocol.DoQ };
+
+        List<BenchmarkProgressUpdate> updates = [];
+        await foreach (BenchmarkProgressUpdate update in runner.StreamAsync(
+            [healthy, crashingProtocol],
+            "example.com",
+            new BenchmarkOptions { MaxConcurrency = 2, SamplesPerServer = 1 }))
+        {
+            updates.Add(update);
+        }
+
+        updates.Should().HaveCount(2);
+        updates.Single(u => u.UpdatedServer.Id == "bad").Report.Verdict.Should().Be(DiagnosticVerdict.Unknown);
+        updates.Single(u => u.UpdatedServer.Id == "bad").Report.Reason.Should().Contain("Broken DoQ");
+    }
+
     private static DnsServerEntry CreateServer(string id, string name)
     {
         return new DnsServerEntry

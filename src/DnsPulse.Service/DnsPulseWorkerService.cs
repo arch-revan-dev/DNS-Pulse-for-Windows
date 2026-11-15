@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json;
+using DnsPulse.Core.Routing;
 using DnsPulse.Engine.Contracts;
 using DnsPulse.Platform.Windows;
 using DnsPulse.Platform.Windows.Contracts;
@@ -226,9 +227,20 @@ public sealed class DnsPulseWorkerService : BackgroundService
 
                 return new PipeRpcResponse(request.RequestId, true);
 
+            case PipeCommandNames.UpdateRoutingConfig:
+                return await HandleUpdateRoutingConfigAsync(request, cancellationToken).ConfigureAwait(false);
+
+            case PipeCommandNames.UpdatePool:
+                return await HandleUpdatePoolAsync(request, cancellationToken).ConfigureAwait(false);
+
+            case PipeCommandNames.ConfigureEngine:
             case PipeCommandNames.ApplyProfile:
-            case PipeCommandNames.RunDiagnostics:
+                return await HandleConfigureEngineAsync(request, cancellationToken).ConfigureAwait(false);
+
             case PipeCommandNames.UpdateBlocklist:
+                return await HandleUpdateBlocklistAsync(request, cancellationToken).ConfigureAwait(false);
+
+            case PipeCommandNames.RunDiagnostics:
             case PipeCommandNames.ExportBundle:
                 if (_extensionHandler is not null)
                 {
@@ -250,41 +262,19 @@ public sealed class DnsPulseWorkerService : BackgroundService
         }
     }
 
-    private sealed record ServiceConnectRequest(
-        int? DnsPort = null,
-        int? DohPort = null,
-        int? ProxyPort = null,
-        int? PacPort = null);
-
     private async Task<PipeRpcResponse> HandleConnectAsync(
         string requestId,
         string? payloadJson,
         CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(payloadJson) && _backend is DefaultPulseRuntimeBackend concreteBackend)
+        if (!string.IsNullOrWhiteSpace(payloadJson) && _backend is IConfigurablePulseRuntimeBackend configurableBackend)
         {
             try
             {
                 ServiceConnectRequest? connectRequest = JsonSerializer.Deserialize<ServiceConnectRequest>(payloadJson, JsonOptions);
                 if (connectRequest is not null)
                 {
-                    ServiceStatusSnapshot current = _backend.GetStatus();
-                    concreteBackend.ConfigurePorts(
-                        connectRequest.DnsPort,
-                        connectRequest.DohPort,
-                        connectRequest.ProxyPort,
-                        connectRequest.PacPort);
-
-                    bool portsChangedWhileConnected = current.IsConnected &&
-                        ((connectRequest.DnsPort is > 0 && current.BoundDnsPort != connectRequest.DnsPort) ||
-                         (connectRequest.DohPort is > 0 && current.BoundDoHPort != connectRequest.DohPort) ||
-                         (connectRequest.ProxyPort is > 0 && current.BoundProxyPort != connectRequest.ProxyPort) ||
-                         (connectRequest.PacPort is > 0 && current.BoundPacPort != connectRequest.PacPort));
-
-                    if (portsChangedWhileConnected)
-                    {
-                        await _backend.DisconnectAsync(cancellationToken).ConfigureAwait(false);
-                    }
+                    await configurableBackend.ApplyConnectConfigurationAsync(connectRequest, cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (JsonException)
@@ -302,6 +292,169 @@ public sealed class DnsPulseWorkerService : BackgroundService
 
         return CreateSuccessResponse(requestId, status);
     }
+
+    private async Task<PipeRpcResponse> HandleUpdateRoutingConfigAsync(
+        PipeRpcRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_backend is not IConfigurablePulseRuntimeBackend configurableBackend)
+        {
+            return await InvokeExtensionOrNotSupportedAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (string.IsNullOrWhiteSpace(request.PayloadJson))
+        {
+            return CreateInvalidPayloadResponse(request.RequestId, "UpdateRoutingConfig requires a JSON payload.");
+        }
+
+        try
+        {
+            ServiceRoutingConfigRequest? parsed = JsonSerializer.Deserialize<ServiceRoutingConfigRequest>(request.PayloadJson, JsonOptions);
+            if (parsed is null || (parsed.RoutingConfig is null && parsed.SplitDomains is null))
+            {
+                SplitNamespaceRouterConfig? rawConfig = JsonSerializer.Deserialize<SplitNamespaceRouterConfig>(request.PayloadJson, JsonOptions);
+                if (rawConfig is not null)
+                {
+                    parsed = new ServiceRoutingConfigRequest(RoutingConfig: rawConfig);
+                }
+            }
+
+            if (parsed is null)
+            {
+                return CreateInvalidPayloadResponse(request.RequestId, "UpdateRoutingConfig payload deserialized to null.");
+            }
+
+            ServiceStatusSnapshot status = await configurableBackend.UpdateRoutingConfigAsync(parsed, cancellationToken).ConfigureAwait(false);
+            return CreateSuccessResponse(request.RequestId, status);
+        }
+        catch (JsonException ex)
+        {
+            return CreateInvalidPayloadResponse(request.RequestId, ex.Message);
+        }
+    }
+
+    private async Task<PipeRpcResponse> HandleUpdatePoolAsync(
+        PipeRpcRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_backend is not IConfigurablePulseRuntimeBackend configurableBackend)
+        {
+            return await InvokeExtensionOrNotSupportedAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (string.IsNullOrWhiteSpace(request.PayloadJson))
+        {
+            return CreateInvalidPayloadResponse(request.RequestId, "UpdatePool requires a JSON payload.");
+        }
+
+        try
+        {
+            ServicePoolUpdateRequest? parsed = JsonSerializer.Deserialize<ServicePoolUpdateRequest>(request.PayloadJson, JsonOptions);
+            if (parsed is null)
+            {
+                return CreateInvalidPayloadResponse(request.RequestId, "UpdatePool payload deserialized to null.");
+            }
+
+            ServiceStatusSnapshot status = await configurableBackend.UpdatePoolAsync(parsed, cancellationToken).ConfigureAwait(false);
+            return CreateSuccessResponse(request.RequestId, status);
+        }
+        catch (JsonException ex)
+        {
+            return CreateInvalidPayloadResponse(request.RequestId, ex.Message);
+        }
+    }
+
+    private async Task<PipeRpcResponse> HandleConfigureEngineAsync(
+        PipeRpcRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_backend is not IConfigurablePulseRuntimeBackend configurableBackend)
+        {
+            return await InvokeExtensionOrNotSupportedAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (string.IsNullOrWhiteSpace(request.PayloadJson))
+        {
+            return CreateInvalidPayloadResponse(request.RequestId, $"{request.Command} requires a JSON payload.");
+        }
+
+        try
+        {
+            ServiceEngineConfigRequest? parsed = JsonSerializer.Deserialize<ServiceEngineConfigRequest>(request.PayloadJson, JsonOptions);
+            if (parsed is null)
+            {
+                return CreateInvalidPayloadResponse(request.RequestId, $"{request.Command} payload deserialized to null.");
+            }
+
+            if (string.IsNullOrWhiteSpace(parsed.StrategyProfile))
+            {
+                using JsonDocument doc = JsonDocument.Parse(request.PayloadJson);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("profile", out JsonElement profileElem)
+                    && profileElem.ValueKind == JsonValueKind.String)
+                {
+                    parsed = parsed with { StrategyProfile = profileElem.GetString() };
+                }
+            }
+
+            ServiceStatusSnapshot status = await configurableBackend.ConfigureEngineAsync(parsed, cancellationToken).ConfigureAwait(false);
+            return CreateSuccessResponse(request.RequestId, status);
+        }
+        catch (JsonException ex)
+        {
+            return CreateInvalidPayloadResponse(request.RequestId, ex.Message);
+        }
+    }
+
+    private async Task<PipeRpcResponse> HandleUpdateBlocklistAsync(
+        PipeRpcRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_backend is not IConfigurablePulseRuntimeBackend configurableBackend)
+        {
+            return await InvokeExtensionOrNotSupportedAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (string.IsNullOrWhiteSpace(request.PayloadJson))
+        {
+            return CreateInvalidPayloadResponse(request.RequestId, "UpdateBlocklist requires a JSON payload.");
+        }
+
+        try
+        {
+            ServiceBlocklistUpdateRequest? parsed = JsonSerializer.Deserialize<ServiceBlocklistUpdateRequest>(request.PayloadJson, JsonOptions);
+            if (parsed is null)
+            {
+                return CreateInvalidPayloadResponse(request.RequestId, "UpdateBlocklist payload deserialized to null.");
+            }
+
+            ServiceStatusSnapshot status = await configurableBackend.UpdateBlocklistAsync(parsed, cancellationToken).ConfigureAwait(false);
+            return CreateSuccessResponse(request.RequestId, status);
+        }
+        catch (JsonException ex)
+        {
+            return CreateInvalidPayloadResponse(request.RequestId, ex.Message);
+        }
+    }
+
+    private async Task<PipeRpcResponse> InvokeExtensionOrNotSupportedAsync(
+        PipeRpcRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_extensionHandler is not null)
+        {
+            return await _extensionHandler(request, cancellationToken).ConfigureAwait(false);
+        }
+
+        return new PipeRpcResponse(
+            request.RequestId,
+            false,
+            "NotSupported",
+            string.Create(CultureInfo.InvariantCulture, $"Command '{request.Command}' is not wired in this backend."));
+    }
+
+    private static PipeRpcResponse CreateInvalidPayloadResponse(string requestId, string message) =>
+        new(requestId, false, "InvalidPayload", message);
 
     private async Task<PipeRpcResponse> HandleEmergencyRestoreAsync(
         string requestId,

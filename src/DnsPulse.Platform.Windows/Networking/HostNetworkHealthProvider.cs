@@ -60,7 +60,7 @@ public sealed class HostNetworkHealthProvider : IHostNetworkHealthProvider
         bool captivePortalDetected = DetectNcsiCaptivePortal(hasIpv4 || hasIpv6);
         int inspectedDnsPort = _desiredDnsPortProvider?.Invoke() ?? 53;
         (string? occupantName, int? occupantPid) = inspectedDnsPort > 0
-            ? _port53Inspector.InspectPortConflict(inspectedDnsPort, excludeSelfProcesses: true)
+            ? _port53Inspector.InspectBlockingPortConflict(inspectedDnsPort, excludeSelfProcesses: true)
             : (null, null);
         bool isSmhnrDisabled = SmhnrPolicyManager.IsSmhnrDisabled();
         IReadOnlyList<string> bypassingBrowsers = _browserDohInspector.DetectBypassingBrowsers();

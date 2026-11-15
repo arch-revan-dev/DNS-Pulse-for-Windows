@@ -31,7 +31,16 @@ public sealed record PulseCoreEngineOptions
 
     public uint BlockNullIpTtlSeconds { get; init; } = 60;
 
-    public uint SniProxySyntheticTtlSeconds { get; init; } = 60;
+    public uint SniProxySyntheticTtlSeconds { get; init; } = 45;
+
+    /// <summary>Gets whether Zone 3 Geo-Unlock enforces IPv4-only routing (synthesizing empty NOERROR for AAAA and stripping IPv6/H3 hints from HTTPS/SVCB).</summary>
+    public bool GeoUnlockIpv4Only { get; init; } = true;
+
+    /// <summary>Gets whether Zone 3 Geo-Unlock immediately strips HTTPS (65) and SVCB (64) queries to empty NOERROR NODATA even for Smart-DNS upstreams.</summary>
+    public bool DropHttpsSvcbOnGeoUnlock { get; init; }
+
+    /// <summary>Gets whether Zone 3 Smart-DNS may fall back to the last verified non-direct SmartProxy IPv4 learned in this session on transient upstream failure.</summary>
+    public bool EnableLearnedSmartProxyFallback { get; init; } = true;
 
     public bool AllowCarrierAnycastExceptions { get; init; }
 

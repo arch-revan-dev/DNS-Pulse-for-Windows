@@ -140,6 +140,9 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
     private int _streamingGamingCount;
 
     [ObservableProperty]
+    private int _autoProxyCount;
+
+    [ObservableProperty]
     private int _customCount;
 
     [ObservableProperty]
@@ -252,6 +255,7 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
         ServerDisplayCategory.AiAndGeoUnlock => _localization["Servers_Category_AiGeo_Desc"],
         ServerDisplayCategory.FastEncrypted => _localization["Servers_Category_FastEncrypted_Desc"],
         ServerDisplayCategory.StreamingAndGaming => _localization["Servers_Category_StreamingGaming_Desc"],
+        ServerDisplayCategory.AutoProxy => _localization["Servers_Category_AutoProxy_Desc"],
         ServerDisplayCategory.CustomAndDiscovered => _localization["Servers_Category_Custom_Desc"],
         _ => _localization["Servers_Category_All"]
     };
@@ -540,26 +544,13 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
             using SignedFeedSyncService feedService = new(_runtimeService.BootstrapResolver);
             FeedVerificationMode mode = AllowUnsignedFeeds
                 ? FeedVerificationMode.AllowUnsignedFeeds
-                : FeedVerificationMode.RequireSigned;
+                : FeedVerificationMode.BuiltInCommunityTrusted;
 
             FeedSyncSummary summary = await feedService.SyncAllAsync(mode, cancellationToken: cancellationToken).ConfigureAwait(false);
             LastFeedSyncSummary = summary;
 
-            if (summary.AggregatedServers.Count > 0)
-            {
-                await _repository.UpsertServersAsync(summary.AggregatedServers, cancellationToken).ConfigureAwait(false);
-                foreach (DnsServerEntry server in summary.AggregatedServers)
-                {
-                    UpsertInMemory(server);
-                }
-
-                ApplyFilterAndSort();
-            }
-
-            if (summary.AggregatedBypassDomains.Count > 0)
-            {
-                FeedBypassDomainsDiscovered?.Invoke(this, new FeedBypassDomainsDiscoveredEventArgs(summary.AggregatedBypassDomains));
-            }
+            await ApplyFeedSyncResultsAsync(summary.AggregatedServers, summary.AggregatedBypassDomains, cancellationToken)
+                .ConfigureAwait(false);
 
             FeedSyncStatusMessage = string.Create(
                 CultureInfo.InvariantCulture,
@@ -576,6 +567,91 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
         finally
         {
             IsSyncingFeeds = false;
+        }
+    }
+
+    /// <summary>
+    /// Runs startup feed synchronization with offline cache fallback (<c>dynamic_bypass_domains_cache.json</c>)
+    /// using <see cref="FeedVerificationMode.BuiltInCommunityTrusted"/> by default.
+    /// </summary>
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Startup feed sync errors must stay non-fatal and surface via FeedSyncStatusMessage.")]
+    public async Task<FeedStartupSyncResult?> SyncStartupFeedsAsync(
+        string? cacheFilePath,
+        bool networkSyncEnabled = true,
+        IReadOnlyList<FeedSourceDescriptor>? feeds = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (IsSyncingFeeds)
+        {
+            return null;
+        }
+
+        IsSyncingFeeds = true;
+        try
+        {
+            using SignedFeedSyncService feedService = new(_runtimeService.BootstrapResolver);
+            FeedVerificationMode mode = AllowUnsignedFeeds
+                ? FeedVerificationMode.AllowUnsignedFeeds
+                : FeedVerificationMode.BuiltInCommunityTrusted;
+
+            IReadOnlyList<FeedSourceDescriptor>? effectiveFeeds = networkSyncEnabled ? feeds : [];
+            FeedStartupSyncResult result = await feedService.SyncStartupFeedsAsync(
+                cacheFilePath,
+                mode: mode,
+                loadCacheFirst: true,
+                feeds: effectiveFeeds,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            if (result.NetworkSummary is not null)
+            {
+                LastFeedSyncSummary = result.NetworkSummary;
+            }
+
+            await ApplyFeedSyncResultsAsync(
+                result.EffectiveDiscoveredServers,
+                result.EffectiveBypassDomains,
+                cancellationToken).ConfigureAwait(false);
+
+            FeedSyncStatusMessage = string.Create(
+                CultureInfo.InvariantCulture,
+                $"{result.EffectiveDiscoveredServers.Count} servers, {result.EffectiveBypassDomains.Count} domains ({(result.UpdatedCacheFromNetwork ? "live" : result.LoadedFromCache ? "cached" : "idle")})");
+
+            return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            FeedSyncStatusMessage = ex.Message;
+            return null;
+        }
+        finally
+        {
+            IsSyncingFeeds = false;
+        }
+    }
+
+    private async Task ApplyFeedSyncResultsAsync(
+        IReadOnlyList<DnsServerEntry> discoveredServers,
+        IReadOnlyList<string> bypassDomains,
+        CancellationToken cancellationToken)
+    {
+        if (discoveredServers.Count > 0)
+        {
+            await _repository.UpsertServersAsync(discoveredServers, cancellationToken).ConfigureAwait(false);
+            foreach (DnsServerEntry server in discoveredServers)
+            {
+                UpsertInMemory(server);
+            }
+
+            ApplyFilterAndSort();
+        }
+
+        if (bypassDomains.Count > 0)
+        {
+            FeedBypassDomainsDiscovered?.Invoke(this, new FeedBypassDomainsDiscoveredEventArgs(bypassDomains));
         }
     }
 
@@ -603,6 +679,7 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
         int aiGeoCount = 0;
         int fastEncryptedCount = 0;
         int streamingGamingCount = 0;
+        int autoProxyCount = 0;
         int customCount = 0;
 
         List<DnsServerEntry> nextFiltered = [];
@@ -624,6 +701,9 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
                     break;
                 case ServerDisplayCategory.StreamingAndGaming:
                     streamingGamingCount++;
+                    break;
+                case ServerDisplayCategory.AutoProxy:
+                    autoProxyCount++;
                     break;
                 case ServerDisplayCategory.CustomAndDiscovered:
                     customCount++;
@@ -708,6 +788,7 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
             AiGeoCount = aiGeoCount;
             FastEncryptedCount = fastEncryptedCount;
             StreamingGamingCount = streamingGamingCount;
+            AutoProxyCount = autoProxyCount;
             CustomCount = customCount;
             UpdateCategoryFilterCounts();
         });
@@ -825,6 +906,12 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
             _localization["Servers_Category_StreamingGaming"],
             _localization["Servers_Category_StreamingGaming_Desc"]));
         CategoryFilterOptions.Add(new ServerCategoryFilterOption(
+            ServerDisplayCategory.AutoProxy,
+            "Servers_Category_AutoProxy",
+            "Servers_Category_AutoProxy_Desc",
+            _localization["Servers_Category_AutoProxy"],
+            _localization["Servers_Category_AutoProxy_Desc"]));
+        CategoryFilterOptions.Add(new ServerCategoryFilterOption(
             ServerDisplayCategory.CustomAndDiscovered,
             "Servers_Category_Custom",
             "Servers_Category_Custom_Desc",
@@ -842,6 +929,7 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
                 ServerDisplayCategory.AiAndGeoUnlock => AiGeoCount,
                 ServerDisplayCategory.FastEncrypted => FastEncryptedCount,
                 ServerDisplayCategory.StreamingAndGaming => StreamingGamingCount,
+                ServerDisplayCategory.AutoProxy => AutoProxyCount,
                 ServerDisplayCategory.CustomAndDiscovered => CustomCount,
                 _ => 0
             };
