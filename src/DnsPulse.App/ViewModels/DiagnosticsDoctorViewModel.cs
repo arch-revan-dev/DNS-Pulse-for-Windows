@@ -86,10 +86,10 @@ public sealed partial class DiagnosticsDoctorViewModel : ObservableObject, IDisp
     private int _lanDnsPort = 53;
 
     [ObservableProperty]
-    private int _lanPacPort = 10809;
+    private int _lanPacPort = 18754;
 
     [ObservableProperty]
-    private int _lanProxyPort = 10808;
+    private int _lanProxyPort = 18753;
 
     [ObservableProperty]
     private LanGatewayDescriptor? _lanGateway;

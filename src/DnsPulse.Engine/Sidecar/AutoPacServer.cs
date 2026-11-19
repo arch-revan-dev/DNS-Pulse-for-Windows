@@ -31,7 +31,7 @@ public sealed record AutoPacServerOptions
     /// <summary>
     /// Proxy port emitted inside <c>FindProxyForURL</c> return directives.
     /// </summary>
-    public int ProxyPort { get; init; } = 10808;
+    public int ProxyPort { get; init; } = 18753;
 }
 
 /// <summary>

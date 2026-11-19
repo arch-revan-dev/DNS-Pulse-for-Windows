@@ -326,4 +326,23 @@
   <data name="Tray_Exit" xml:space="preserve"><value>Выход</value></data>
   <data name="Error_InvalidInput" xml:space="preserve"><value>Некорректные данные: {0}</value></data>
   <data name="Error_ConnectionFailed" xml:space="preserve"><value>Ошибка подключения: {0}</value></data>
+  <data name="Mode_Simple" xml:space="preserve"><value>Простой</value></data>
+  <data name="Mode_Expert" xml:space="preserve"><value>Эксперт</value></data>
+  <data name="Simple_Title" xml:space="preserve"><value>Обход блокировок ИИ</value></data>
+  <data name="Simple_Subtitle" xml:space="preserve"><value>Автоподбор узла, прокси 127.0.0.1:18753 и автопереключение при сбое.</value></data>
+  <data name="Simple_Btn_Enable" xml:space="preserve"><value>Включить обход</value></data>
+  <data name="Simple_Btn_Disable" xml:space="preserve"><value>Отключить обход</value></data>
+  <data name="Simple_Btn_Working" xml:space="preserve"><value>Подбор узла...</value></data>
+  <data name="Simple_Apps_Title" xml:space="preserve"><value>Программы и CLI</value></data>
+  <data name="Simple_Apps_Subtitle" xml:space="preserve"><value>Локальный прокси с исключением 127.0.0.1.</value></data>
+  <data name="Simple_Apps_Launch" xml:space="preserve"><value>Запустить</value></data>
+  <data name="Simple_Apps_CopyCmd" xml:space="preserve"><value>Команда</value></data>
+  <data name="Simple_Apps_Refresh" xml:space="preserve"><value>Обновить</value></data>
+  <data name="Simple_Watchdog_Active" xml:space="preserve"><value>Автопереключение узла активно</value></data>
+  <data name="Simple_Proxy_Endpoint" xml:space="preserve"><value>Прокси: {0}</value></data>
+  <data name="Simple_App_Installed" xml:space="preserve"><value>Установлено</value></data>
+  <data name="Simple_App_NotFound" xml:space="preserve"><value>Не найдено</value></data>
+  <data name="Simple_App_Running" xml:space="preserve"><value>Запущено</value></data>
+  <data name="Overview_QuickService_Antigravity" xml:space="preserve"><value>Antigravity IDE</value></data>
+  <data name="Overview_QuickService_ClaudeCode" xml:space="preserve"><value>Claude Code CLI</value></data>
 </root>

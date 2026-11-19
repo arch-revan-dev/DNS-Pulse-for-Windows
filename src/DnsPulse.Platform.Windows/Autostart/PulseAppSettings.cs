@@ -111,6 +111,13 @@ public sealed class PulseAppSettings
 
     public IReadOnlyList<string> CustomAllowRules { get; set; } = [];
 
+    // PulseCore v2.1 AI-Only Autopilot & Desktop AI App Capture properties
+    public bool SimpleModeEnabled { get; set; } = true;
+
+    public bool EnableAiAppEnvProxyCapture { get; set; } = true;
+
+    public bool EnableDynamicAiWatchdog { get; set; } = true;
+
     /// <summary>
     /// Creates a deep copy of the settings instance.
     /// </summary>
@@ -159,7 +166,10 @@ public sealed class PulseAppSettings
             EnabledRoutingPresetIds = EnabledRoutingPresetIds is null ? null : [.. EnabledRoutingPresetIds],
             CustomGeoUnlockDomains = [.. CustomGeoUnlockDomains],
             CustomBlockRules = [.. CustomBlockRules],
-            CustomAllowRules = [.. CustomAllowRules]
+            CustomAllowRules = [.. CustomAllowRules],
+            SimpleModeEnabled = SimpleModeEnabled,
+            EnableAiAppEnvProxyCapture = EnableAiAppEnvProxyCapture,
+            EnableDynamicAiWatchdog = EnableDynamicAiWatchdog
         };
     }
 }

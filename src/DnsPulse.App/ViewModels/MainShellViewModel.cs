@@ -127,6 +127,9 @@ public sealed partial class MainShellViewModel : ObservableObject
     [ObservableProperty]
     private bool _isNotificationPanelExpanded;
 
+    [ObservableProperty]
+    private bool _isSimpleMode = true;
+
     public MainShellViewModel(
         LocalizationService localization,
         IPulseRuntimeService runtimeService,
@@ -191,6 +194,10 @@ public sealed partial class MainShellViewModel : ObservableObject
     public ObservableCollection<ShellNavigationItem> NavigationItems { get; } = [];
 
     public string WindowTitle => _localization["App_Title"];
+
+    public string ModeToggleButtonText => IsSimpleMode
+        ? _localization["Mode_Expert"]
+        : _localization["Mode_Simple"];
 
     public string BrowserDohBannerMessage => string.Format(
         CultureInfo.CurrentCulture,
@@ -380,6 +387,9 @@ public sealed partial class MainShellViewModel : ObservableObject
         }
 
         Overview.EnsureDefaultUpstreamsSelected(Servers.AllServers);
+        IsSimpleMode = loadedSettings.SimpleModeEnabled;
+        Overview.IsSimpleMode = loadedSettings.SimpleModeEnabled;
+        OnPropertyChanged(nameof(ModeToggleButtonText));
 
         await Routing.LoadFromSettingsAsync(loadedSettings, cancellationToken).ConfigureAwait(false);
         await RefreshHostAdvisoriesAsync(cancellationToken).ConfigureAwait(false);
@@ -434,6 +444,23 @@ public sealed partial class MainShellViewModel : ObservableObject
         catch (Exception)
         {
         }
+    }
+
+    [RelayCommand]
+    public async Task ToggleSimpleModeAsync(CancellationToken cancellationToken = default)
+    {
+        IsSimpleMode = !IsSimpleMode;
+        Overview.IsSimpleMode = IsSimpleMode;
+        OnPropertyChanged(nameof(ModeToggleButtonText));
+        if (IsSimpleMode)
+        {
+            NavigateTo(ShellPageKind.Overview);
+        }
+
+        await _settingsStore.UpdateAsync(settings =>
+        {
+            settings.SimpleModeEnabled = IsSimpleMode;
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     [RelayCommand]
@@ -881,6 +908,7 @@ public sealed partial class MainShellViewModel : ObservableObject
         }
 
         OnPropertyChanged(nameof(WindowTitle));
+        OnPropertyChanged(nameof(ModeToggleButtonText));
         OnPropertyChanged(nameof(BrowserDohBannerMessage));
         OnPropertyChanged(nameof(Port53ConflictBannerMessage));
         OnPropertyChanged(nameof(AntiCheatBannerMessage));

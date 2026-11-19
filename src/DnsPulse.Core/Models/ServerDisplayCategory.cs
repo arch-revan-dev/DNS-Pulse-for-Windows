@@ -269,7 +269,8 @@ public static class ServerCategoryClassifier
     public static bool IsAiDomain(string? domain)
     {
         return AntiDirectAndGeoSignatures.IsStrictGoogleAiDomain(domain)
-            || MatchesAnyBuiltinDomain(domain, BuiltInCatalogPresets.BuiltinAiDomains);
+            || MatchesAnyBuiltinDomain(domain, BuiltInCatalogPresets.BuiltinAiDomains)
+            || MatchesAnyBuiltinDomain(domain, AiAppCatalog.ExtraDesktopAiDomains);
     }
 
     /// <summary>

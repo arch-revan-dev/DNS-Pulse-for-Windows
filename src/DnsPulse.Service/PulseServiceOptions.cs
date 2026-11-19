@@ -20,9 +20,9 @@ public sealed record PulseServiceOptions
 
     public int DohPort { get; init; } = 5343;
 
-    public int ProxyPort { get; init; } = 10808;
+    public int ProxyPort { get; init; } = 18753;
 
-    public int PacPort { get; init; } = 10809;
+    public int PacPort { get; init; } = 18754;
 
     public InterceptionMode InterceptionMode { get; init; } = InterceptionMode.AdapterDns;
 

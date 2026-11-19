@@ -2,6 +2,20 @@
 
 Все значимые изменения в проекте **DNS Pulse** документируются в этом файле в формате [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
+## [2.1.0] - 2026-11-19
+
+### Добавлено и переработано (Обход блокировок ИИ + Захват программ + Простой режим)
+- **Простой режим (1 кнопка — «Включить обход»):**
+  - В Windows-приложении (`OverviewPage.xaml`, `OverviewViewModel.AiAutopilot.cs`, `MainShellViewModel.cs`) и веб-студии (`SimpleModeView.tsx`, `server/autopilot.ts`) добавлен простой режим с кнопкой **«Включить обход»** и переключением в **«Эксперт»**.
+  - Автоподбор обновляет фиды, исключает игровые узлы (`Xbox-DNS`, `Radar`, `Electro`), проверяет AI Smart-DNS, поднимает локальный DNS + локальный HTTP CONNECT/SOCKS5 прокси на индивидуальных портах **`18753`** (прокси) и **`18754`** (PAC) без конфликта с VPN-клиентами (`10808`/`10809`/`7890`), проверяет ключевые сервисы и держит фоновый Watchdog для автопереключения при сбое.
+- **Захват десктопных и CLI-программ с ИИ через локальный прокси (`AiAppCatalog.cs`, `AiAppProxyCaptureService.cs`, `TlsFragmentationProxyServer.cs`):**
+  - Добавлена поддержка **Google Antigravity**, **Claude Code CLI**, **Claude Desktop**, **Cursor IDE**, **Windsurf IDE**, **Gemini CLI**, **OpenAI Codex CLI**, **ChatGPT Desktop** и **VS Code Copilot** с полным списком их API/gRPC/OAuth доменов (`cloudcode-pa.googleapis.com`, `antigravity.google`, `api.anthropic.com`, `mcp-proxy.anthropic.com`, `api2.cursor.sh`, `server.codeium.com` и др.).
+  - Реализован отказоустойчивый захват пользовательских переменных окружения Windows (`HKCU\Environment`: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NODE_USE_ENV_PROXY=1`, `GRPC_PROXY_EXP`, широковещательный `WM_SETTINGCHANGE`) с безопасным `NO_PROXY` для `127.0.0.1`/`localhost`/`::1` (не ломает локальный IPC и language server Antigravity) и гарантированным восстановлением при отключении/закрытии.
+  - В `TlsFragmentationProxyServer` добавлена избирательная SNI-фрагментация только для целевых AI-доменов, а также запуск приложений в 1 клик с флагами `--proxy-server` / `--proxy-bypass-list` и генерацией `.bat` / PowerShell-команд.
+- **Синхронизация с GitHub `v2.0.4` и обновление архива `/api/export/windows-wpf.zip`:**
+  - Включены все изменения из `v2.0.4` (`SniProxyDnsClient`, расширенный Named Pipe IPC, `LocalProxyPacInterceptor`, Fluent 2 палитра и 463 существующих `.NET` теста + новые xUnit тесты `AiAppCatalogTests`).
+  - Архив экспорта `/api/export/windows-wpf.zip` обновлён под актуальную структуру решения `DnsPulse.sln` (`v2.1.0`).
+
 ## [2.0.4] - 2026-11-15
 
 ### Добавлено и исправлено

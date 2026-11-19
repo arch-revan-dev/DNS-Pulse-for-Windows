@@ -239,7 +239,7 @@ public sealed class ViewModelsTests : IDisposable
         vm.LanIpAddress = "192.168.1.42";
         vm.IsLanGatewayEnabled = true;
         vm.LanGateway.Should().NotBeNull();
-        vm.LanGateway!.PacUrl.Should().Be("http://192.168.1.42:10809/proxy.pac");
+        vm.LanGateway!.PacUrl.Should().Be("http://192.168.1.42:18754/proxy.pac");
         vm.LanGateway.PacQrMatrix.GetLength(0).Should().BeGreaterThanOrEqualTo(21);
     }
 

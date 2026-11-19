@@ -94,6 +94,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         _activeSplitDomains =
         [
             .. BuiltInCatalogPresets.BuiltinAiDomains,
+            .. AiAppCatalog.ExtraDesktopAiDomains,
             .. BuiltInCatalogPresets.BuiltinStreamingDomains,
             .. BuiltInCatalogPresets.BuiltinGamingDomains
         ];
@@ -237,6 +238,11 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
             {
                 _isServiceMode = true;
                 await SyncSessionPacInterceptorAsync(ipcStatus, cancellationToken).ConfigureAwait(false);
+                if (effectiveSettings.EnableAiAppEnvProxyCapture && ipcStatus.BoundProxyPort > 0)
+                {
+                    _ = AiAppProxyCaptureService.EnableUserEnvironmentProxy(ipcStatus.BoundProxyPort);
+                }
+
                 UpdateSnapshot(ipcStatus);
                 Log.Information(
                     "Connected via DnsPulseService IPC (Mode={Mode}, Active={Active}, DNS:{DnsPort}, DoH:{DohPort}, Proxy:{ProxyPort}, PAC:{PacPort})",
@@ -274,6 +280,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
                     cancellationToken).ConfigureAwait(false);
 
                 await ClearSessionPacInterceptorAsync(cancellationToken).ConfigureAwait(false);
+                _ = AiAppProxyCaptureService.RestoreUserEnvironmentProxy();
 
                 if (ipcStatus is not null)
                 {
@@ -283,6 +290,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
             }
 
             await ClearSessionPacInterceptorAsync(cancellationToken).ConfigureAwait(false);
+            _ = AiAppProxyCaptureService.RestoreUserEnvironmentProxy();
             await StopPortableLockedAsync(markCleanShutdown: true, cancellationToken).ConfigureAwait(false);
             ServiceStatusSnapshot snapshot = BuildPortableSnapshot(lastError: null);
             UpdateSnapshot(snapshot);
@@ -343,6 +351,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         try
         {
             await ClearSessionPacInterceptorAsync(cancellationToken).ConfigureAwait(false);
+            _ = AiAppProxyCaptureService.RestoreUserEnvironmentProxy();
 
             if (_isServiceMode)
             {
@@ -418,6 +427,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
 
         HashSet<string> splitDomains = new(StringComparer.OrdinalIgnoreCase);
         foreach (string domain in BuiltInCatalogPresets.BuiltinAiDomains
+            .Concat(AiAppCatalog.ExtraDesktopAiDomains)
             .Concat(BuiltInCatalogPresets.BuiltinStreamingDomains)
             .Concat(BuiltInCatalogPresets.BuiltinGamingDomains))
         {
@@ -528,6 +538,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         try
         {
             _sessionPacInterceptor?.DeactivateAsync(CancellationToken.None).GetAwaiter().GetResult();
+            _ = AiAppProxyCaptureService.RestoreUserEnvironmentProxy();
         }
         catch (Exception)
         {
@@ -563,6 +574,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         _dnsEngine.Telemetry.EventRecorded -= OnEngineTelemetryRecorded;
 
         await ClearSessionPacInterceptorAsync(CancellationToken.None).ConfigureAwait(false);
+        _ = AiAppProxyCaptureService.RestoreUserEnvironmentProxy();
         await StopPortableLockedAsync(markCleanShutdown: true, CancellationToken.None).ConfigureAwait(false);
 
         _cache.Dispose();
@@ -738,16 +750,22 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
                 });
             await dohListener.StartAsync(cancellationToken).ConfigureAwait(false);
 
+            int desiredProxyPort = settings.LocalProxyPort > 0 ? settings.LocalProxyPort : 18753;
             proxyServer = new TlsFragmentationProxyServer(
                 new TlsFragmentationProxyOptions
                 {
                     BindAddress = IPAddress.Loopback,
-                    Port = settings.LocalProxyPort
+                    Port = desiredProxyPort
                 },
-                ResolveSidecarHostAsync);
+                ResolveSidecarHostAsync,
+                ShouldFragmentProxyHost);
             await proxyServer.StartAsync(cancellationToken).ConfigureAwait(false);
 
-            int proxyPort = proxyServer.BoundEndPoint?.Port ?? (settings.LocalProxyPort > 0 ? settings.LocalProxyPort : 10808);
+            int proxyPort = proxyServer.BoundEndPoint?.Port ?? desiredProxyPort;
+            if (settings.EnableAiAppEnvProxyCapture)
+            {
+                _ = AiAppProxyCaptureService.EnableUserEnvironmentProxy(proxyPort);
+            }
             pacServer = new AutoPacServer(
                 new AutoPacServerOptions
                 {
@@ -776,7 +794,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
 
             string pacUrl = pacServer.PacUrl ?? string.Create(
                 CultureInfo.InvariantCulture,
-                $"http://{IPAddress.Loopback}:{pacServer.BoundEndPoint?.Port ?? 10809}/proxy.pac");
+                $"http://{IPAddress.Loopback}:{pacServer.BoundEndPoint?.Port ?? 18754}/proxy.pac");
             interceptor = CreatePortableInterceptor(effectiveMode, pacUrl, settings.BlockIpv6OnBypass);
             if (interceptor is not null)
             {
@@ -1005,6 +1023,33 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
             ActiveGeoUnlockRulesCount = _routingConfig.GeoUnlockRules.Count,
             InterceptionStatusDetail = connected ? _activeInterceptionStatusDetail : null
         };
+    }
+
+    private bool ShouldFragmentProxyHost(string host)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return false;
+        }
+
+        if (ServerCategoryClassifier.IsAiDomain(host))
+        {
+            return true;
+        }
+
+        string normalized = host.Trim().TrimEnd('.');
+        foreach (string domain in _activeSplitDomains)
+        {
+            if (string.Equals(normalized, domain, StringComparison.OrdinalIgnoreCase)
+                || (normalized.Length > domain.Length + 1
+                    && normalized.EndsWith(domain, StringComparison.OrdinalIgnoreCase)
+                    && normalized[normalized.Length - domain.Length - 1] == '.'))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private Task<IReadOnlyList<IPAddress>> ResolveSidecarHostAsync(

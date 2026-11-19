@@ -326,4 +326,23 @@
   <data name="Tray_Exit" xml:space="preserve"><value>Exit</value></data>
   <data name="Error_InvalidInput" xml:space="preserve"><value>Invalid input: {0}</value></data>
   <data name="Error_ConnectionFailed" xml:space="preserve"><value>Connection failed: {0}</value></data>
+  <data name="Mode_Simple" xml:space="preserve"><value>Simple</value></data>
+  <data name="Mode_Expert" xml:space="preserve"><value>Expert</value></data>
+  <data name="Simple_Title" xml:space="preserve"><value>AI Bypass</value></data>
+  <data name="Simple_Subtitle" xml:space="preserve"><value>Auto node selection, local proxy 127.0.0.1:18753, and automatic failover.</value></data>
+  <data name="Simple_Btn_Enable" xml:space="preserve"><value>Enable Bypass</value></data>
+  <data name="Simple_Btn_Disable" xml:space="preserve"><value>Disable Bypass</value></data>
+  <data name="Simple_Btn_Working" xml:space="preserve"><value>Finding Node...</value></data>
+  <data name="Simple_Apps_Title" xml:space="preserve"><value>Desktop &amp; CLI Apps</value></data>
+  <data name="Simple_Apps_Subtitle" xml:space="preserve"><value>Local proxy with 127.0.0.1 loopback excluded.</value></data>
+  <data name="Simple_Apps_Launch" xml:space="preserve"><value>Launch</value></data>
+  <data name="Simple_Apps_CopyCmd" xml:space="preserve"><value>Copy</value></data>
+  <data name="Simple_Apps_Refresh" xml:space="preserve"><value>Refresh</value></data>
+  <data name="Simple_Watchdog_Active" xml:space="preserve"><value>Auto-failover active</value></data>
+  <data name="Simple_Proxy_Endpoint" xml:space="preserve"><value>Proxy: {0}</value></data>
+  <data name="Simple_App_Installed" xml:space="preserve"><value>Installed</value></data>
+  <data name="Simple_App_NotFound" xml:space="preserve"><value>Not found</value></data>
+  <data name="Simple_App_Running" xml:space="preserve"><value>Running</value></data>
+  <data name="Overview_QuickService_Antigravity" xml:space="preserve"><value>Antigravity IDE</value></data>
+  <data name="Overview_QuickService_ClaudeCode" xml:space="preserve"><value>Claude Code CLI</value></data>
 </root>

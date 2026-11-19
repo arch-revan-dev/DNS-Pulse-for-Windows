@@ -251,6 +251,7 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
         _localization.CultureChanged += OnCultureChanged;
 
         InitializeQuickServices();
+        InitializeAiAutopilotState();
         RebuildStrategyProfiles();
         ApplySnapshot(_runtimeService.CurrentStatus);
     }
@@ -1028,6 +1029,7 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
         }
 
         UpdateHeroState();
+        OnAiAutopilotStatusUpdated();
         OnPropertyChanged(nameof(TrustedUpstreamName));
         OnPropertyChanged(nameof(TrustedUpstreamBadge));
         OnPropertyChanged(nameof(ActiveGeoUnlockName));
@@ -1044,6 +1046,7 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
         }
 
         _disposed = true;
+        DisposeAiAutopilot();
         _runtimeService.StatusChanged -= OnRuntimeStatusChanged;
         _runtimeService.TelemetryReceived -= OnRuntimeTelemetryReceived;
         _localization.CultureChanged -= OnCultureChanged;
@@ -1501,6 +1504,18 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
             "claude",
             "Overview_QuickService_Claude"));
         _quickServices.Add(new QuickServiceOption(
+            "antigravity",
+            _localization["Overview_QuickService_Antigravity"],
+            "cloudcode-pa.googleapis.com",
+            "google_ai_studio",
+            "Overview_QuickService_Antigravity"));
+        _quickServices.Add(new QuickServiceOption(
+            "claude_code",
+            _localization["Overview_QuickService_ClaudeCode"],
+            "api.anthropic.com",
+            "claude",
+            "Overview_QuickService_ClaudeCode"));
+        _quickServices.Add(new QuickServiceOption(
             "youtube",
             _localization["Overview_QuickService_YouTube"],
             "youtube.com",
@@ -1616,6 +1631,7 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
         }
 
         RebuildStrategyProfiles();
+        OnAiAutopilotCultureChanged();
         OnPropertyChanged(nameof(HeroStatusTitle));
         OnPropertyChanged(nameof(HeroStatusSubtitle));
         OnPropertyChanged(nameof(ConnectButtonText));

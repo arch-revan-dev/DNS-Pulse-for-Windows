@@ -621,7 +621,7 @@ public sealed class DefaultPulseRuntimeBackend : IPulseRuntimeBackend, IConfigur
                         BindAddress = _options.SidecarLoopbackAddress,
                         Port = _options.PacPort,
                         ProxyHost = _options.SidecarLoopbackAddress.ToString(),
-                        ProxyPort = activeProxyPort > 0 ? activeProxyPort : 10808
+                        ProxyPort = activeProxyPort > 0 ? activeProxyPort : 18753
                     },
                     _splitDomains);
                 await pacServer.StartAsync(cancellationToken).ConfigureAwait(false);

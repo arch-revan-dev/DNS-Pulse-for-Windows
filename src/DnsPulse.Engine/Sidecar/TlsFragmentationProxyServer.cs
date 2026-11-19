@@ -39,6 +39,7 @@ public sealed class TlsFragmentationProxyServer : IAsyncDisposable, IDisposable
 
     private readonly TlsFragmentationProxyOptions _options;
     private readonly Func<string, CancellationToken, Task<IReadOnlyList<IPAddress>>> _hostResolver;
+    private readonly Func<string, bool>? _shouldFragmentHost;
     private readonly ConcurrentDictionary<long, Task> _activeConnections = new();
     private readonly SemaphoreSlim _connectionLimiter;
     private readonly Lock _lifecycleLock = new();
@@ -53,11 +54,13 @@ public sealed class TlsFragmentationProxyServer : IAsyncDisposable, IDisposable
     private bool _disposed;
 
     /// <summary>
-    /// Initializes a new <see cref="TlsFragmentationProxyServer"/> using an injected DNS resolver delegate.
+    /// Initializes a new <see cref="TlsFragmentationProxyServer"/> using an injected DNS resolver delegate
+    /// and an optional host predicate controlling which targets receive TLS ClientHello fragmentation.
     /// </summary>
     public TlsFragmentationProxyServer(
         TlsFragmentationProxyOptions options,
-        Func<string, CancellationToken, Task<IReadOnlyList<IPAddress>>> hostResolver)
+        Func<string, CancellationToken, Task<IReadOnlyList<IPAddress>>> hostResolver,
+        Func<string, bool>? shouldFragmentHost = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(hostResolver);
@@ -65,6 +68,7 @@ public sealed class TlsFragmentationProxyServer : IAsyncDisposable, IDisposable
 
         _options = options;
         _hostResolver = hostResolver;
+        _shouldFragmentHost = shouldFragmentHost;
         _connectionLimiter = new SemaphoreSlim(options.MaxConcurrentConnections, options.MaxConcurrentConnections);
     }
 
@@ -640,7 +644,7 @@ public sealed class TlsFragmentationProxyServer : IAsyncDisposable, IDisposable
             ? buffer.AsMemory(requiredRequestLength, leftoverLength)
             : ReadOnlyMemory<byte>.Empty;
 
-        await FragmentFirstPayloadAndRelayAsync(clientSocket, upstreamSocket, initialPayload, cancellationToken).ConfigureAwait(false);
+        await FragmentFirstPayloadAndRelayAsync(clientSocket, upstreamSocket, initialPayload, targetHost, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task HandleHttpConnectionAsync(
@@ -729,7 +733,7 @@ public sealed class TlsFragmentationProxyServer : IAsyncDisposable, IDisposable
             byte[] established = Encoding.ASCII.GetBytes($"{httpVersion} 200 Connection Established\r\n\r\n");
             await SendAllAsync(clientSocket, established, cancellationToken).ConfigureAwait(false);
 
-            await FragmentFirstPayloadAndRelayAsync(clientSocket, upstreamSocket, leftoverPayload, cancellationToken).ConfigureAwait(false);
+            await FragmentFirstPayloadAndRelayAsync(clientSocket, upstreamSocket, leftoverPayload, host, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -780,8 +784,24 @@ public sealed class TlsFragmentationProxyServer : IAsyncDisposable, IDisposable
         Socket clientSocket,
         Socket upstreamSocket,
         ReadOnlyMemory<byte> initialLeftover,
+        string? targetHost,
         CancellationToken cancellationToken)
     {
+        bool shouldFragment = _shouldFragmentHost is null
+            || string.IsNullOrWhiteSpace(targetHost)
+            || _shouldFragmentHost(targetHost);
+
+        if (!shouldFragment)
+        {
+            if (!initialLeftover.IsEmpty)
+            {
+                await SendAllAsync(upstreamSocket, initialLeftover, cancellationToken).ConfigureAwait(false);
+            }
+
+            await RelayBidirectionalAsync(clientSocket, upstreamSocket, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         byte[]? rentedBuffer = null;
         try
         {

@@ -7,6 +7,199 @@
                 HorizontalScrollBarVisibility="Disabled"
                 Padding="{DynamicResource PulsePagePadding}">
     <StackPanel MaxWidth="1280">
+      <!-- SIMPLE MODE ("Для чайников"): One-Button AI Autopilot + Desktop AI Apps Capture -->
+      <StackPanel Visibility="{Binding IsSimpleMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <ui:Card Padding="28"
+                 Margin="{DynamicResource PulseSectionMargin}">
+          <StackPanel HorizontalAlignment="Center" MaxWidth="680">
+            <Border Width="64"
+                    Height="64"
+                    CornerRadius="32"
+                    HorizontalAlignment="Center"
+                    Margin="0,0,0,14"
+                    Background="{Binding HeroState, Converter={StaticResource VerdictToBrushConverter}}">
+              <ui:SymbolIcon Symbol="ShieldCheckmark24"
+                             FontSize="30"
+                             Foreground="White"
+                             HorizontalAlignment="Center"
+                             VerticalAlignment="Center" />
+            </Border>
+
+            <ui:TextBlock FontTypography="TitleLarge"
+                          HorizontalAlignment="Center"
+                          TextAlignment="Center"
+                          Text="{conv:Localization Simple_Title}" />
+
+            <TextBlock Margin="0,6,0,18"
+                       FontSize="13"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       Text="{conv:Localization Simple_Subtitle}" />
+
+            <!-- THE ONE BIG BUTTON -->
+            <ui:Button HorizontalAlignment="Center"
+                       MinWidth="260"
+                       Height="54"
+                       Padding="28,12"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       Appearance="Primary"
+                       Content="{Binding SimplePrimaryButtonText}"
+                       Command="{Binding ToggleAiAutopilotCommand}"
+                       IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}">
+              <ui:Button.Icon>
+                <ui:SymbolIcon Symbol="Flash24" FontSize="20" />
+              </ui:Button.Icon>
+            </ui:Button>
+
+            <!-- Live Autopilot Progress -->
+            <StackPanel Margin="0,16,0,0"
+                        Visibility="{Binding IsAutoFinding, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <ProgressBar Height="6"
+                           Minimum="0"
+                           Maximum="100"
+                           Value="{Binding AutoSetupProgress}" />
+              <TextBlock Margin="0,6,0,0"
+                         FontSize="12"
+                         TextAlignment="Center"
+                         Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                         Text="{Binding AutoSetupStepMessage}" />
+            </StackPanel>
+
+            <!-- Live Status & Dynamic Watchdog Summary -->
+            <Border Margin="0,16,0,0"
+                    Padding="14,10"
+                    CornerRadius="8"
+                    Background="{DynamicResource PulseInnerPanelBrush}"
+                    BorderBrush="{DynamicResource PulseInnerPanelBorderBrush}"
+                    BorderThickness="1">
+              <StackPanel>
+                <TextBlock FontSize="13"
+                           FontWeight="SemiBold"
+                           TextAlignment="Center"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                           Text="{Binding HeroStatusTitle}" />
+                <TextBlock Margin="0,3,0,0"
+                           FontSize="12"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Text="{Binding LocalProxyEndpointText}" />
+                <TextBlock Margin="0,4,0,0"
+                           FontSize="12"
+                           TextAlignment="Center"
+                           Foreground="{StaticResource PulseSuccessBrush}"
+                           Text="{Binding WatchdogStatusSummary}"
+                           Visibility="{Binding IsWatchdogActive, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                <TextBlock Margin="0,4,0,0"
+                           FontSize="12"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap"
+                           Foreground="{StaticResource PulseDangerBrush}"
+                           Text="{Binding LastErrorMessage}"
+                           Visibility="{Binding LastErrorMessage, Converter={StaticResource NullToVisibilityConverter}}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ui:Card>
+
+        <!-- Desktop & CLI AI Apps Local Tunnel Capture Card -->
+        <ui:Card Padding="20"
+                 Margin="{DynamicResource PulseSectionMargin}">
+          <StackPanel>
+            <DockPanel Margin="0,0,0,12">
+              <ui:Button DockPanel.Dock="Right"
+                         Padding="12,6"
+                         Appearance="Secondary"
+                         Content="{conv:Localization Simple_Apps_Refresh}"
+                         Command="{Binding RefreshAiAppsCommand}" />
+              <StackPanel>
+                <TextBlock FontSize="15"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                           Text="{conv:Localization Simple_Apps_Title}" />
+                <TextBlock Margin="0,2,0,0"
+                           FontSize="12"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Text="{conv:Localization Simple_Apps_Subtitle}" />
+              </StackPanel>
+            </DockPanel>
+
+            <TextBlock Margin="0,0,0,8"
+                       FontSize="12"
+                       Foreground="{StaticResource PulseSuccessBrush}"
+                       Text="{Binding AiAppActionStatus}"
+                       Visibility="{Binding AiAppActionStatus, Converter={StaticResource NullToVisibilityConverter}}" />
+
+            <ItemsControl ItemsSource="{Binding DetectedAiApps}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Margin="0,0,0,8"
+                          Padding="12,10"
+                          CornerRadius="8"
+                          Background="{DynamicResource PulseInnerPanelBrush}"
+                          BorderBrush="{DynamicResource PulseInnerPanelBorderBrush}"
+                          BorderThickness="1">
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+
+                      <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                        <StackPanel Orientation="Horizontal">
+                          <TextBlock FontSize="13"
+                                     FontWeight="SemiBold"
+                                     Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                     Text="{Binding DisplayName}" />
+                          <TextBlock Margin="8,0,0,0"
+                                     FontSize="11"
+                                     VerticalAlignment="Center"
+                                     Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                     Text="{Binding Category}" />
+                          <TextBlock Margin="8,0,0,0"
+                                     FontSize="11"
+                                     FontWeight="SemiBold"
+                                     VerticalAlignment="Center"
+                                     Foreground="{StaticResource PulseSuccessBrush}"
+                                     Text="{Binding StatusBadgeText}" />
+                        </StackPanel>
+                        <TextBlock Margin="0,2,0,0"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   Text="{Binding PrimaryDomain}" />
+                      </StackPanel>
+
+                      <ui:Button Grid.Column="1"
+                                 Margin="0,0,8,0"
+                                 Padding="10,5"
+                                 Appearance="Secondary"
+                                 FontSize="12"
+                                 Content="{conv:Localization Simple_Apps_CopyCmd}"
+                                 Command="{Binding DataContext.CopyAiAppSnippetCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                 CommandParameter="{Binding}" />
+
+                      <ui:Button Grid.Column="2"
+                                 Padding="12,5"
+                                 Appearance="Primary"
+                                 FontSize="12"
+                                 Content="{conv:Localization Simple_Apps_Launch}"
+                                 Command="{Binding DataContext.LaunchAiAppCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                 CommandParameter="{Binding}" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ui:Card>
+      </StackPanel>
+
+      <!-- EXPERT MODE: Full Guided 1-2-3 Hero, Strategy Profiles & Live Telemetry -->
+      <StackPanel Visibility="{Binding IsSimpleMode, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
       <!-- Guided 1-2-3 Hero Card -->
       <ui:Card Padding="{DynamicResource PulseHeroPadding}"
                Margin="{DynamicResource PulseSectionMargin}"
@@ -587,6 +780,7 @@
           </StackPanel>
         </ui:Card>
       </WrapPanel>
+      </StackPanel>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

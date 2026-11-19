@@ -1,0 +1,1212 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  CircleDashed,
+  Download,
+  Gauge,
+  Moon,
+  Pencil,
+  Play,
+  Plus,
+  Radar,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Square,
+  Sun,
+  X,
+  XCircle,
+} from 'lucide-react';
+import { AiAppsCaptureCard } from './components/AiAppsCaptureCard';
+import { ConfigsTab } from './components/ConfigsTab';
+import { DiscoveryModal } from './components/DiscoveryModal';
+import { ManualAddModal } from './components/ManualAddModal';
+import { getEndpointLabel, ServerCard } from './components/ServerCard';
+import { ServerDetailsDrawer } from './components/ServerDetailsDrawer';
+import { ServerInspectorPanel } from './components/ServerInspectorPanel';
+import { SimpleModeView } from './components/SimpleModeView';
+import {
+  CATEGORY_LIST,
+  filterServers,
+  getCategoryCounts,
+  hasActiveFilter,
+  sortServers,
+} from './core/filterSort';
+import { getPresetsForGroup, PRESET_GROUPS } from './core/presets';
+import {
+  AutopilotState,
+  DnsServer,
+  FilterState,
+  PresetGroupId,
+  SortMode,
+  SyncStatus,
+  TunnelState,
+} from './core/types';
+
+type UiMode = 'simple' | 'expert';
+type ActiveTab = 'tester' | 'apps' | 'catalog' | 'configs';
+
+interface AppSettings {
+  theme: 'dark' | 'light';
+  autoConnectBestOnRotate: boolean;
+  freeOnly: boolean;
+  hotkeyRotate: string;
+}
+
+const DEFAULT_FILTER: FilterState = {
+  category: 'Все',
+  bypassOnly: false,
+  favoritesOnly: false,
+  encryptedOnly: false,
+  freeOnly: false,
+  search: '',
+  sortMode: 'BEST',
+};
+
+const DEFAULT_AUTOPILOT: AutopilotState = {
+  phase: 'idle',
+  watchdogEnabled: true,
+  activeServerId: null,
+  activeServerName: null,
+  activeProtocol: null,
+  activeLatencyMs: null,
+  localDnsAddress: '127.0.0.1:15353',
+  localProxyAddress: '127.0.0.1:18753',
+  standbyCount: 0,
+  testedCount: 0,
+  verifiedCount: 0,
+  lastCheckAt: null,
+  summary: 'Готов к запуску.',
+  steps: [
+    { id: 'sync', label: 'Обновление списков', status: 'pending' },
+    { id: 'probe', label: 'Подбор узла', status: 'pending' },
+    { id: 'tunnel', label: 'Прокси 127.0.0.1:18753', status: 'pending' },
+    { id: 'apps', label: 'Проверка сервисов', status: 'pending' },
+  ],
+  serviceChecks: [],
+  switchHistory: [],
+};
+
+export default function App() {
+  const [servers, setServers] = useState<DnsServer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uiMode, setUiMode] = useState<UiMode>('simple');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('tester');
+
+  const [autopilot, setAutopilot] = useState<AutopilotState>(DEFAULT_AUTOPILOT);
+  const [autopilotBusy, setAutopilotBusy] = useState(false);
+
+  const [presetGroup, setPresetGroup] = useState<PresetGroupId>('ai');
+  const [targetDomain, setTargetDomain] = useState<string>('gemini.google.com');
+  const [requiresBypass, setRequiresBypass] = useState<boolean>(true);
+  const [editingCustomDomain, setEditingCustomDomain] = useState<boolean>(false);
+
+  const [filter, setFilter] = useState<FilterState>(DEFAULT_FILTER);
+  const [visibleLimit, setVisibleLimit] = useState<number>(40);
+
+  const [probingIds, setProbingIds] = useState<Set<string>>(new Set());
+  const [isBenchmarking, setIsBenchmarking] = useState(false);
+  const [isLive, setIsLive] = useState(false);
+
+  const [tunnel, setTunnel] = useState<TunnelState>({
+    active: false,
+    serverId: null,
+    serverName: null,
+    endpoint: null,
+    protocol: null,
+    targetDomain: 'gemini.google.com',
+    listenAddress: '127.0.0.1:15353',
+    localProxyAddress: '127.0.0.1:18753',
+    proxyConnectionsHandled: 0,
+    splitRouting: true,
+    nrptEnabled: false,
+    queriesHandled: 0,
+    cacheHits: 0,
+    startedAt: null,
+    rotationQueueIds: [],
+  });
+
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>({
+    cachedHostsCount: 0,
+    lastSyncAt: null,
+    sources: [],
+  });
+
+  const [settings, setSettings] = useState<AppSettings>({
+    theme: 'dark',
+    autoConnectBestOnRotate: true,
+    freeOnly: false,
+    hotkeyRotate: 'Ctrl+Alt+R',
+  });
+
+  const [discoveryOpen, setDiscoveryOpen] = useState(false);
+  const [manualAddOpen, setManualAddOpen] = useState(false);
+  const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
+  const [detailsServerId, setDetailsServerId] = useState<string | null>(null);
+  const [tunnelTestFeedback, setTunnelTestFeedback] = useState<string | null>(null);
+
+  const liveTimerRef = useRef<number | null>(null);
+
+  // Sync HTML .dark class with settings.theme
+  useEffect(() => {
+    const root = document.documentElement;
+    if (settings.theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+  }, [settings.theme]);
+
+  // Initial bootstrap from SQLite backend
+  const loadBootstrap = useCallback(async () => {
+    try {
+      const res = await fetch('/api/bootstrap');
+      const data = await res.json();
+      setServers(data.servers || []);
+      if (data.syncStatus) setSyncStatus(data.syncStatus);
+      if (data.settings) {
+        setSettings(data.settings);
+        setFilter((prev) => ({ ...prev, freeOnly: Boolean(data.settings.freeOnly) }));
+      }
+      if (data.tunnel) setTunnel(data.tunnel);
+      if (data.autopilot) setAutopilot(data.autopilot);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBootstrap();
+  }, [loadBootstrap]);
+
+  // Poll live autopilot & tunnel telemetry while running or active (watchdog switches)
+  const refreshAutopilotStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/autopilot/status');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.autopilot) setAutopilot(data.autopilot);
+      if (data.tunnel) setTunnel(data.tunnel);
+    } catch {
+      // Transient polling error ignored
+    }
+  }, []);
+
+  useEffect(() => {
+    const shouldPollFast = autopilotBusy || autopilot.phase === 'running';
+    const shouldPollSlow = autopilot.phase === 'active' || autopilot.phase === 'degraded' || tunnel.active;
+    if (!shouldPollFast && !shouldPollSlow) return;
+
+    const intervalMs = shouldPollFast ? 1200 : 8000;
+    const timer = window.setInterval(refreshAutopilotStatus, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [autopilotBusy, autopilot.phase, tunnel.active, refreshAutopilotStatus]);
+
+  const handleStartAutopilot = useCallback(async () => {
+    setAutopilotBusy(true);
+    try {
+      const res = await fetch('/api/autopilot/start', { method: 'POST' });
+      const data = await res.json();
+      if (data.autopilot) setAutopilot(data.autopilot);
+      if (data.tunnel) setTunnel(data.tunnel);
+      if (Array.isArray(data.servers)) setServers(data.servers);
+    } finally {
+      setAutopilotBusy(false);
+    }
+  }, []);
+
+  const handleStopAutopilot = useCallback(async () => {
+    setAutopilotBusy(true);
+    try {
+      const res = await fetch('/api/autopilot/stop', { method: 'POST' });
+      const data = await res.json();
+      if (data.autopilot) setAutopilot(data.autopilot);
+      if (data.tunnel) setTunnel(data.tunnel);
+      setTunnelTestFeedback(null);
+    } finally {
+      setAutopilotBusy(false);
+    }
+  }, []);
+
+  const handleRotateAutopilot = useCallback(async () => {
+    setAutopilotBusy(true);
+    try {
+      const res = await fetch('/api/autopilot/rotate', { method: 'POST' });
+      const data = await res.json();
+      if (data.autopilot) setAutopilot(data.autopilot);
+      if (data.tunnel) setTunnel(data.tunnel);
+    } finally {
+      setAutopilotBusy(false);
+    }
+  }, []);
+
+  const mergeUpdatedServers = useCallback((updatedList: DnsServer[]) => {
+    if (!updatedList.length) return;
+    const map = new Map(updatedList.map((s) => [s.id, s]));
+    setServers((prev) => prev.map((s) => map.get(s.id) ?? s));
+  }, []);
+
+  const categoryCounts = useMemo(() => getCategoryCounts(servers), [servers]);
+
+  const filteredAndSorted = useMemo(() => {
+    const filtered = filterServers(servers, filter, requiresBypass);
+    return sortServers(filtered, filter.sortMode);
+  }, [servers, filter, requiresBypass]);
+
+  const visibleServers = useMemo(
+    () => filteredAndSorted.slice(0, visibleLimit),
+    [filteredAndSorted, visibleLimit]
+  );
+
+  const bestVerifiedId = useMemo(() => {
+    const verified = sortServers(
+      servers.filter((s) => s.verdict === 'VERIFIED_PROXY_OK' && !s.isSubscription),
+      'LOWEST_PING'
+    );
+    return verified[0]?.id ?? null;
+  }, [servers]);
+
+  const selectedServer = useMemo(
+    () => (selectedServerId ? servers.find((s) => s.id === selectedServerId) ?? null : null),
+    [selectedServerId, servers]
+  );
+
+  const detailsServer = useMemo(
+    () => (detailsServerId ? servers.find((s) => s.id === detailsServerId) ?? null : null),
+    [detailsServerId, servers]
+  );
+
+  const activeGroupLabel = useMemo(
+    () => PRESET_GROUPS.find((g) => g.id === presetGroup)?.label ?? 'ИИ',
+    [presetGroup]
+  );
+
+  const groupPresets = useMemo(() => getPresetsForGroup(presetGroup), [presetGroup]);
+
+  const handleSelectGroup = (groupId: PresetGroupId) => {
+    setPresetGroup(groupId);
+    if (groupId === 'custom') {
+      setEditingCustomDomain(true);
+      setRequiresBypass(true);
+      return;
+    }
+    setEditingCustomDomain(false);
+    const list = getPresetsForGroup(groupId);
+    if (list.length > 0) {
+      setTargetDomain(list[0].domain);
+      setRequiresBypass(list[0].requiresBypass);
+    }
+  };
+
+  const handleSelectPreset = (domain: string, bypass: boolean) => {
+    setTargetDomain(domain);
+    setRequiresBypass(bypass);
+    setEditingCustomDomain(false);
+  };
+
+  const handleProbeSingle = async (server: DnsServer) => {
+    setProbingIds((prev) => new Set(prev).add(server.id));
+    try {
+      const res = await fetch('/api/probe/single', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serverId: server.id,
+          targetDomain,
+          requiresBypass,
+        }),
+      });
+      const data = await res.json();
+      if (data.server) {
+        mergeUpdatedServers([data.server]);
+      }
+    } finally {
+      setProbingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(server.id);
+        return next;
+      });
+    }
+  };
+
+  const runBatchProbe = useCallback(
+    async (targetIds: string[]) => {
+      if (targetIds.length === 0) return;
+      setProbingIds((prev) => {
+        const next = new Set(prev);
+        targetIds.forEach((id) => next.add(id));
+        return next;
+      });
+      try {
+        const res = await fetch('/api/probe/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            serverIds: targetIds,
+            targetDomain,
+            requiresBypass,
+          }),
+        });
+        const data = await res.json();
+        if (Array.isArray(data.servers)) {
+          mergeUpdatedServers(data.servers);
+        }
+      } finally {
+        setProbingIds((prev) => {
+          const next = new Set(prev);
+          targetIds.forEach((id) => next.delete(id));
+          return next;
+        });
+      }
+    },
+    [targetDomain, requiresBypass, mergeUpdatedServers]
+  );
+
+  const handleBenchmarkVisible = async () => {
+    setIsBenchmarking(true);
+    try {
+      const ids = filteredAndSorted.slice(0, 18).map((s) => s.id);
+      await runBatchProbe(ids);
+    } finally {
+      setIsBenchmarking(false);
+    }
+  };
+
+  // LIVE 4-stage monitoring loop every 2.5s
+  useEffect(() => {
+    if (!isLive) {
+      if (liveTimerRef.current !== null) {
+        window.clearInterval(liveTimerRef.current);
+        liveTimerRef.current = null;
+      }
+      return;
+    }
+
+    const tick = () => {
+      const topIds = filteredAndSorted.slice(0, 8).map((s) => s.id);
+      runBatchProbe(topIds);
+    };
+
+    tick();
+    liveTimerRef.current = window.setInterval(tick, 2800);
+    return () => {
+      if (liveTimerRef.current !== null) {
+        window.clearInterval(liveTimerRef.current);
+        liveTimerRef.current = null;
+      }
+    };
+  }, [isLive, filteredAndSorted, runBatchProbe]);
+
+  const handleToggleFavorite = async (server: DnsServer) => {
+    const res = await fetch(`/api/servers/${encodeURIComponent(server.id)}/favorite`, {
+      method: 'POST',
+    });
+    const data = await res.json();
+    if (data.server) mergeUpdatedServers([data.server]);
+  };
+
+  const handleDeleteCustom = async (server: DnsServer) => {
+    const res = await fetch(`/api/servers/${encodeURIComponent(server.id)}`, {
+      method: 'DELETE',
+    });
+    if (res.ok) {
+      setServers((prev) => prev.filter((s) => s.id !== server.id));
+      setDetailsServerId(null);
+    }
+  };
+
+  const handleToggleStart = async (server: DnsServer) => {
+    if (tunnel.active && tunnel.serverId === server.id) {
+      const res = await fetch('/api/tunnel/stop', { method: 'POST' });
+      const data = await res.json();
+      setTunnel(data.tunnel);
+      setTunnelTestFeedback(null);
+      return;
+    }
+    const res = await fetch('/api/tunnel/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        serverId: server.id,
+        targetDomain,
+        splitRouting: true,
+      }),
+    });
+    const data = await res.json();
+    if (data.tunnel) setTunnel(data.tunnel);
+  };
+
+  const handleRotateTunnel = useCallback(async () => {
+    const res = await fetch('/api/tunnel/rotate', { method: 'POST' });
+    const data = await res.json();
+    if (data.tunnel) {
+      setTunnel(data.tunnel);
+      setTunnelTestFeedback(`Ротация выполнена: ${data.tunnel.serverName}`);
+    }
+  }, []);
+
+  const handleStopTunnel = async () => {
+    const res = await fetch('/api/tunnel/stop', { method: 'POST' });
+    const data = await res.json();
+    setTunnel(data.tunnel);
+    setTunnelTestFeedback(null);
+  };
+
+  const handleTestTunnelQuery = async () => {
+    const res = await fetch('/api/tunnel/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: targetDomain }),
+    });
+    const data = await res.json();
+    if (data.tunnel) setTunnel(data.tunnel);
+    if (data.result) {
+      setTunnelTestFeedback(
+        `${data.result.domain} → ${data.result.routedVia === 'smart-dns' ? 'Smart-DNS' : 'Прямой'} (${data.result.ips.join(', ') || 'нет A'})`
+      );
+    }
+  };
+
+  // Global Ctrl+Alt+R hotkey for instant tunnel rotation
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        handleRotateTunnel();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleRotateTunnel]);
+
+  const handleUpdateSettings = async (patch: Partial<AppSettings>) => {
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    if (patch.freeOnly !== undefined) {
+      setFilter((prev) => ({ ...prev, freeOnly: Boolean(patch.freeOnly) }));
+    }
+    await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+  };
+
+  const handleSyncHosts = async () => {
+    const res = await fetch('/api/sync/hosts', { method: 'POST' });
+    const data = await res.json();
+    if (data.syncStatus) setSyncStatus(data.syncStatus);
+    if (Array.isArray(data.servers)) setServers(data.servers);
+  };
+
+  const handleRestoreBuiltins = async () => {
+    const res = await fetch('/api/servers/restore-builtins', { method: 'POST' });
+    const data = await res.json();
+    if (Array.isArray(data.servers)) setServers(data.servers);
+  };
+
+  const activeFiltersPresent = hasActiveFilter(filter);
+
+  return (
+    <div className="min-h-screen bg-[#F7F8FA] dark:bg-[#0B0D10] text-[#0F172A] dark:text-[#F1F5F9] transition-colors">
+      {/* Top Bar: 3-zone contract on desktop, clean responsive wrap on mobile */}
+      <header className="md:sticky md:top-0 z-30 bg-[#FFFFFF]/95 dark:bg-[#13161B]/95 backdrop-blur-sm border-b border-[#DCE1E8] dark:border-[#262C36]">
+        <div className="max-w-[1340px] mx-auto px-4 sm:px-6 py-2 md:py-0 md:h-14 flex flex-wrap md:flex-nowrap items-center justify-between gap-2 md:gap-6">
+          {/* Zone 1: Brand Wordmark + Simple/Expert Mode Switch */}
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-baseline gap-2 shrink-0">
+              <span className="text-base font-bold tracking-tight text-[#0F172A] dark:text-[#F1F5F9] whitespace-nowrap">
+                DNS Pulse
+              </span>
+              <span className="font-mono text-[11px] font-medium text-[#16A34A] dark:text-[#22C55E] whitespace-nowrap">
+                AI v2.1
+              </span>
+            </div>
+
+            <div
+              role="group"
+              aria-label="Режим интерфейса"
+              className="inline-flex items-center p-0.5 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36]"
+            >
+              <button
+                type="button"
+                onClick={() => setUiMode('simple')}
+                aria-pressed={uiMode === 'simple'}
+                className={`min-h-[28px] px-2.5 py-1 rounded text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                  uiMode === 'simple'
+                    ? 'bg-[#FFFFFF] dark:bg-[#13161B] text-[#0F172A] dark:text-[#F1F5F9]'
+                    : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F1F5F9]'
+                }`}
+              >
+                Простой
+              </button>
+              <button
+                type="button"
+                onClick={() => setUiMode('expert')}
+                aria-pressed={uiMode === 'expert'}
+                className={`min-h-[28px] px-2.5 py-1 rounded text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                  uiMode === 'expert'
+                    ? 'bg-[#FFFFFF] dark:bg-[#13161B] text-[#0F172A] dark:text-[#F1F5F9]'
+                    : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F1F5F9]'
+                }`}
+              >
+                Эксперт
+              </button>
+            </div>
+          </div>
+
+          {/* Zone 2: Concise Navigation Tabs (Expert Mode) */}
+          {uiMode === 'expert' ? (
+            <nav
+              aria-label="Основные разделы"
+              className="order-3 md:order-2 w-full md:w-auto flex items-center gap-4 sm:gap-6 border-t md:border-t-0 border-[#DCE1E8] dark:border-[#262C36] pt-1 md:pt-0 overflow-x-auto"
+            >
+              {(
+                [
+                  { id: 'tester', label: 'Тестер' },
+                  { id: 'apps', label: 'Программы ИИ' },
+                  { id: 'catalog', label: 'Каталог' },
+                  { id: 'configs', label: 'Конфиги' },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    if (tab.id === 'catalog') {
+                      setVisibleLimit((prev) => Math.max(prev, 100));
+                    }
+                  }}
+                  className={`py-2 md:py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    activeTab === tab.id
+                      ? 'border-[#22C55E] text-[#0F172A] dark:text-[#F1F5F9]'
+                      : 'border-transparent text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F1F5F9]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          ) : (
+            <div className="hidden md:block md:order-2" />
+          )}
+
+          {/* Zone 3: Actions */}
+          <div className="order-2 md:order-3 flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() =>
+                handleUpdateSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' })
+              }
+              aria-label={settings.theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
+              className="min-h-[36px] w-[36px] rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] inline-flex items-center justify-center text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F1F5F9] cursor-pointer shrink-0"
+              title="Переключить тему"
+            >
+              {settings.theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+
+            {uiMode === 'simple' ? (
+              <a
+                href="/api/export/windows-wpf.zip"
+                download="dns-pulse-windows-wpf-v2.1.0.zip"
+                className="min-h-[36px] px-3 sm:px-3.5 py-1.5 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-semibold text-[#0F172A] dark:text-[#F1F5F9] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 hover:bg-[#E2E8F0] dark:hover:bg-[#242B35]"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Windows v2.1</span>
+              </a>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setDiscoveryOpen(true)}
+                  className="min-h-[36px] px-3 sm:px-3.5 py-1.5 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-semibold text-[#0F172A] dark:text-[#F1F5F9] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer hover:bg-[#E2E8F0] dark:hover:bg-[#242B35]"
+                >
+                  <Radar className="w-3.5 h-3.5" />
+                  <span>Подбор</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsLive((prev) => !prev)}
+                  aria-pressed={isLive}
+                  title="Автопроверка топ-8 серверов каждые 2.8 сек"
+                  className={`min-h-[36px] px-3 sm:px-3.5 py-1.5 rounded-md border text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                    isLive
+                      ? 'bg-[#22C55E] border-[#22C55E] text-[#0B0D10]'
+                      : 'bg-[#EEF1F5] dark:bg-[#1B2028] border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9]'
+                  }`}
+                >
+                  <Activity className="w-3.5 h-3.5" />
+                  <span>LIVE</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleBenchmarkVisible}
+                  disabled={isBenchmarking}
+                  className="min-h-[36px] px-3 sm:px-4 py-1.5 rounded-md bg-[#0F172A] dark:bg-[#F1F5F9] text-[#FFFFFF] dark:text-[#0B0D10] text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-60"
+                >
+                  <Gauge className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{isBenchmarking ? 'Проверка...' : 'Тест скорости'}</span>
+                  <span className="sm:hidden">{isBenchmarking ? '...' : 'Тест'}</span>
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-[1340px] mx-auto px-4 sm:px-6 py-5 space-y-4">
+        {uiMode === 'simple' ? (
+          <SimpleModeView
+            autopilot={autopilot}
+            tunnel={tunnel}
+            busy={autopilotBusy}
+            onStartAutopilot={handleStartAutopilot}
+            onStopAutopilot={handleStopAutopilot}
+            onRotateAutopilot={handleRotateAutopilot}
+            onSwitchToExpert={() => {
+              setUiMode('expert');
+              setActiveTab('tester');
+            }}
+          />
+        ) : (
+          <>
+            {/* Active Tunnel / Tray Notification Bar */}
+            {tunnel.active && (
+              <section
+                aria-label="Активный DNS-туннель"
+                className="rounded-lg bg-[#FFFFFF] dark:bg-[#13161B] border border-[#22C55E]/70 px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3"
+              >
+                <div className="min-w-0 space-y-0.5">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-semibold text-[#16A34A] dark:text-[#22C55E]">
+                    <span>Активен AI-туннель: {tunnel.serverName}</span>
+                    <span className="font-mono text-[#64748B] dark:text-[#94A3B8]">
+                      · DNS {tunnel.listenAddress} · Proxy http://{tunnel.localProxyAddress} · Запросов: {tunnel.queriesHandled} (прокси: {tunnel.proxyConnectionsHandled})
+                    </span>
+                  </div>
+                  <div className="font-mono text-xs text-[#64748B] dark:text-[#94A3B8] truncate">
+                    {tunnel.endpoint} · Цель: {tunnel.targetDomain}
+                    {tunnelTestFeedback ? ` · ${tunnelTestFeedback}` : ''}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleTestTunnelQuery}
+                    className="min-h-[34px] px-3 py-1.5 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-medium text-[#0F172A] dark:text-[#F1F5F9] whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    Проверить запрос
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRotateTunnel}
+                    title="Горячая клавиша Ctrl+Alt+R"
+                    className="min-h-[34px] px-3.5 py-1.5 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-semibold text-[#0F172A] dark:text-[#F1F5F9] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer hover:bg-[#E2E8F0] dark:hover:bg-[#242B35]"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Ротация ↻</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleStopTunnel}
+                    className="min-h-[34px] px-3.5 py-1.5 rounded-md bg-[#EF4444] text-[#FFFFFF] text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer hover:bg-[#DC2626]"
+                  >
+                    <Square className="w-3 h-3 fill-current" />
+                    <span>Откл</span>
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {activeTab === 'apps' ? (
+              <AiAppsCaptureCard
+                proxyAddress={tunnel.localProxyAddress}
+                tunnelActive={tunnel.active}
+              />
+            ) : activeTab === 'configs' ? (
+              <ConfigsTab
+                servers={servers}
+                syncStatus={syncStatus}
+                settings={settings}
+                onOpenManualAdd={() => setManualAddOpen(true)}
+                onOpenDiscovery={() => setDiscoveryOpen(true)}
+                onServersImported={(all) => setServers(all)}
+                onSyncHosts={handleSyncHosts}
+                onUpdateSettings={handleUpdateSettings}
+                onRestoreBuiltins={handleRestoreBuiltins}
+              />
+            ) : (
+              <>
+                {/* Unified Target Service + Search & Filter Card */}
+                <section
+                  aria-label="Режим проверки, поиск и фильтры"
+                  className="rounded-lg bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] p-4 space-y-3"
+                >
+              {/* Top Row: Mode & Editable Target Domain */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className="text-sm font-semibold text-[#0F172A] dark:text-[#F1F5F9] whitespace-nowrap">
+                    Режим: {activeGroupLabel}
+                  </span>
+
+                  <div className="inline-flex items-center gap-1 p-1 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028]">
+                    {PRESET_GROUPS.map((g) => (
+                      <button
+                        key={g.id}
+                        type="button"
+                        onClick={() => handleSelectGroup(g.id)}
+                        className={`min-h-[28px] px-2.5 py-1 rounded text-xs font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
+                          presetGroup === g.id
+                            ? 'bg-[#FFFFFF] dark:bg-[#13161B] text-[#0F172A] dark:text-[#F1F5F9]'
+                            : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F1F5F9]'
+                        }`}
+                      >
+                        {g.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {editingCustomDomain ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      setEditingCustomDomain(false);
+                    }}
+                    className="flex items-center gap-1.5"
+                  >
+                    <input
+                      type="text"
+                      value={targetDomain}
+                      onChange={(e) => setTargetDomain(e.target.value)}
+                      autoFocus
+                      aria-label="Свой домен проверки"
+                      className="min-h-[32px] w-56 px-2.5 py-1 rounded font-mono text-xs bg-[#F7F8FA] dark:bg-[#0B0D10] border border-[#22C55E] text-[#0F172A] dark:text-[#F1F5F9] focus:outline-none"
+                    />
+                    <button
+                      type="submit"
+                      className="min-h-[32px] px-2.5 py-1 rounded bg-[#22C55E] text-[#0B0D10] text-xs font-semibold cursor-pointer"
+                    >
+                      ОК
+                    </button>
+                  </form>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setEditingCustomDomain(true)}
+                    aria-label={`Изменить домен проверки ${targetDomain}`}
+                    className="min-h-[32px] px-3 py-1 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] font-mono text-xs text-[#0F172A] dark:text-[#F1F5F9] inline-flex items-center gap-1.5 max-w-[260px] cursor-pointer hover:border-[#94A3B8]"
+                  >
+                    <span className="truncate">{targetDomain}</span>
+                    <Pencil className="w-3 h-3 shrink-0 text-[#64748B] dark:text-[#94A3B8]" />
+                  </button>
+                )}
+              </div>
+
+              {/* Presets Strip */}
+              {groupPresets.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {groupPresets.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => handleSelectPreset(preset.domain, preset.requiresBypass)}
+                      className={`min-h-[30px] px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer border ${
+                        targetDomain === preset.domain
+                          ? 'bg-[#22C55E]/15 border-[#22C55E] text-[#16A34A] dark:text-[#22C55E]'
+                          : 'bg-[#F7F8FA] dark:bg-[#0B0D10] text-[#0F172A] dark:text-[#F1F5F9] border-[#DCE1E8] dark:border-[#262C36] hover:border-[#94A3B8]'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <label className="inline-flex items-center gap-2 text-xs text-[#64748B] dark:text-[#94A3B8] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={requiresBypass}
+                    onChange={(e) => setRequiresBypass(e.target.checked)}
+                    className="accent-[#22C55E]"
+                  />
+                  <span>Проверять обход (Anti-Direct-IP + 443)</span>
+                </label>
+              )}
+
+              {/* Subtle Hairline Divider */}
+              <div className="border-t border-[#DCE1E8] dark:border-[#262C36] pt-3 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
+                <div className="relative flex-1 min-w-[220px]">
+                  <Search className="w-3.5 h-3.5 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={filter.search}
+                    onChange={(e) => setFilter((prev) => ({ ...prev, search: e.target.value }))}
+                    aria-label="Поиск DNS-серверов"
+                    placeholder="Поиск по имени, провайдеру, IP, DoH URL, DoT, тегам..."
+                    className="w-full min-h-[36px] pl-9 pr-8 py-1.5 rounded-md text-xs bg-[#F7F8FA] dark:bg-[#0B0D10] border border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9] focus:outline-none focus:border-[#22C55E]"
+                  />
+                  {filter.search && (
+                    <button
+                      type="button"
+                      onClick={() => setFilter((prev) => ({ ...prev, search: '' }))}
+                      aria-label="Очистить поиск"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#F1F5F9] cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setFilter((prev) => ({ ...prev, bypassOnly: !prev.bypassOnly }))}
+                    aria-pressed={filter.bypassOnly}
+                    className={`min-h-[36px] px-2.5 py-1.5 rounded-md border text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      filter.bypassOnly
+                        ? 'bg-[#22C55E]/15 border-[#22C55E] text-[#16A34A] dark:text-[#22C55E]'
+                        : 'bg-[#F7F8FA] dark:bg-[#0B0D10] border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9]'
+                    }`}
+                  >
+                    ✓ Обход 443
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFilter((prev) => ({ ...prev, favoritesOnly: !prev.favoritesOnly }))}
+                    aria-pressed={filter.favoritesOnly}
+                    className={`min-h-[36px] px-2.5 py-1.5 rounded-md border text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      filter.favoritesOnly
+                        ? 'bg-[#F59E0B]/15 border-[#F59E0B] text-[#D97706] dark:text-[#F59E0B]'
+                        : 'bg-[#F7F8FA] dark:bg-[#0B0D10] border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9]'
+                    }`}
+                  >
+                    ★ Избранные
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFilter((prev) => ({ ...prev, encryptedOnly: !prev.encryptedOnly }))}
+                    aria-pressed={filter.encryptedOnly}
+                    className={`min-h-[36px] px-2.5 py-1.5 rounded-md border text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      filter.encryptedOnly
+                        ? 'bg-[#0F172A] dark:bg-[#F1F5F9] border-transparent text-[#FFFFFF] dark:text-[#0B0D10]'
+                        : 'bg-[#F7F8FA] dark:bg-[#0B0D10] border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9]'
+                    }`}
+                  >
+                    DoH / DoT
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateSettings({ freeOnly: !filter.freeOnly })}
+                    aria-pressed={filter.freeOnly}
+                    className={`min-h-[36px] px-2.5 py-1.5 rounded-md border text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      filter.freeOnly
+                        ? 'bg-[#0F172A] dark:bg-[#F1F5F9] border-transparent text-[#FFFFFF] dark:text-[#0B0D10]'
+                        : 'bg-[#F7F8FA] dark:bg-[#0B0D10] border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9]'
+                    }`}
+                  >
+                    Бесплатные
+                  </button>
+
+                  <select
+                    value={filter.sortMode}
+                    onChange={(e) =>
+                      setFilter((prev) => ({ ...prev, sortMode: e.target.value as SortMode }))
+                    }
+                    aria-label="Сортировка серверов"
+                    className="min-h-[36px] px-2.5 py-1.5 rounded-md text-xs font-medium bg-[#F7F8FA] dark:bg-[#0B0D10] border border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9] cursor-pointer"
+                  >
+                    <option value="BEST">Сорт: Обход + Пинг</option>
+                    <option value="LOWEST_PING">Сорт: Пинг (мс)</option>
+                    <option value="HIGHEST_TPS">Сорт: Скорость TPS</option>
+                    <option value="FAVORITES_FIRST">Сорт: Избранные</option>
+                    <option value="ALPHABETICAL">Сорт: По алфавиту</option>
+                  </select>
+
+                  {activeFiltersPresent && (
+                    <button
+                      type="button"
+                      onClick={() => setFilter({ ...DEFAULT_FILTER, sortMode: filter.sortMode })}
+                      className="min-h-[36px] px-2.5 py-1.5 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-medium text-[#0F172A] dark:text-[#F1F5F9] inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span className="tabular-nums">Сброс</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {/* Category Strip + Counter */}
+            <section
+              aria-label="Категории серверов"
+              className="flex flex-wrap xl:flex-nowrap items-center justify-between gap-2"
+            >
+              <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                {CATEGORY_LIST.filter((cat) => cat !== 'Личные токены' || (categoryCounts[cat] ?? 0) > 0).map((cat) => {
+                  const count = categoryCounts[cat] ?? 0;
+                  const active = filter.category === cat;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => {
+                        setFilter((prev) => ({ ...prev, category: cat }));
+                        setVisibleLimit(activeTab === 'catalog' ? 100 : 40);
+                      }}
+                      className={`min-h-[32px] px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 border transition-colors cursor-pointer ${
+                        active
+                          ? 'bg-[#0F172A] dark:bg-[#F1F5F9] text-[#FFFFFF] dark:text-[#0B0D10] border-transparent'
+                          : 'bg-[#FFFFFF] dark:bg-[#13161B] text-[#0F172A] dark:text-[#F1F5F9] border-[#DCE1E8] dark:border-[#262C36] hover:border-[#94A3B8]'
+                      }`}
+                    >
+                      <span>{cat}</span>
+                      <span
+                        className={`font-mono text-[11px] tabular-nums ${
+                          active ? 'opacity-80' : 'text-[#64748B] dark:text-[#94A3B8]'
+                        }`}
+                      >
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center gap-3 text-xs text-[#64748B] dark:text-[#94A3B8] shrink-0 whitespace-nowrap">
+                <span className="tabular-nums font-mono">
+                  {visibleServers.length} / {filteredAndSorted.length} (база: {servers.length})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setManualAddOpen(true)}
+                  className="min-h-[30px] px-2.5 py-1 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-medium text-[#0F172A] dark:text-[#F1F5F9] inline-flex items-center gap-1 whitespace-nowrap cursor-pointer hover:border-[#94A3B8]"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Добавить DNS</span>
+                </button>
+              </div>
+            </section>
+
+            {/* Content View: Loading / Empty / Catalog DataTable / Tester Master-Detail */}
+            {loading ? (
+              <div className="space-y-2.5" aria-busy="true">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <div
+                    key={n}
+                    className="h-[72px] rounded-lg bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] animate-pulse"
+                  />
+                ))}
+              </div>
+            ) : filteredAndSorted.length === 0 ? (
+              <div className="rounded-lg bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] p-10 text-center space-y-3">
+                <div className="text-sm font-semibold text-[#0F172A] dark:text-[#F1F5F9]">
+                  По текущим фильтрам серверы не найдены
+                </div>
+                <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
+                  Попробуйте сбросить фильтры, изменить поисковый запрос или добавить сервер вручную.
+                </p>
+                <div className="flex justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFilter(DEFAULT_FILTER)}
+                    className="min-h-[38px] px-4 py-2 rounded-md bg-[#0F172A] dark:bg-[#F1F5F9] text-[#FFFFFF] dark:text-[#0B0D10] text-xs font-semibold cursor-pointer"
+                  >
+                    Сбросить фильтры
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDiscoveryOpen(true)}
+                    className="min-h-[38px] px-4 py-2 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] text-xs font-medium text-[#0F172A] dark:text-[#F1F5F9] cursor-pointer"
+                  >
+                    Открыть Подбор
+                  </button>
+                </div>
+              </div>
+            ) : activeTab === 'catalog' ? (
+              /* High-Density Catalog Table */
+              <div className="space-y-3">
+                <div className="rounded-lg bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-[#DCE1E8] dark:border-[#262C36] bg-[#F7F8FA] dark:bg-[#1B2028] text-[11px] font-semibold text-[#64748B] dark:text-[#94A3B8]">
+                        <th className="py-2.5 px-3">Статус</th>
+                        <th className="py-2.5 px-3">Название</th>
+                        <th className="py-2.5 px-3">Протокол</th>
+                        <th className="py-2.5 px-3">Страна</th>
+                        <th className="py-2.5 px-3">Адрес / Endpoint</th>
+                        <th className="py-2.5 px-3 text-right">Пинг</th>
+                        <th className="py-2.5 px-3 text-right">TPS</th>
+                        <th className="py-2.5 px-3 text-right">Действия</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#DCE1E8] dark:divide-[#262C36] text-xs">
+                      {visibleServers.map((srv) => {
+                        const isActive = tunnel.active && tunnel.serverId === srv.id;
+                        const probing = probingIds.has(srv.id);
+                        return (
+                          <tr
+                            key={srv.id}
+                            onClick={() => setDetailsServerId(srv.id)}
+                            className="hover:bg-[#F7F8FA] dark:hover:bg-[#1B2028]/70 cursor-pointer transition-colors"
+                          >
+                            <td className="py-2 px-3 whitespace-nowrap">
+                              {srv.verdict === 'VERIFIED_PROXY_OK' ? (
+                                <CheckCircle2 className="w-4 h-4 text-[#16A34A] dark:text-[#22C55E]" />
+                              ) : srv.verdict === 'DIRECT_NO_PROXY' ? (
+                                <AlertTriangle className="w-4 h-4 text-[#D97706] dark:text-[#F59E0B]" />
+                              ) : srv.verdict === 'UNCHECKED' ? (
+                                <CircleDashed className="w-4 h-4 text-[#64748B]" />
+                              ) : (
+                                <XCircle className="w-4 h-4 text-[#DC2626] dark:text-[#EF4444]" />
+                              )}
+                            </td>
+                            <td className="py-2 px-3 font-semibold text-[#0F172A] dark:text-[#F1F5F9] max-w-[200px] truncate">
+                              {srv.name}
+                            </td>
+                            <td className="py-2 px-3 font-mono text-[#64748B] dark:text-[#94A3B8] whitespace-nowrap">
+                              {srv.protocol === 'SNI443' ? 'SNI 443' : srv.protocol}
+                            </td>
+                            <td className="py-2 px-3 font-mono text-[#64748B] dark:text-[#94A3B8] whitespace-nowrap">
+                              {srv.country}
+                            </td>
+                            <td className="py-2 px-3 font-mono text-[#64748B] dark:text-[#94A3B8] max-w-[280px] truncate">
+                              {getEndpointLabel(srv)}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono tabular-nums whitespace-nowrap text-[#0F172A] dark:text-[#F1F5F9]">
+                              {srv.lastLatencyMs !== null ? `${Math.round(srv.lastLatencyMs)} мс` : '—'}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono tabular-nums whitespace-nowrap text-[#64748B] dark:text-[#94A3B8]">
+                              {srv.lastTps !== null ? srv.lastTps : '—'}
+                            </td>
+                            <td
+                              className="py-2 px-3 text-right whitespace-nowrap"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="inline-flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleProbeSingle(srv)}
+                                  disabled={probing}
+                                  className="min-h-[28px] px-2.5 py-1 rounded bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] text-[11px] font-medium cursor-pointer disabled:opacity-50"
+                                >
+                                  {probing ? '...' : 'Тест'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleStart(srv)}
+                                  className={`min-h-[28px] px-2.5 py-1 rounded text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer ${
+                                    isActive
+                                      ? 'bg-[#22C55E] text-[#0B0D10]'
+                                      : 'bg-[#0F172A] dark:bg-[#F1F5F9] text-[#FFFFFF] dark:text-[#0B0D10]'
+                                  }`}
+                                >
+                                  {isActive ? <Square className="w-2.5 h-2.5 fill-current" /> : <Play className="w-2.5 h-2.5 fill-current" />}
+                                  <span>{isActive ? 'Стоп' : 'Старт'}</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {visibleServers.length < filteredAndSorted.length && (
+                  <div className="pt-1 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setVisibleLimit((prev) => prev + 100)}
+                      className="min-h-[38px] px-5 py-2 rounded-md bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-semibold text-[#0F172A] dark:text-[#F1F5F9] hover:border-[#94A3B8] cursor-pointer"
+                    >
+                      Показать ещё (+{Math.min(100, filteredAndSorted.length - visibleServers.length)})
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Tester Tab: Master-Detail Split Grid */
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_350px] gap-4 items-start">
+                <div className="space-y-2">
+                  {visibleServers.map((srv) => (
+                    <ServerCard
+                      key={srv.id}
+                      server={srv}
+                      isActive={tunnel.active && tunnel.serverId === srv.id}
+                      isSelected={selectedServerId === srv.id}
+                      isBest={srv.id === bestVerifiedId}
+                      isProbing={probingIds.has(srv.id)}
+                      onSelect={(s) => setSelectedServerId(s.id)}
+                      onProbeSingle={handleProbeSingle}
+                      onToggleStart={handleToggleStart}
+                      onToggleFavorite={handleToggleFavorite}
+                      onOpenDetails={(s) => setDetailsServerId(s.id)}
+                    />
+                  ))}
+
+                  {visibleServers.length < filteredAndSorted.length && (
+                    <div className="pt-2 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => setVisibleLimit((prev) => prev + 60)}
+                        className="min-h-[38px] px-5 py-2 rounded-md bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-semibold text-[#0F172A] dark:text-[#F1F5F9] hover:border-[#94A3B8] cursor-pointer"
+                      >
+                        Показать ещё (+{Math.min(60, filteredAndSorted.length - visibleServers.length)})
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <ServerInspectorPanel
+                  server={selectedServer}
+                  isActive={Boolean(selectedServer && tunnel.active && tunnel.serverId === selectedServer.id)}
+                  isProbing={Boolean(selectedServer && probingIds.has(selectedServer.id))}
+                  onProbe={handleProbeSingle}
+                  onToggleStart={handleToggleStart}
+                  onDeleteCustom={handleDeleteCustom}
+                  onClose={() => setSelectedServerId(null)}
+                />
+              </div>
+            )}
+              </>
+            )}
+          </>
+        )}
+      </main>
+
+      {/* Modals & Drawers */}
+      <DiscoveryModal
+        open={discoveryOpen}
+        initialDomain={targetDomain}
+        onClose={() => setDiscoveryOpen(false)}
+        onServersUpdated={(updated, nextSync) => {
+          setServers(updated);
+          if (nextSync) setSyncStatus(nextSync);
+        }}
+      />
+
+      <ManualAddModal
+        open={manualAddOpen}
+        onClose={() => setManualAddOpen(false)}
+        onCreated={(srv) => {
+          setServers((prev) => [srv, ...prev]);
+        }}
+      />
+
+      <ServerDetailsDrawer
+        server={detailsServer}
+        onClose={() => setDetailsServerId(null)}
+        onProbe={handleProbeSingle}
+        onDeleteCustom={handleDeleteCustom}
+      />
+    </div>
+  );
+}
