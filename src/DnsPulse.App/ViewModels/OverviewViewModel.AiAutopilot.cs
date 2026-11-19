@@ -16,7 +16,6 @@ public sealed partial class OverviewViewModel
     private static readonly TimeSpan WatchdogProbeInterval = TimeSpan.FromSeconds(45);
     private const double WatchdogLatencyDegradationMs = 2500.0;
 
-    private CancellationTokenSource? _watchdogCts;
     private int _boundProxyPort;
 
     [ObservableProperty]
@@ -192,29 +191,19 @@ public sealed partial class OverviewViewModel
     {
         StopDynamicWatchdog();
 
-        CancellationTokenSource cts = new();
-        _watchdogCts = cts;
+        _watchdogCts = new CancellationTokenSource();
+        CancellationToken token = _watchdogCts.Token;
         IsWatchdogActive = true;
         WatchdogStatusSummary = _localization["Simple_Watchdog_Active"];
 
-        _ = Task.Run(() => RunDynamicWatchdogLoopAsync(cts.Token), cts.Token);
+        _ = Task.Run(() => RunDynamicWatchdogLoopAsync(token), token);
     }
 
     private void StopDynamicWatchdog()
     {
-        CancellationTokenSource? previous = Interlocked.Exchange(ref _watchdogCts, null);
-        if (previous is not null)
-        {
-            try
-            {
-                previous.Cancel();
-            }
-            catch (ObjectDisposedException)
-            {
-            }
-
-            previous.Dispose();
-        }
+        _watchdogCts?.Cancel();
+        _watchdogCts?.Dispose();
+        _watchdogCts = null;
 
         IsWatchdogActive = false;
         WatchdogStatusSummary = string.Empty;

@@ -123,6 +123,7 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
     private string? _preferredGeoUnlockUpstreamId;
     private bool _suppressQuickServicePersistence;
     private bool _suppressSelectionPersistence;
+    private CancellationTokenSource? _watchdogCts;
     private bool _disposed;
 
     [ObservableProperty]
@@ -1046,12 +1047,14 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
         }
 
         _disposed = true;
-        StopDynamicWatchdog();
-        _watchdogCts?.Dispose();
-        _watchdogCts = null;
         _runtimeService.StatusChanged -= OnRuntimeStatusChanged;
         _runtimeService.TelemetryReceived -= OnRuntimeTelemetryReceived;
         _localization.CultureChanged -= OnCultureChanged;
+        _watchdogCts?.Cancel();
+        _watchdogCts?.Dispose();
+        _watchdogCts = null;
+        IsWatchdogActive = false;
+        WatchdogStatusSummary = string.Empty;
     }
 
     partial void OnSelectedTrustedUpstreamChanged(DnsServerEntry? value)
