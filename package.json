@@ -1,0 +1,16 @@
+{
+  "name": "dns-pulse-workspace",
+  "private": true,
+  "version": "2.1.0",
+  "workspaces": [
+    "tools/web-studio"
+  ],
+  "scripts": {
+    "dev": "npm --prefix tools/web-studio run dev",
+    "start": "npm --prefix tools/web-studio run start",
+    "build": "npm --prefix tools/web-studio run build",
+    "preview": "npm --prefix tools/web-studio run preview",
+    "lint": "npm --prefix tools/web-studio run lint",
+    "test": "npm --prefix tools/web-studio run test"
+  }
+}

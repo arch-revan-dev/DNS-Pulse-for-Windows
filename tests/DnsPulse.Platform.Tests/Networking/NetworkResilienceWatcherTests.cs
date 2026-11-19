@@ -32,8 +32,7 @@ public sealed class NetworkResilienceWatcherTests
             await Task.Delay(10);
         }
 
-        Task completed = await Task.WhenAny(firstCallback.Task, Task.Delay(TimeSpan.FromSeconds(3)));
-        completed.Should().Be(firstCallback.Task);
+        await firstCallback.Task.WaitAsync(TimeSpan.FromSeconds(3));
 
         await Task.Delay(120);
         Volatile.Read(ref invocationCount).Should().Be(1);
