@@ -1046,7 +1046,9 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
         }
 
         _disposed = true;
-        DisposeAiAutopilot();
+        StopDynamicWatchdog();
+        _watchdogCts?.Dispose();
+        _watchdogCts = null;
         _runtimeService.StatusChanged -= OnRuntimeStatusChanged;
         _runtimeService.TelemetryReceived -= OnRuntimeTelemetryReceived;
         _localization.CultureChanged -= OnCultureChanged;

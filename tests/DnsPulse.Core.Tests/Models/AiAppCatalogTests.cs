@@ -45,6 +45,7 @@ public sealed class AiAppCatalogTests
     {
         AiAppCatalog.AllAiAndAppDomains.Should().Contain(BuiltInCatalogPresets.BuiltinAiDomains);
         AiAppCatalog.AllAiAndAppDomains.Should().Contain(AiAppCatalog.ExtraDesktopAiDomains);
-        AiAppCatalog.AllAiAndAppDomains.Should().OnlyHaveUniqueItems(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> unique = new(AiAppCatalog.AllAiAndAppDomains, StringComparer.OrdinalIgnoreCase);
+        unique.Should().HaveCount(AiAppCatalog.AllAiAndAppDomains.Count);
     }
 }

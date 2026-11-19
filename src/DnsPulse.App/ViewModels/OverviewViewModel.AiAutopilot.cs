@@ -86,11 +86,6 @@ public sealed partial class OverviewViewModel
         }
     }
 
-    private void DisposeAiAutopilot()
-    {
-        StopDynamicWatchdog();
-    }
-
     /// <summary>
     /// One-button Simple Mode ("Режим для чайников") autopilot:
     /// finds the fastest verified AI Smart-DNS/SNI-Proxy node, enables local DNS + AI App proxy capture,
