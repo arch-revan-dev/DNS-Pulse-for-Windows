@@ -56,7 +56,50 @@ jobs:
         run: dotnet format DnsPulse.sln --verify-no-changes --no-restore
 
       - name: Run xUnit test suite
-        run: dotnet test DnsPulse.sln --configuration Release --no-restore --verbosity minimal
+        run: >
+          dotnet test DnsPulse.sln
+          --configuration Release
+          --no-restore
+          --verbosity minimal
+          --logger trx
+          --results-directory TestResults
+
+      - name: Report failed xUnit tests in summary and annotations
+        if: failure()
+        shell: pwsh
+        run: |
+          $trxFiles = Get-ChildItem -Path TestResults -Filter "*.trx" -Recurse -ErrorAction SilentlyContinue
+          $lines = New-Object System.Collections.Generic.List[string]
+          $lines.Add("## Failed xUnit Tests")
+          $failedCount = 0
+          foreach ($file in $trxFiles) {
+            [xml]$doc = Get-Content -Path $file.FullName -Raw
+            $ns = New-Object System.Xml.XmlNamespaceManager($doc.NameTable)
+            $ns.AddNamespace("t", "http://microsoft.com/schemas/VisualStudio/TeamTest/2010")
+            $failed = $doc.SelectNodes("//t:UnitTestResult[@outcome='Failed']", $ns)
+            foreach ($node in $failed) {
+              $failedCount++
+              $testName = $node.GetAttribute("testName")
+              $msgNode = $node.SelectSingleNode("t:Output/t:ErrorInfo/t:Message", $ns)
+              $stackNode = $node.SelectSingleNode("t:Output/t:ErrorInfo/t:StackTrace", $ns)
+              $msg = if ($msgNode) { $msgNode.InnerText.Trim() } else { "Test failed without message." }
+              $stack = if ($stackNode) { $stackNode.InnerText.Trim() } else { "" }
+              $oneLine = ($msg -replace "[\r\n]+", " | ")
+              if ($oneLine.Length -gt 400) { $oneLine = $oneLine.Substring(0, 400) + "..." }
+              Write-Output "::error title=$testName::$oneLine"
+              $lines.Add("")
+              $lines.Add("### $testName")
+              $lines.Add('```text')
+              $lines.Add($msg)
+              if ($stack) { $lines.Add($stack) }
+              $lines.Add('```')
+            }
+          }
+          if ($failedCount -eq 0) {
+            $lines.Add("No failed TRX test entries found (check runner crash or test host stderr).")
+            Write-Output "::error title=xUnit Test Suite::Test runner exited non-zero without failed TRX entries."
+          }
+          $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
       - name: Generate CycloneDX SBOM (once for release)
         shell: pwsh

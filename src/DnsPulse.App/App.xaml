@@ -348,29 +348,18 @@
                       Background="{TemplateBinding Background}"
                       BorderBrush="{TemplateBinding BorderBrush}"
                       BorderThickness="{TemplateBinding BorderThickness}"
-                      RenderTransformOrigin="0.5,0.5"
                       SnapsToDevicePixels="True">
-                <Border.RenderTransform>
-                  <ScaleTransform ScaleX="1" ScaleY="1" />
-                </Border.RenderTransform>
                 <ContentPresenter HorizontalAlignment="Center"
                                   VerticalAlignment="Center" />
               </Border>
               <ControlTemplate.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                  <Setter TargetName="OrbSurface" Property="Opacity" Value="0.94" />
-                  <Setter TargetName="OrbSurface" Property="RenderTransform">
-                    <Setter.Value>
-                      <ScaleTransform ScaleX="1.03" ScaleY="1.03" />
-                    </Setter.Value>
-                  </Setter>
+                  <Setter TargetName="OrbSurface" Property="Opacity" Value="0.93" />
+                  <Setter TargetName="OrbSurface" Property="BorderBrush" Value="#66FFFFFF" />
                 </Trigger>
                 <Trigger Property="IsPressed" Value="True">
-                  <Setter TargetName="OrbSurface" Property="RenderTransform">
-                    <Setter.Value>
-                      <ScaleTransform ScaleX="0.96" ScaleY="0.96" />
-                    </Setter.Value>
-                  </Setter>
+                  <Setter TargetName="OrbSurface" Property="Opacity" Value="0.84" />
+                  <Setter TargetName="OrbSurface" Property="BorderBrush" Value="#88FFFFFF" />
                 </Trigger>
                 <Trigger Property="IsEnabled" Value="False">
                   <Setter TargetName="OrbSurface" Property="Opacity" Value="0.6" />
