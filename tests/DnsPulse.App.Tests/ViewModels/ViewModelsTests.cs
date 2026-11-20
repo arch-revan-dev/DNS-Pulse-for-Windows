@@ -1283,7 +1283,7 @@ public sealed class ViewModelsTests : IDisposable
             Protocol = DnsProtocol.DoT,
             TrustTier = TrustTier.Tier3CustomOrSelfHosted,
             PrimaryIp = "94.140.14.14",
-            DotHostname = "dns.adguard-dns.com",
+            DotHost = "dns.adguard-dns.com",
             SupportsBypass = true
         };
 

@@ -332,6 +332,7 @@ public sealed partial class SignedFeedSyncService : IDisposable
         .. CuratedRepositoryFeeds
     ];
 
+    [SuppressMessage("Design", "CA1054:URI-like parameters should not be strings", Justification = "Custom repository URLs come directly from UI text input and are validated via Uri.TryCreate.")]
     public static FeedSourceDescriptor CreateCustomUrlDescriptor(string rawUrl, FeedKind? explicitKind = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rawUrl);
@@ -343,15 +344,15 @@ public sealed partial class SignedFeedSyncService : IDisposable
             throw new ArgumentException("Custom repository URL must be a valid HTTPS URL.", nameof(rawUrl));
         }
 
-        string lowerPath = uri.AbsolutePath.ToLowerInvariant();
-        FeedKind inferredKind = explicitKind ?? (lowerPath switch
+        string upperPath = uri.AbsolutePath.ToUpperInvariant();
+        FeedKind inferredKind = explicitKind ?? (upperPath switch
         {
-            string p when p.EndsWith(".json", StringComparison.Ordinal) => FeedKind.QuickDnsJson,
-            string p when p.Contains("resolvers", StringComparison.Ordinal) && p.EndsWith(".md", StringComparison.Ordinal) => FeedKind.DnsCryptResolversMd,
-            string p when p.Contains("resolvers", StringComparison.Ordinal) && p.EndsWith(".txt", StringComparison.Ordinal) => FeedKind.PlainResolverList,
-            string p when p.EndsWith(".md", StringComparison.Ordinal) => FeedKind.CommunityMarkdown,
-            string p when p.Contains("hosts", StringComparison.Ordinal) => FeedKind.BypassHosts,
-            string p when p.Contains("subnet", StringComparison.Ordinal) || p.Contains("cidr", StringComparison.Ordinal) || p.Contains("ipsum", StringComparison.Ordinal) || p.Contains("/ipv4/", StringComparison.Ordinal) => FeedKind.IpCidrList,
+            string p when p.EndsWith(".JSON", StringComparison.Ordinal) => FeedKind.QuickDnsJson,
+            string p when p.Contains("RESOLVERS", StringComparison.Ordinal) && p.EndsWith(".MD", StringComparison.Ordinal) => FeedKind.DnsCryptResolversMd,
+            string p when p.Contains("RESOLVERS", StringComparison.Ordinal) && p.EndsWith(".TXT", StringComparison.Ordinal) => FeedKind.PlainResolverList,
+            string p when p.EndsWith(".MD", StringComparison.Ordinal) => FeedKind.CommunityMarkdown,
+            string p when p.Contains("HOSTS", StringComparison.Ordinal) => FeedKind.BypassHosts,
+            string p when p.Contains("SUBNET", StringComparison.Ordinal) || p.Contains("CIDR", StringComparison.Ordinal) || p.Contains("IPSUM", StringComparison.Ordinal) || p.Contains("/IPV4/", StringComparison.Ordinal) => FeedKind.IpCidrList,
             _ => FeedKind.DomainListCommunity
         });
 
@@ -1192,7 +1193,7 @@ public sealed partial class SignedFeedSyncService : IDisposable
                 BootstrapIps = bootstrapIps,
                 Category = "Скоростные",
                 Country = "GLOBAL",
-                Tags = ["feed", label, protocol.ToString().ToLowerInvariant()],
+                Tags = ["feed", label, protocol.ToString()],
                 Description = string.IsNullOrWhiteSpace(currentDescription)
                     ? "Public encrypted resolver from DNSCrypt resolvers database."
                     : currentDescription,
@@ -1323,7 +1324,7 @@ public sealed partial class SignedFeedSyncService : IDisposable
         ArgumentNullException.ThrowIfNull(content);
 
         List<DnsServerEntry> servers = [];
-        HashSet<string> seenIps = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> seenKeys = new(StringComparer.OrdinalIgnoreCase);
         string[] lines = content.Split(LineSeparators, StringSplitOptions.RemoveEmptyEntries);
         string label = string.IsNullOrWhiteSpace(defaultTag) ? "Resolvers" : defaultTag.Trim();
 
@@ -1342,6 +1343,65 @@ public sealed partial class SignedFeedSyncService : IDisposable
             }
 
             string token = line.Split(WhitespaceSeparators, StringSplitOptions.RemoveEmptyEntries)[0].Trim();
+            if (token.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
+                Uri.TryCreate(token, UriKind.Absolute, out Uri? dohUri) &&
+                !string.IsNullOrWhiteSpace(dohUri.Host) &&
+                seenKeys.Add(dohUri.AbsoluteUri))
+            {
+                string dohId = string.Create(CultureInfo.InvariantCulture, $"feed_{SanitizeIdPart(label)}_doh_{SanitizeIdPart(dohUri.Host)}");
+                servers.Add(new DnsServerEntry
+                {
+                    Id = dohId,
+                    Name = string.Create(CultureInfo.InvariantCulture, $"{label} DoH ({dohUri.Host})"),
+                    Provider = label,
+                    Protocol = DnsProtocol.DoH,
+                    TrustTier = TrustTier.Tier3CustomOrSelfHosted,
+                    DohUrl = dohUri.AbsoluteUri,
+                    DotHost = dohUri.Host,
+                    Category = "Скоростные",
+                    Country = "GLOBAL",
+                    Tags = ["feed", label, "DoH"],
+                    Description = string.Create(CultureInfo.InvariantCulture, $"Public DoH resolver imported from {label}."),
+                    SupportsBypass = false,
+                    IsBuiltin = false
+                });
+                continue;
+            }
+
+            if (token.StartsWith("tls://", StringComparison.OrdinalIgnoreCase))
+            {
+                string dotHost = token[6..].Trim().TrimEnd('/');
+                int portIdx = dotHost.IndexOf(':', StringComparison.Ordinal);
+                if (portIdx > 0)
+                {
+                    dotHost = dotHost[..portIdx];
+                }
+
+                if (!string.IsNullOrWhiteSpace(dotHost) &&
+                    Uri.CheckHostName(dotHost) == UriHostNameType.Dns &&
+                    seenKeys.Add(string.Create(CultureInfo.InvariantCulture, $"tls://{dotHost}")))
+                {
+                    string dotId = string.Create(CultureInfo.InvariantCulture, $"feed_{SanitizeIdPart(label)}_dot_{SanitizeIdPart(dotHost)}");
+                    servers.Add(new DnsServerEntry
+                    {
+                        Id = dotId,
+                        Name = string.Create(CultureInfo.InvariantCulture, $"{label} DoT ({dotHost})"),
+                        Provider = label,
+                        Protocol = DnsProtocol.DoT,
+                        TrustTier = TrustTier.Tier3CustomOrSelfHosted,
+                        DotHost = dotHost,
+                        Category = "Скоростные",
+                        Country = "GLOBAL",
+                        Tags = ["feed", label, "DoT"],
+                        Description = string.Create(CultureInfo.InvariantCulture, $"Public DoT resolver imported from {label}."),
+                        SupportsBypass = false,
+                        IsBuiltin = false
+                    });
+                }
+
+                continue;
+            }
+
             if (!IPAddress.TryParse(token, out IPAddress? ip) ||
                 ip.AddressFamily != AddressFamily.InterNetwork ||
                 !IpSafetyInspector.IsPublicRoutable(ip))
@@ -1350,7 +1410,7 @@ public sealed partial class SignedFeedSyncService : IDisposable
             }
 
             string ipText = ip.ToString();
-            if (!seenIps.Add(ipText))
+            if (!seenKeys.Add(ipText))
             {
                 continue;
             }

@@ -4,6 +4,7 @@ using System.Net;
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
+using DnsPulse.Core.Models;
 using DnsPulse.Engine.Contracts;
 using DnsPulse.Engine.Feeds;
 using FluentAssertions;
@@ -14,6 +15,8 @@ namespace DnsPulse.Engine.Tests.Discovery;
 public sealed class SignedFeedSyncServiceTests
 {
     private static readonly string[] ExpectedSignedDomains = ["gemini.google.com", "aistudio.google.com"];
+    private static readonly string[] ExpectedParsedDomains = ["aistudio.google.com", "openai.com", "claude.ai"];
+    private static readonly string[] ExpectedParsedIps = ["104.18.0.0/16", "162.159.135.232"];
     private static readonly string[] ExpectedBuiltInFeedUrls =
     [
         "https://dns.malw.link/hosts",
@@ -207,7 +210,7 @@ public sealed class SignedFeedSyncServiceTests
             include:ignored-ref
             """;
         IReadOnlyList<string> parsedDomains = SignedFeedSyncService.ParseDomainListCommunity(domainContent);
-        parsedDomains.Should().Contain(["aistudio.google.com", "openai.com", "claude.ai"]);
+        parsedDomains.Should().Contain(ExpectedParsedDomains);
         parsedDomains.Should().NotContain(static d => d.Contains("include:", StringComparison.OrdinalIgnoreCase));
 
         string ipContent = """
@@ -215,10 +218,10 @@ public sealed class SignedFeedSyncServiceTests
             104.18.0.0/16
             127.0.0.1
             192.168.1.0/24
-            203.0.113.10
+            162.159.135.232
             """;
         IReadOnlyList<string> parsedIps = SignedFeedSyncService.ParseIpCidrList(ipContent);
-        parsedIps.Should().Contain(["104.18.0.0/16", "203.0.113.10/32"]);
+        parsedIps.Should().Contain(ExpectedParsedIps);
         parsedIps.Should().NotContain(static ip => ip.StartsWith("127.", StringComparison.Ordinal) || ip.StartsWith("192.168.", StringComparison.Ordinal));
 
         string plainResolvers = """
@@ -228,7 +231,7 @@ public sealed class SignedFeedSyncServiceTests
             tls://dns.adguard-dns.com
             192.168.0.1
             """;
-        IReadOnlyList<DnsPulse.Core.Models.DnsServerEntry> parsedResolvers = SignedFeedSyncService.ParsePlainResolverList(plainResolvers, "PublicList");
+        IReadOnlyList<DnsServerEntry> parsedResolvers = SignedFeedSyncService.ParsePlainResolverList(plainResolvers, "PublicList");
         parsedResolvers.Should().HaveCount(3);
         parsedResolvers.Should().NotContain(static s => s.PrimaryIp == "192.168.0.1");
 

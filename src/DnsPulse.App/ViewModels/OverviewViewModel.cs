@@ -1214,7 +1214,10 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
         _watchdogCts?.Cancel();
         _watchdogCts?.Dispose();
         _watchdogCts = null;
-        CancelSpeedOptimization();
+        _speedOptimizerCts?.Cancel();
+        _speedOptimizerCts?.Dispose();
+        _speedOptimizerCts = null;
+        IsOptimizingSpeed = false;
         IsWatchdogActive = false;
         WatchdogStatusSummary = string.Empty;
     }

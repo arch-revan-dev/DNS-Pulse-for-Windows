@@ -72,6 +72,7 @@ public sealed partial class FeedSourceSelectableItem : ObservableObject
 
     public string Description => Descriptor.Description ?? Descriptor.FeedUrl;
 
+    [SuppressMessage("Design", "CA1056:URI-like properties should not be strings", Justification = "Exposed as string for direct XAML binding from FeedSourceDescriptor.FeedUrl.")]
     public string FeedUrl => Descriptor.FeedUrl;
 
     public FeedCategory Category => Descriptor.Category;

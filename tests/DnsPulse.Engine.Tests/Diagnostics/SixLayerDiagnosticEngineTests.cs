@@ -415,7 +415,7 @@ public sealed class SixLayerDiagnosticEngineTests
             pki.LeafServerCert,
             _ => new MockHttpResponse(502, "<html>Bad Gateway</html>"));
 
-        IPAddress smartProxyIp = IPAddress.Parse("198.51.100.42");
+        IPAddress smartProxyIp = IPAddress.Parse("185.236.10.37");
         DnsServerEntry smartDns = new()
         {
             Id = "smart_502_test",
@@ -423,7 +423,7 @@ public sealed class SixLayerDiagnosticEngineTests
             Provider = "Test",
             Protocol = DnsProtocol.DoH,
             TrustTier = TrustTier.Tier2VerifiedGeoUnlock,
-            PrimaryIp = "198.51.100.42",
+            PrimaryIp = "185.236.10.37",
             DohUrl = "https://broken-smart.example/dns-query",
             SupportsBypass = true
         };

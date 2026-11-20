@@ -64,7 +64,7 @@ public sealed class AdapterDnsInterceptor : IDnsInterceptor
 
     /// <inheritdoc />
     [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Defense-in-depth NRPT registration must not block adapter DNS activation if GPO restricts NRPT.")]
-    public Task ActivateAsync(
+    public async Task ActivateAsync(
         IPAddress localDnsIp,
         int dnsPort,
         IReadOnlyList<string> splitDomains,
@@ -147,7 +147,7 @@ public sealed class AdapterDnsInterceptor : IDnsInterceptor
                 AdapterDnsVerificationResult verification = Win32NetworkInterop.VerifyAdapterDnsApplied(localDnsIp);
                 if (!verification.IsApplied)
                 {
-                    Thread.Sleep(250);
+                    await Task.Delay(250, ct).ConfigureAwait(false);
                     verification = Win32NetworkInterop.VerifyAdapterDnsApplied(localDnsIp);
                 }
 
@@ -201,8 +201,6 @@ public sealed class AdapterDnsInterceptor : IDnsInterceptor
             _isActive = false;
             throw;
         }
-
-        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
