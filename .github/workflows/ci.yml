@@ -43,7 +43,7 @@ jobs:
           dotnet-version: '9.0.x'
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: nuget-ci-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
@@ -99,7 +99,7 @@ jobs:
 
       - name: Cache npm cache
         if: hashFiles('tools/web-studio/package.json') != ''
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.npm
           key: npm-web-studio-${{ runner.os }}-${{ hashFiles('tools/web-studio/package.json') }}

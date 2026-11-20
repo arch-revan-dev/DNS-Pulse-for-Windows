@@ -485,7 +485,9 @@ public sealed partial class OverviewViewModel
         }
 
         bool ok = bestReport is not null && bestReport.Verdict == DiagnosticVerdict.Healthy && bestReport.TlsHandshakeSucceeded;
-        string ip = bestReport?.ResolvedAddresses.FirstOrDefault()?.ToString() ?? string.Empty;
+        string ip = bestReport is { ResolvedAddresses.Count: > 0 }
+            ? bestReport.ResolvedAddresses[0].ToString()
+            : string.Empty;
         string detail = ok
             ? bestReport!.LatencyP50Ms is double ms
                 ? string.Create(CultureInfo.InvariantCulture, $"{_localization["Simple_Service_Ok"]} · {ms:F0} ms")
