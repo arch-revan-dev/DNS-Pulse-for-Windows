@@ -158,6 +158,9 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
     [ObservableProperty]
     private string? _lastExportedBundlePath;
 
+    [ObservableProperty]
+    private int _selectedSubTabIndex;
+
     public SettingsSafetyViewModel(
         AppSettingsStore settingsStore,
         WindowsAutostartService autostartService,
@@ -192,6 +195,25 @@ public sealed partial class SettingsSafetyViewModel : ObservableObject
     public LocalizationService Localization => _localization;
 
     public ThemeAppearanceService ThemeService => _themeService;
+
+    public bool IsGeneralNetworkTabSelected => SelectedSubTabIndex == 0;
+
+    public bool IsPrivacyAppearanceTabSelected => SelectedSubTabIndex == 1;
+
+    public bool IsUpdatesSafetyTabSelected => SelectedSubTabIndex == 2;
+
+    [RelayCommand]
+    public void SelectSubTab(int tabIndex)
+    {
+        SelectedSubTabIndex = Math.Clamp(tabIndex, 0, 2);
+    }
+
+    partial void OnSelectedSubTabIndexChanged(int value)
+    {
+        OnPropertyChanged(nameof(IsGeneralNetworkTabSelected));
+        OnPropertyChanged(nameof(IsPrivacyAppearanceTabSelected));
+        OnPropertyChanged(nameof(IsUpdatesSafetyTabSelected));
+    }
 
     [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Exposed as instance property for XAML data binding.")]
     public IReadOnlyList<LanguageOption> AvailableLanguages => LocalizationService.AvailableLanguages;

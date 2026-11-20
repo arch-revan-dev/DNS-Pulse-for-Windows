@@ -355,4 +355,53 @@
   <data name="Simple_Adapter_Active" xml:space="preserve"><value>Adapter DNS + NRPT active ({0})</value></data>
   <data name="Simple_Adapter_AdminNeeded" xml:space="preserve"><value>Administrator rights required for Adapter DNS</value></data>
   <data name="Simple_Adapter_Elevate" xml:space="preserve"><value>Run as Admin</value></data>
+  <data name="Nav_Section_Main" xml:space="preserve"><value>NAVIGATION</value></data>
+  <data name="Overview_Optimizer_Searching" xml:space="preserve"><value>Searching for a faster verified node in background ({0}/{1})...</value></data>
+  <data name="Overview_Optimizer_Upgraded" xml:space="preserve"><value>Switched automatically to faster node: {0} ({1} ms)</value></data>
+  <data name="Overview_Optimizer_Done" xml:space="preserve"><value>Fastest verified node active: {0} ({1} ms)</value></data>
+  <data name="Overview_Optimizer_Stop" xml:space="preserve"><value>Stop</value></data>
+  <data name="Routing_Page_Title" xml:space="preserve"><value>Services &amp; Query Log</value></data>
+  <data name="Routing_Page_Subtitle" xml:space="preserve"><value>Choose which services use smart routing, load GitHub domain &amp; IP lists, and inspect live DNS queries.</value></data>
+  <data name="Routing_SubTab_Services" xml:space="preserve"><value>Services &amp; Lists</value></data>
+  <data name="Routing_SubTab_Log" xml:space="preserve"><value>Query Log</value></data>
+  <data name="Routing_Repos_Title" xml:space="preserve"><value>Domain &amp; IP Databases from GitHub</value></data>
+  <data name="Routing_Repos_Subtitle" xml:space="preserve"><value>Import fresh AI/service domain lists and IP subnets from curated repositories or paste any raw HTTPS URL.</value></data>
+  <data name="Routing_Repos_DomainsBadge" xml:space="preserve"><value>Custom domains</value></data>
+  <data name="Routing_Repos_IpsBadge" xml:space="preserve"><value>IP subnets</value></data>
+  <data name="Routing_Repos_UrlPlaceholder" xml:space="preserve"><value>Optional custom raw HTTPS URL (GitHub domain or IP/CIDR list)</value></data>
+  <data name="Routing_Repos_SyncButton" xml:space="preserve"><value>Load Lists</value></data>
+  <data name="Routing_Repos_ResultFormat" xml:space="preserve"><value>Loaded {0} domains and {1} IP/CIDR subnets into active routing.</value></data>
+  <data name="Routing_Kpi_Total" xml:space="preserve"><value>Total Queries</value></data>
+  <data name="Routing_Kpi_GeoUnlocked" xml:space="preserve"><value>Smart Routed</value></data>
+  <data name="Routing_Kpi_Blocked" xml:space="preserve"><value>Blocked</value></data>
+  <data name="Routing_Kpi_AvgLatency" xml:space="preserve"><value>Avg Speed</value></data>
+  <data name="Routing_Log_EmptyTitle" xml:space="preserve"><value>No DNS queries recorded yet</value></data>
+  <data name="Routing_Log_EmptySubtitle" xml:space="preserve"><value>Turn on protection on the Overview page and open a website or app — live DNS traffic will appear here automatically.</value></data>
+  <data name="Servers_Page_Title" xml:space="preserve"><value>Servers &amp; Databases</value></data>
+  <data name="Servers_Page_Subtitle" xml:space="preserve"><value>Click any server to connect immediately, load fresh public GitHub DNS databases, or add your own working DNS.</value></data>
+  <data name="Servers_SubTab_Catalog" xml:space="preserve"><value>Catalog</value></data>
+  <data name="Servers_SubTab_Databases" xml:space="preserve"><value>GitHub Databases</value></data>
+  <data name="Servers_SubTab_CustomVps" xml:space="preserve"><value>Custom DNS &amp; VPS</value></data>
+  <data name="Servers_Databases_Title" xml:space="preserve"><value>Public DNS, Domain &amp; IP Repositories</value></data>
+  <data name="Servers_Databases_Subtitle" xml:space="preserve"><value>Select public repositories to import fresh DNS resolvers, domain lists, and IP subnets, then test and auto-pick the fastest working server.</value></data>
+  <data name="Servers_Feeds_Preset_All" xml:space="preserve"><value>Select All</value></data>
+  <data name="Servers_Feeds_Preset_Dns" xml:space="preserve"><value>DNS Servers Only</value></data>
+  <data name="Servers_Feeds_Preset_Domains" xml:space="preserve"><value>Domain Lists Only</value></data>
+  <data name="Servers_Feeds_Preset_Ips" xml:space="preserve"><value>IP Subnets Only</value></data>
+  <data name="Servers_Feeds_SyncAndPick" xml:space="preserve"><value>Load Selected &amp; Pick Fastest</value></data>
+  <data name="Servers_Feeds_AutoTest" xml:space="preserve"><value>Auto-test and connect fastest after loading</value></data>
+  <data name="Servers_Feeds_CustomUrlPlaceholder" xml:space="preserve"><value>Paste any raw GitHub HTTPS link (DNS, domains, or IP list)</value></data>
+  <data name="Servers_Feeds_AddCustomUrl" xml:space="preserve"><value>Load URL</value></data>
+  <data name="Servers_Feeds_NoneSelected" xml:space="preserve"><value>Select at least one database source or paste a custom HTTPS URL.</value></data>
+  <data name="Servers_Feeds_Syncing" xml:space="preserve"><value>Downloading selected GitHub databases...</value></data>
+  <data name="Servers_Feeds_ResultFormat" xml:space="preserve"><value>Imported {0} DNS servers, {1} domains, and {2} IP subnets.</value></data>
+  <data name="Servers_Import_PhoneHint" xml:space="preserve"><value>Works with the exact Private DNS / DoH / DoT / IP address from your phone (e.g. dns.example.com, tls://host, https://host/dns-query, or 1.2.3.4). After adding, click Connect in Catalog.</value></data>
+  <data name="Diag_Page_Subtitle" xml:space="preserve"><value>Check why a service fails to open, share protection over Wi-Fi/LAN, or scan custom CIDR subnets.</value></data>
+  <data name="Diag_SubTab_Doctor" xml:space="preserve"><value>Diagnostics</value></data>
+  <data name="Diag_SubTab_Lan" xml:space="preserve"><value>Share over LAN / QR</value></data>
+  <data name="Diag_SubTab_Lab" xml:space="preserve"><value>Network Lab</value></data>
+  <data name="Settings_Page_Subtitle" xml:space="preserve"><value>Configure Windows connection mode, privacy guards, appearance, updates, and one-click network reset.</value></data>
+  <data name="Settings_SubTab_Network" xml:space="preserve"><value>Network &amp; Startup</value></data>
+  <data name="Settings_SubTab_PrivacyAppearance" xml:space="preserve"><value>Privacy &amp; Look</value></data>
+  <data name="Settings_SubTab_UpdatesSafety" xml:space="preserve"><value>Updates &amp; Recovery</value></data>
 </root>

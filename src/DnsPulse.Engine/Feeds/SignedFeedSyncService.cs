@@ -46,13 +46,28 @@ public enum FeedVerificationStatus
 }
 
 /// <summary>
+/// High-level content category of a remote database feed.
+/// </summary>
+public enum FeedCategory
+{
+    DnsServers = 0,
+    DomainList = 1,
+    IpSubnetList = 2,
+    MixedCommunity = 3
+}
+
+/// <summary>
 /// Format of an online community or signed DNS/bypass feed.
 /// </summary>
 public enum FeedKind
 {
     BypassHosts = 0,
     QuickDnsJson = 1,
-    CommunityMarkdown = 2
+    CommunityMarkdown = 2,
+    DnsCryptResolversMd = 3,
+    DomainListCommunity = 4,
+    IpCidrList = 5,
+    PlainResolverList = 6
 }
 
 /// <summary>
@@ -65,6 +80,10 @@ public sealed record FeedSourceDescriptor
     public required string Name { get; init; }
 
     public required FeedKind Kind { get; init; }
+
+    public FeedCategory Category { get; init; } = FeedCategory.MixedCommunity;
+
+    public string? Description { get; init; }
 
     [SuppressMessage("Design", "CA1056:URI-like properties should not be strings", Justification = "Configurable remote HTTPS feed endpoint.")]
     public required string FeedUrl { get; init; }
@@ -95,7 +114,10 @@ public sealed record FeedSyncItemResult(
     FeedVerificationStatus VerificationStatus,
     IReadOnlyList<string> BypassDomains,
     IReadOnlyList<DnsServerEntry> DiscoveredServers,
-    string DiagnosticMessage);
+    string DiagnosticMessage)
+{
+    public IReadOnlyList<string> DiscoveredIpRanges { get; init; } = [];
+}
 
 /// <summary>
 /// Aggregated results from syncing one or more remote feeds.
@@ -104,7 +126,10 @@ public sealed record FeedSyncSummary(
     FeedVerificationMode ModeUsed,
     IReadOnlyList<FeedSyncItemResult> Items,
     IReadOnlyList<string> AggregatedBypassDomains,
-    IReadOnlyList<DnsServerEntry> AggregatedServers);
+    IReadOnlyList<DnsServerEntry> AggregatedServers)
+{
+    public IReadOnlyList<string> AggregatedIpRanges { get; init; } = [];
+}
 
 /// <summary>
 /// Persisted offline snapshot of synced bypass domains and discovered community servers
@@ -149,6 +174,8 @@ public sealed partial class SignedFeedSyncService : IDisposable
             Id = "malw-link-hosts",
             Name = "Malw.link Bypass Hosts",
             Kind = FeedKind.BypassHosts,
+            Category = FeedCategory.DomainList,
+            Description = "Community bypass domain list (AI, streaming & geo-restricted hosts).",
             FeedUrl = "https://dns.malw.link/hosts",
             FallbackFeedUrl = "https://raw.githubusercontent.com/ImMALWARE/dns.malw.link/master/hosts",
             DefaultTag = "malw.link"
@@ -158,6 +185,8 @@ public sealed partial class SignedFeedSyncService : IDisposable
             Id = "quickdns-profiles",
             Name = "QuickDNS Catalog",
             Kind = FeedKind.QuickDnsJson,
+            Category = FeedCategory.DnsServers,
+            Description = "Community SmartDNS & DoH server profiles (szanko02/QuickDNS).",
             FeedUrl = "https://raw.githubusercontent.com/szanko02/QuickDNS/main/default_profiles.json",
             DefaultTag = "QuickDNS"
         },
@@ -166,6 +195,8 @@ public sealed partial class SignedFeedSyncService : IDisposable
             Id = "hb-ai-xbox-dns",
             Name = "HB-AI Xbox DNS Community",
             Kind = FeedKind.CommunityMarkdown,
+            Category = FeedCategory.DnsServers,
+            Description = "SmartDNS DoH & IP endpoints for AI & gaming (neiroseti-ai/hb-ai-xbox-dns).",
             FeedUrl = "https://raw.githubusercontent.com/neiroseti-ai/hb-ai-xbox-dns/main/README.md",
             DefaultTag = "HB-AI"
         },
@@ -174,10 +205,181 @@ public sealed partial class SignedFeedSyncService : IDisposable
             Id = "antigravity-bypass-russia",
             Name = "Antigravity Bypass Community",
             Kind = FeedKind.CommunityMarkdown,
+            Category = FeedCategory.DnsServers,
+            Description = "Community endpoints for Google AI & Antigravity (vezlin1/antigravity-bypass-russia).",
             FeedUrl = "https://raw.githubusercontent.com/vezlin1/antigravity-bypass-russia/main/README.md",
             DefaultTag = "Antigravity"
         }
     ];
+
+    public static IReadOnlyList<FeedSourceDescriptor> CuratedRepositoryFeeds { get; } =
+    [
+        new FeedSourceDescriptor
+        {
+            Id = "dnscrypt-public-resolvers",
+            Name = "DNSCrypt Public Resolvers v3 (DoH / DoT)",
+            Kind = FeedKind.DnsCryptResolversMd,
+            Category = FeedCategory.DnsServers,
+            Description = "Official DNSCrypt/dnscrypt-resolvers database of verified public DoH, DoT & DNSCrypt stamps.",
+            FeedUrl = "https://raw.githubusercontent.com/DNSCrypt/dnscrypt-resolvers/master/v3/public-resolvers.md",
+            DefaultTag = "DNSCrypt"
+        },
+        new FeedSourceDescriptor
+        {
+            Id = "trickest-trusted-resolvers",
+            Name = "Trickest Trusted Public DNS Resolvers",
+            Kind = FeedKind.PlainResolverList,
+            Category = FeedCategory.DnsServers,
+            Description = "Curated public DNS resolver IPs from trickest/resolvers.",
+            FeedUrl = "https://raw.githubusercontent.com/trickest/resolvers/main/resolvers-trusted.txt",
+            DefaultTag = "Trickest"
+        },
+        new FeedSourceDescriptor
+        {
+            Id = "v2fly-ai-all",
+            Name = "v2fly AI Services Domains (category-ai-!cn)",
+            Kind = FeedKind.DomainListCommunity,
+            Category = FeedCategory.DomainList,
+            Description = "Complete AI services domain list from v2fly/domain-list-community.",
+            FeedUrl = "https://raw.githubusercontent.com/v2fly/domain-list-community/master/data/category-ai-!cn",
+            DefaultTag = "v2fly-ai"
+        },
+        new FeedSourceDescriptor
+        {
+            Id = "v2fly-google-gemini",
+            Name = "v2fly Google Gemini & AI Studio Domains",
+            Kind = FeedKind.DomainListCommunity,
+            Category = FeedCategory.DomainList,
+            Description = "Google Gemini & AI Studio domains from v2fly/domain-list-community.",
+            FeedUrl = "https://raw.githubusercontent.com/v2fly/domain-list-community/master/data/google-gemini",
+            DefaultTag = "v2fly-gemini"
+        },
+        new FeedSourceDescriptor
+        {
+            Id = "v2fly-openai",
+            Name = "v2fly OpenAI / ChatGPT Domains",
+            Kind = FeedKind.DomainListCommunity,
+            Category = FeedCategory.DomainList,
+            Description = "OpenAI and ChatGPT domains from v2fly/domain-list-community.",
+            FeedUrl = "https://raw.githubusercontent.com/v2fly/domain-list-community/master/data/openai",
+            DefaultTag = "v2fly-openai"
+        },
+        new FeedSourceDescriptor
+        {
+            Id = "v2fly-anthropic",
+            Name = "v2fly Anthropic / Claude Domains",
+            Kind = FeedKind.DomainListCommunity,
+            Category = FeedCategory.DomainList,
+            Description = "Anthropic and Claude domains from v2fly/domain-list-community.",
+            FeedUrl = "https://raw.githubusercontent.com/v2fly/domain-list-community/master/data/anthropic",
+            DefaultTag = "v2fly-anthropic"
+        },
+        new FeedSourceDescriptor
+        {
+            Id = "itdoginfo-russia-domains",
+            Name = "itdoginfo Allow-Domains (Russia Inside)",
+            Kind = FeedKind.DomainListCommunity,
+            Category = FeedCategory.DomainList,
+            Description = "Popular restricted domains list from itdoginfo/allow-domains.",
+            FeedUrl = "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Russia/inside-raw.lst",
+            DefaultTag = "itdoginfo"
+        },
+        new FeedSourceDescriptor
+        {
+            Id = "refilter-domains",
+            Name = "Re-filter Domains List",
+            Kind = FeedKind.DomainListCommunity,
+            Category = FeedCategory.DomainList,
+            Description = "Community domain bypass list from 1andrevich/Re-filter-lists.",
+            FeedUrl = "https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/domains_all.lst",
+            DefaultTag = "re-filter"
+        },
+        new FeedSourceDescriptor
+        {
+            Id = "itdoginfo-cloudflare-ips",
+            Name = "itdoginfo Cloudflare IPv4 Subnets",
+            Kind = FeedKind.IpCidrList,
+            Category = FeedCategory.IpSubnetList,
+            Description = "Cloudflare IPv4 CIDR ranges from itdoginfo/allow-domains.",
+            FeedUrl = "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/cloudflare.lst",
+            DefaultTag = "ip-cloudflare"
+        },
+        new FeedSourceDescriptor
+        {
+            Id = "itdoginfo-discord-ips",
+            Name = "itdoginfo Discord IPv4 Subnets",
+            Kind = FeedKind.IpCidrList,
+            Category = FeedCategory.IpSubnetList,
+            Description = "Discord IPv4 CIDR ranges from itdoginfo/allow-domains.",
+            FeedUrl = "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/discord.lst",
+            DefaultTag = "ip-discord"
+        },
+        new FeedSourceDescriptor
+        {
+            Id = "refilter-ips",
+            Name = "Re-filter IPv4 / CIDR List",
+            Kind = FeedKind.IpCidrList,
+            Category = FeedCategory.IpSubnetList,
+            Description = "Community IPv4/CIDR ranges from 1andrevich/Re-filter-lists.",
+            FeedUrl = "https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/ipsum.lst",
+            DefaultTag = "ip-refilter"
+        }
+    ];
+
+    public static IReadOnlyList<FeedSourceDescriptor> AllCuratedFeeds { get; } =
+    [
+        .. BuiltInFeeds,
+        .. CuratedRepositoryFeeds
+    ];
+
+    public static FeedSourceDescriptor CreateCustomUrlDescriptor(string rawUrl, FeedKind? explicitKind = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rawUrl);
+
+        string trimmed = rawUrl.Trim();
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out Uri? uri) ||
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Custom repository URL must be a valid HTTPS URL.", nameof(rawUrl));
+        }
+
+        string lowerPath = uri.AbsolutePath.ToLowerInvariant();
+        FeedKind inferredKind = explicitKind ?? (lowerPath switch
+        {
+            string p when p.EndsWith(".json", StringComparison.Ordinal) => FeedKind.QuickDnsJson,
+            string p when p.Contains("resolvers", StringComparison.Ordinal) && p.EndsWith(".md", StringComparison.Ordinal) => FeedKind.DnsCryptResolversMd,
+            string p when p.Contains("resolvers", StringComparison.Ordinal) && p.EndsWith(".txt", StringComparison.Ordinal) => FeedKind.PlainResolverList,
+            string p when p.EndsWith(".md", StringComparison.Ordinal) => FeedKind.CommunityMarkdown,
+            string p when p.Contains("hosts", StringComparison.Ordinal) => FeedKind.BypassHosts,
+            string p when p.Contains("subnet", StringComparison.Ordinal) || p.Contains("cidr", StringComparison.Ordinal) || p.Contains("ipsum", StringComparison.Ordinal) || p.Contains("/ipv4/", StringComparison.Ordinal) => FeedKind.IpCidrList,
+            _ => FeedKind.DomainListCommunity
+        });
+
+        FeedCategory category = inferredKind switch
+        {
+            FeedKind.QuickDnsJson or FeedKind.DnsCryptResolversMd or FeedKind.PlainResolverList or FeedKind.CommunityMarkdown => FeedCategory.DnsServers,
+            FeedKind.IpCidrList => FeedCategory.IpSubnetList,
+            _ => FeedCategory.DomainList
+        };
+
+        string hostPart = SanitizeIdPart(uri.Host);
+        string filePart = SanitizeIdPart(Path.GetFileNameWithoutExtension(uri.AbsolutePath));
+        string id = string.Create(CultureInfo.InvariantCulture, $"custom_{hostPart}_{filePart}");
+        string displayName = string.IsNullOrWhiteSpace(filePart)
+            ? uri.Host
+            : string.Create(CultureInfo.InvariantCulture, $"{uri.Host}/{Path.GetFileName(uri.AbsolutePath)}");
+
+        return new FeedSourceDescriptor
+        {
+            Id = id,
+            Name = displayName,
+            Kind = inferredKind,
+            Category = category,
+            Description = trimmed,
+            FeedUrl = trimmed,
+            DefaultTag = "CustomRepo"
+        };
+    }
 
     private readonly IBootstrapResolver _bootstrapResolver;
     private readonly SocketsHttpHandler? _ownedHandler;
@@ -219,6 +421,8 @@ public sealed partial class SignedFeedSyncService : IDisposable
         List<FeedSyncItemResult> results = new(targets.Count);
         HashSet<string> domainSet = new(StringComparer.OrdinalIgnoreCase);
         List<string> aggregatedDomains = [];
+        HashSet<string> ipSet = new(StringComparer.OrdinalIgnoreCase);
+        List<string> aggregatedIps = [];
         Dictionary<string, DnsServerEntry> serverMap = new(StringComparer.OrdinalIgnoreCase);
 
         foreach (FeedSourceDescriptor descriptor in targets)
@@ -234,6 +438,14 @@ public sealed partial class SignedFeedSyncService : IDisposable
                 }
             }
 
+            foreach (string ipRange in item.DiscoveredIpRanges)
+            {
+                if (ipSet.Add(ipRange))
+                {
+                    aggregatedIps.Add(ipRange);
+                }
+            }
+
             foreach (DnsServerEntry server in item.DiscoveredServers)
             {
                 serverMap.TryAdd(server.Id, server);
@@ -244,7 +456,10 @@ public sealed partial class SignedFeedSyncService : IDisposable
             mode,
             results,
             aggregatedDomains,
-            [.. serverMap.Values]);
+            [.. serverMap.Values])
+        {
+            AggregatedIpRanges = aggregatedIps
+        };
     }
 
     /// <summary>
@@ -560,6 +775,7 @@ public sealed partial class SignedFeedSyncService : IDisposable
         string text = Encoding.UTF8.GetString(payloadBytes);
         IReadOnlyList<string> domains = [];
         IReadOnlyList<DnsServerEntry> servers = [];
+        IReadOnlyList<string> ipRanges = [];
 
         switch (descriptor.Kind)
         {
@@ -572,11 +788,23 @@ public sealed partial class SignedFeedSyncService : IDisposable
             case FeedKind.CommunityMarkdown:
                 servers = ParseCommunityMarkdown(text, descriptor.DefaultTag);
                 break;
+            case FeedKind.DnsCryptResolversMd:
+                servers = ParseDnsCryptResolversMarkdown(text, descriptor.DefaultTag);
+                break;
+            case FeedKind.DomainListCommunity:
+                domains = ParseDomainListCommunity(text);
+                break;
+            case FeedKind.IpCidrList:
+                ipRanges = ParseIpCidrList(text);
+                break;
+            case FeedKind.PlainResolverList:
+                servers = ParsePlainResolverList(text, descriptor.DefaultTag);
+                break;
         }
 
         string message = status == FeedVerificationStatus.VerifiedSigned
-            ? string.Create(CultureInfo.InvariantCulture, $"Verified signed feed ({domains.Count} domains, {servers.Count} servers).")
-            : string.Create(CultureInfo.InvariantCulture, $"Accepted unsigned community feed via explicit opt-in ({domains.Count} domains, {servers.Count} servers).");
+            ? string.Create(CultureInfo.InvariantCulture, $"Verified signed feed ({domains.Count} domains, {servers.Count} servers, {ipRanges.Count} IPs).")
+            : string.Create(CultureInfo.InvariantCulture, $"Synced community feed ({domains.Count} domains, {servers.Count} servers, {ipRanges.Count} IPs).");
 
         return new FeedSyncItemResult(
             descriptor.Id,
@@ -585,7 +813,10 @@ public sealed partial class SignedFeedSyncService : IDisposable
             status,
             domains,
             servers,
-            message);
+            message)
+        {
+            DiscoveredIpRanges = ipRanges
+        };
     }
 
     [SuppressMessage("Globalization", "CA1308:Normalize strings to uppercase", Justification = "DNS hostnames are canonically lowercase.")]
@@ -841,6 +1072,346 @@ public sealed partial class SignedFeedSyncService : IDisposable
         }
 
         return servers;
+    }
+
+    public static IReadOnlyList<DnsServerEntry> ParseDnsCryptResolversMarkdown(
+        string markdownContent,
+        string? defaultTag = "DNSCrypt",
+        int maxServers = 80)
+    {
+        ArgumentNullException.ThrowIfNull(markdownContent);
+
+        List<DnsServerEntry> servers = [];
+        HashSet<string> seenIds = new(StringComparer.OrdinalIgnoreCase);
+        string[] lines = markdownContent.Split(LineSeparators, StringSplitOptions.None);
+        string currentHeading = string.Empty;
+        string currentDescription = string.Empty;
+        string label = string.IsNullOrWhiteSpace(defaultTag) ? "DNSCrypt" : defaultTag.Trim();
+
+        foreach (string rawLine in lines)
+        {
+            if (servers.Count >= maxServers)
+            {
+                break;
+            }
+
+            string line = rawLine.Trim();
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            if (line.StartsWith("## ", StringComparison.Ordinal))
+            {
+                currentHeading = line[3..].Trim();
+                currentDescription = string.Empty;
+                continue;
+            }
+
+            if (!line.StartsWith("sdns://", StringComparison.OrdinalIgnoreCase))
+            {
+                if (currentDescription.Length == 0 && !line.StartsWith('#'))
+                {
+                    currentDescription = line;
+                }
+
+                continue;
+            }
+
+            string stampToken = line.Split(WhitespaceSeparators, StringSplitOptions.RemoveEmptyEntries)[0];
+            if (!DnsStampCodec.TryParse(stampToken, out DnsStamp? stamp))
+            {
+                continue;
+            }
+
+            DnsProtocol? mappedProtocol = stamp.Protocol switch
+            {
+                DnsStampProtocol.DoH => DnsProtocol.DoH,
+                DnsStampProtocol.DoT => DnsProtocol.DoT,
+                DnsStampProtocol.DoQ => DnsProtocol.DoQ,
+                DnsStampProtocol.DnsCrypt => DnsProtocol.DnsCrypt,
+                _ => null
+            };
+
+            if (mappedProtocol is not DnsProtocol protocol)
+            {
+                continue;
+            }
+
+            string? host = string.IsNullOrWhiteSpace(stamp.HostName) ? null : stamp.HostName.Trim();
+            string? dohUrl = null;
+            if (protocol == DnsProtocol.DoH && !string.IsNullOrWhiteSpace(host))
+            {
+                string path = string.IsNullOrWhiteSpace(stamp.Path)
+                    ? "/dns-query"
+                    : (stamp.Path.StartsWith('/') ? stamp.Path : string.Concat("/", stamp.Path));
+                dohUrl = string.Create(CultureInfo.InvariantCulture, $"https://{host}{path}");
+            }
+
+            string primaryIp = ExtractIpFromServerAddress(stamp.ServerAddress);
+            if (primaryIp.Length > 0 && !IpSafetyInspector.IsPublicRoutable(primaryIp))
+            {
+                primaryIp = string.Empty;
+            }
+
+            List<string> bootstrapIps = [];
+            if (primaryIp.Length > 0)
+            {
+                bootstrapIps.Add(primaryIp);
+            }
+
+            foreach (string bs in stamp.BootstrapIps)
+            {
+                if (IpSafetyInspector.IsPublicRoutable(bs) && !bootstrapIps.Contains(bs, StringComparer.OrdinalIgnoreCase))
+                {
+                    bootstrapIps.Add(bs);
+                }
+            }
+
+            string name = !string.IsNullOrWhiteSpace(currentHeading)
+                ? currentHeading
+                : (!string.IsNullOrWhiteSpace(host) ? host : string.Create(CultureInfo.InvariantCulture, $"{label} #{servers.Count + 1}"));
+
+            string id = string.Create(CultureInfo.InvariantCulture, $"feed_dnscrypt_{SanitizeIdPart(name)}");
+            if (id.Length <= "feed_dnscrypt_".Length || !seenIds.Add(id))
+            {
+                continue;
+            }
+
+            servers.Add(new DnsServerEntry
+            {
+                Id = id,
+                Name = name,
+                Provider = label,
+                Protocol = protocol,
+                TrustTier = TrustTier.Tier3CustomOrSelfHosted,
+                PrimaryIp = primaryIp,
+                DohUrl = dohUrl,
+                DotHost = host,
+                DnsStampUri = stampToken,
+                BootstrapIps = bootstrapIps,
+                Category = "Скоростные",
+                Country = "GLOBAL",
+                Tags = ["feed", label, protocol.ToString().ToLowerInvariant()],
+                Description = string.IsNullOrWhiteSpace(currentDescription)
+                    ? "Public encrypted resolver from DNSCrypt resolvers database."
+                    : currentDescription,
+                SupportsBypass = false,
+                IsBuiltin = false
+            });
+        }
+
+        return servers;
+    }
+
+    [SuppressMessage("Globalization", "CA1308:Normalize strings to uppercase", Justification = "DNS hostnames are canonically lowercase.")]
+    public static IReadOnlyList<string> ParseDomainListCommunity(string content, int maxDomains = 4000)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        List<string> domains = [];
+        string[] lines = content.Split(LineSeparators, StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (string rawLine in lines)
+        {
+            if (domains.Count >= maxDomains)
+            {
+                break;
+            }
+
+            int commentIdx = rawLine.IndexOf('#', StringComparison.Ordinal);
+            string line = (commentIdx >= 0 ? rawLine[..commentIdx] : rawLine).Trim();
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            string token = line.Split(WhitespaceSeparators, StringSplitOptions.RemoveEmptyEntries)[0];
+            if (token.StartsWith("include:", StringComparison.OrdinalIgnoreCase) ||
+                token.StartsWith("regexp:", StringComparison.OrdinalIgnoreCase) ||
+                token.StartsWith("keyword:", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (token.StartsWith("domain:", StringComparison.OrdinalIgnoreCase))
+            {
+                token = token[7..];
+            }
+            else if (token.StartsWith("full:", StringComparison.OrdinalIgnoreCase))
+            {
+                token = token[5..];
+            }
+
+            token = token.Trim().TrimStart('*').TrimStart('.').TrimEnd('.');
+            if (IsIgnoredHostToken(token) || !token.Contains('.', StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (Uri.CheckHostName(token) == UriHostNameType.Dns && seen.Add(token))
+            {
+                domains.Add(token.ToLowerInvariant());
+            }
+        }
+
+        return domains;
+    }
+
+    public static IReadOnlyList<string> ParseIpCidrList(string content, int maxEntries = 2000)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        List<string> results = [];
+        string[] lines = content.Split(LineSeparators, StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (string rawLine in lines)
+        {
+            if (results.Count >= maxEntries)
+            {
+                break;
+            }
+
+            int commentIdx = rawLine.IndexOf('#', StringComparison.Ordinal);
+            string line = (commentIdx >= 0 ? rawLine[..commentIdx] : rawLine).Trim();
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            string token = line.Split(WhitespaceSeparators, StringSplitOptions.RemoveEmptyEntries)[0].Trim();
+            int slashIdx = token.IndexOf('/', StringComparison.Ordinal);
+            if (slashIdx > 0)
+            {
+                string ipPart = token[..slashIdx];
+                string prefixPart = token[(slashIdx + 1)..];
+                if (IPAddress.TryParse(ipPart, out IPAddress? cidrIp) &&
+                    cidrIp.AddressFamily == AddressFamily.InterNetwork &&
+                    IpSafetyInspector.IsPublicRoutable(cidrIp) &&
+                    int.TryParse(prefixPart, NumberStyles.None, CultureInfo.InvariantCulture, out int prefix) &&
+                    prefix is >= 8 and <= 32)
+                {
+                    string normalized = string.Create(CultureInfo.InvariantCulture, $"{cidrIp}/{prefix}");
+                    if (seen.Add(normalized))
+                    {
+                        results.Add(normalized);
+                    }
+                }
+            }
+            else if (IPAddress.TryParse(token, out IPAddress? ip) &&
+                     ip.AddressFamily == AddressFamily.InterNetwork &&
+                     IpSafetyInspector.IsPublicRoutable(ip))
+            {
+                string normalized = ip.ToString();
+                if (seen.Add(normalized))
+                {
+                    results.Add(normalized);
+                }
+            }
+        }
+
+        return results;
+    }
+
+    public static IReadOnlyList<DnsServerEntry> ParsePlainResolverList(
+        string content,
+        string? defaultTag = "Resolvers",
+        int maxServers = 60)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        List<DnsServerEntry> servers = [];
+        HashSet<string> seenIps = new(StringComparer.OrdinalIgnoreCase);
+        string[] lines = content.Split(LineSeparators, StringSplitOptions.RemoveEmptyEntries);
+        string label = string.IsNullOrWhiteSpace(defaultTag) ? "Resolvers" : defaultTag.Trim();
+
+        foreach (string rawLine in lines)
+        {
+            if (servers.Count >= maxServers)
+            {
+                break;
+            }
+
+            int commentIdx = rawLine.IndexOf('#', StringComparison.Ordinal);
+            string line = (commentIdx >= 0 ? rawLine[..commentIdx] : rawLine).Trim();
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            string token = line.Split(WhitespaceSeparators, StringSplitOptions.RemoveEmptyEntries)[0].Trim();
+            if (!IPAddress.TryParse(token, out IPAddress? ip) ||
+                ip.AddressFamily != AddressFamily.InterNetwork ||
+                !IpSafetyInspector.IsPublicRoutable(ip))
+            {
+                continue;
+            }
+
+            string ipText = ip.ToString();
+            if (!seenIps.Add(ipText))
+            {
+                continue;
+            }
+
+            servers.Add(new DnsServerEntry
+            {
+                Id = string.Create(CultureInfo.InvariantCulture, $"feed_{SanitizeIdPart(label)}_{ipText.Replace('.', '_')}"),
+                Name = string.Create(CultureInfo.InvariantCulture, $"{label} DNS {ipText}"),
+                Provider = label,
+                Protocol = DnsProtocol.Udp,
+                TrustTier = TrustTier.Tier3CustomOrSelfHosted,
+                PrimaryIp = ipText,
+                BootstrapIps = [ipText],
+                Category = "Скоростные",
+                Country = "GLOBAL",
+                Tags = ["feed", label, "udp53"],
+                Description = string.Create(CultureInfo.InvariantCulture, $"Public DNS resolver imported from {label}."),
+                SupportsBypass = false,
+                IsBuiltin = false
+            });
+        }
+
+        return servers;
+    }
+
+    private static string ExtractIpFromServerAddress(string? serverAddress)
+    {
+        if (string.IsNullOrWhiteSpace(serverAddress))
+        {
+            return string.Empty;
+        }
+
+        string trimmed = serverAddress.Trim();
+        if (IPAddress.TryParse(trimmed, out IPAddress? direct))
+        {
+            return direct.ToString();
+        }
+
+        if (trimmed.StartsWith('['))
+        {
+            int closeBracket = trimmed.IndexOf(']', StringComparison.Ordinal);
+            if (closeBracket > 1)
+            {
+                string v6 = trimmed[1..closeBracket];
+                return IPAddress.TryParse(v6, out IPAddress? parsedV6) ? parsedV6.ToString() : string.Empty;
+            }
+
+            return string.Empty;
+        }
+
+        int colonIdx = trimmed.LastIndexOf(':');
+        if (colonIdx > 0)
+        {
+            string ipCandidate = trimmed[..colonIdx];
+            if (IPAddress.TryParse(ipCandidate, out IPAddress? parsedV4))
+            {
+                return parsedV4.ToString();
+            }
+        }
+
+        return string.Empty;
     }
 
     public void Dispose()
@@ -1143,7 +1714,7 @@ public sealed partial class SignedFeedSyncService : IDisposable
             return false;
         }
 
-        foreach (FeedSourceDescriptor builtIn in BuiltInFeeds)
+        foreach (FeedSourceDescriptor builtIn in AllCuratedFeeds)
         {
             if (string.Equals(descriptor.Id, builtIn.Id, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(descriptor.FeedUrl, builtIn.FeedUrl, StringComparison.OrdinalIgnoreCase) &&

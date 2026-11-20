@@ -94,6 +94,9 @@ public sealed partial class DiagnosticsDoctorViewModel : ObservableObject, IDisp
     [ObservableProperty]
     private LanGatewayDescriptor? _lanGateway;
 
+    [ObservableProperty]
+    private int _selectedSubTabIndex;
+
     public DiagnosticsDoctorViewModel(
         IPulseRuntimeService runtimeService,
         PulseCatalogRepository repository,
@@ -168,6 +171,25 @@ public sealed partial class DiagnosticsDoctorViewModel : ObservableObject, IDisp
         };
 
     public bool CanApplyRemediation => RecommendedRemediation is { Action: not RemediationActionKind.None };
+
+    public bool IsDoctorTabSelected => SelectedSubTabIndex == 0;
+
+    public bool IsLanTabSelected => SelectedSubTabIndex == 1;
+
+    public bool IsLabTabSelected => SelectedSubTabIndex == 2;
+
+    [RelayCommand]
+    public void SelectSubTab(int tabIndex)
+    {
+        SelectedSubTabIndex = Math.Clamp(tabIndex, 0, 2);
+    }
+
+    partial void OnSelectedSubTabIndexChanged(int value)
+    {
+        OnPropertyChanged(nameof(IsDoctorTabSelected));
+        OnPropertyChanged(nameof(IsLanTabSelected));
+        OnPropertyChanged(nameof(IsLabTabSelected));
+    }
 
     public void ConfigureTargetProvider(
         Func<DnsServerEntry?> targetServerProvider,

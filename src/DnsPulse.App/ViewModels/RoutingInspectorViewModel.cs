@@ -14,6 +14,7 @@ using DnsPulse.Core.Models;
 using DnsPulse.Core.Routing;
 using DnsPulse.Core.Wire;
 using DnsPulse.Engine.Contracts;
+using DnsPulse.Engine.Feeds;
 using DnsPulse.Engine.Pipeline;
 using DnsPulse.Platform.Windows.Autostart;
 using Serilog;
@@ -51,6 +52,9 @@ public sealed partial class ServicePresetToggleItem : ObservableObject
     private string _displayName = string.Empty;
 
     [ObservableProperty]
+    private string _description = string.Empty;
+
+    [ObservableProperty]
     private bool _isEnabled;
 
     public ServicePresetToggleItem(
@@ -58,7 +62,8 @@ public sealed partial class ServicePresetToggleItem : ObservableObject
         string resourceKey,
         string displayName,
         IReadOnlyList<string> domains,
-        bool isEnabled)
+        bool isEnabled,
+        string? description = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
         ArgumentException.ThrowIfNullOrWhiteSpace(resourceKey);
@@ -67,6 +72,7 @@ public sealed partial class ServicePresetToggleItem : ObservableObject
         Id = id;
         ResourceKey = resourceKey;
         _displayName = displayName;
+        _description = description ?? string.Join(", ", domains.Take(3));
         Domains = domains;
         _isEnabled = isEnabled;
     }
@@ -123,6 +129,36 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
     [ObservableProperty]
     private string _searchQuery = string.Empty;
 
+    [ObservableProperty]
+    private int _selectedSubTabIndex;
+
+    [ObservableProperty]
+    private int _totalQueriesCount;
+
+    [ObservableProperty]
+    private int _geoUnlockedQueriesCount;
+
+    [ObservableProperty]
+    private int _blockedQueriesCount;
+
+    [ObservableProperty]
+    private string _averageLatencyMsText = "—";
+
+    [ObservableProperty]
+    private bool _hasTelemetryEvents;
+
+    [ObservableProperty]
+    private bool _isSyncingDomainRepos;
+
+    [ObservableProperty]
+    private string _domainRepoSyncStatus = string.Empty;
+
+    [ObservableProperty]
+    private string _customRepoUrlInput = string.Empty;
+
+    [ObservableProperty]
+    private int _importedIpRangesCount;
+
     public RoutingInspectorViewModel(
         IPulseRuntimeService runtimeService,
         LocalizationService localization)
@@ -146,6 +182,16 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
     public ObservableCollection<DnsQueryTelemetryEvent> TelemetryEvents { get; } = [];
 
     public ObservableCollection<DnsQueryTelemetryEvent> FilteredTelemetryEvents { get; } = [];
+
+    public ObservableCollection<string> ImportedIpRanges { get; } = [];
+
+    public bool IsServicesTabSelected => SelectedSubTabIndex == 0;
+
+    public bool IsLogTabSelected => SelectedSubTabIndex == 1;
+
+    public bool IsLogEmpty => !HasTelemetryEvents;
+
+    public int EnabledPresetsCount => ServicePresets.Count(static p => p.IsEnabled);
 
     public IReadOnlyList<RuleFormatKind> AvailableRuleFormats { get; } =
     [
@@ -240,6 +286,180 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
         }
 
         await PushRouterConfigurationAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Bulk-imports custom Geo-Unlock domains from a GitHub repository and pushes router config once.
+    /// </summary>
+    public async Task<int> AddCustomGeoUnlockDomainsAsync(
+        IEnumerable<string> domains,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(domains);
+
+        HashSet<string> existing = new(_customGeoUnlockDomains, StringComparer.OrdinalIgnoreCase);
+        int added = 0;
+        foreach (string raw in domains)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+
+            string normalized = raw.Trim().TrimStart('*').TrimStart('.');
+            if (normalized.Length > 0 && existing.Add(normalized))
+            {
+                _customGeoUnlockDomains.Add(normalized);
+                added++;
+            }
+        }
+
+        if (added > 0)
+        {
+            ServicePresetToggleItem? customToggle = ServicePresets.FirstOrDefault(static p => p.Id == "custom");
+            if (customToggle is not null && !customToggle.IsEnabled)
+            {
+                _suppressPresetPush = true;
+                try
+                {
+                    customToggle.IsEnabled = true;
+                }
+                finally
+                {
+                    _suppressPresetPush = false;
+                }
+            }
+
+            OnPropertyChanged(nameof(CustomGeoUnlockDomains));
+            await PushRouterConfigurationAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return added;
+    }
+
+    /// <summary>
+    /// Records IP/CIDR ranges imported from GitHub repositories so users can inspect or export them.
+    /// </summary>
+    public void ApplyImportedIpRanges(IEnumerable<string> ipRanges)
+    {
+        ArgumentNullException.ThrowIfNull(ipRanges);
+
+        HashSet<string> existing = new(ImportedIpRanges, StringComparer.OrdinalIgnoreCase);
+        List<string> toAdd = [];
+        foreach (string raw in ipRanges)
+        {
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                string trimmed = raw.Trim();
+                if (existing.Add(trimmed))
+                {
+                    toAdd.Add(trimmed);
+                }
+            }
+        }
+
+        if (toAdd.Count == 0)
+        {
+            return;
+        }
+
+        Dispatcher? dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            _ = dispatcher.BeginInvoke(() =>
+            {
+                foreach (string cidr in toAdd)
+                {
+                    ImportedIpRanges.Add(cidr);
+                }
+
+                ImportedIpRangesCount = ImportedIpRanges.Count;
+            });
+            return;
+        }
+
+        foreach (string cidr in toAdd)
+        {
+            ImportedIpRanges.Add(cidr);
+        }
+
+        ImportedIpRangesCount = ImportedIpRanges.Count;
+    }
+
+    [RelayCommand]
+    public void SelectSubTab(int tabIndex)
+    {
+        SelectedSubTabIndex = Math.Clamp(tabIndex, 0, 1);
+    }
+
+    [RelayCommand]
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Domain and IP repository sync errors are surfaced via DomainRepoSyncStatus.")]
+    public async Task SyncDomainAndIpReposAsync(CancellationToken cancellationToken = default)
+    {
+        if (IsSyncingDomainRepos)
+        {
+            return;
+        }
+
+        IsSyncingDomainRepos = true;
+        DomainRepoSyncStatus = _localization["Servers_Feeds_Syncing"];
+        try
+        {
+            List<FeedSourceDescriptor> feeds =
+            [
+                .. SignedFeedSyncService.AllCuratedFeeds.Where(static f =>
+                    f.Category is FeedCategory.DomainList or FeedCategory.IpSubnetList)
+            ];
+
+            bool hasCustomUrl = !string.IsNullOrWhiteSpace(CustomRepoUrlInput);
+            if (hasCustomUrl)
+            {
+                FeedSourceDescriptor? custom = SignedFeedSyncService.CreateCustomUrlDescriptor(CustomRepoUrlInput.Trim());
+                if (custom is not null)
+                {
+                    feeds.Add(custom);
+                }
+            }
+
+            using SignedFeedSyncService feedService = new(_runtimeService.BootstrapResolver);
+            FeedVerificationMode mode = hasCustomUrl
+                ? FeedVerificationMode.AllowUnsignedFeeds
+                : FeedVerificationMode.BuiltInCommunityTrusted;
+
+            FeedSyncSummary summary = await feedService.SyncAllAsync(
+                mode,
+                feeds: feeds,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            int addedDomains = await AddCustomGeoUnlockDomainsAsync(
+                summary.AggregatedBypassDomains.Take(500),
+                cancellationToken).ConfigureAwait(false);
+
+            ApplyImportedIpRanges(summary.AggregatedIpRanges.Take(500));
+
+            DomainRepoSyncStatus = string.Format(
+                CultureInfo.CurrentCulture,
+                _localization["Routing_Repos_ResultFormat"],
+                addedDomains,
+                summary.AggregatedIpRanges.Count);
+
+            if (hasCustomUrl)
+            {
+                CustomRepoUrlInput = string.Empty;
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            DomainRepoSyncStatus = ex.Message;
+        }
+        finally
+        {
+            IsSyncingDomainRepos = false;
+        }
     }
 
     /// <summary>
@@ -368,6 +588,8 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
 
             FilteredTelemetryEvents.Insert(0, telemetryEvent);
         }
+
+        RecalculateTelemetryMetrics();
     }
 
     /// <summary>
@@ -537,6 +759,7 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
     {
         TelemetryEvents.Clear();
         FilteredTelemetryEvents.Clear();
+        RecalculateTelemetryMetrics();
     }
 
     public async Task RefreshRecentTelemetryAsync(int maxCount = 200, CancellationToken cancellationToken = default)
@@ -549,6 +772,7 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
         }
 
         RebuildFilteredTelemetry();
+        RecalculateTelemetryMetrics();
     }
 
     public async Task PushRouterConfigurationAsync(CancellationToken cancellationToken = default)
@@ -611,6 +835,61 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
     partial void OnSearchQueryChanged(string value)
     {
         RebuildFilteredTelemetry();
+    }
+
+    partial void OnSelectedSubTabIndexChanged(int value)
+    {
+        OnPropertyChanged(nameof(IsServicesTabSelected));
+        OnPropertyChanged(nameof(IsLogTabSelected));
+    }
+
+    partial void OnHasTelemetryEventsChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsLogEmpty));
+    }
+
+    private void RecalculateTelemetryMetrics()
+    {
+        int total = TelemetryEvents.Count;
+        TotalQueriesCount = total;
+        HasTelemetryEvents = total > 0;
+
+        if (total == 0)
+        {
+            GeoUnlockedQueriesCount = 0;
+            BlockedQueriesCount = 0;
+            AverageLatencyMsText = "—";
+            return;
+        }
+
+        int geo = 0;
+        int blocked = 0;
+        double latencySum = 0;
+        int latencySamples = 0;
+
+        foreach (DnsQueryTelemetryEvent evt in TelemetryEvents)
+        {
+            if (evt.Zone == RouteZone.Zone3GeoUnlock)
+            {
+                geo++;
+            }
+            else if (evt.Zone == RouteZone.Zone2BlockOrProtect)
+            {
+                blocked++;
+            }
+
+            if (evt.LatencyMs > 0)
+            {
+                latencySum += evt.LatencyMs;
+                latencySamples++;
+            }
+        }
+
+        GeoUnlockedQueriesCount = geo;
+        BlockedQueriesCount = blocked;
+        AverageLatencyMsText = latencySamples > 0
+            ? string.Create(CultureInfo.InvariantCulture, $"{latencySum / latencySamples:F0} ms")
+            : "—";
     }
 
     private int ImportJsonRules(string json)
@@ -792,9 +1071,13 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
         ServicePresetToggleItem item = new(id, resourceKey, _localization[resourceKey], domains, enabled);
         item.PropertyChanged += (_, args) =>
         {
-            if (!_suppressPresetPush && string.Equals(args.PropertyName, nameof(ServicePresetToggleItem.IsEnabled), StringComparison.Ordinal))
+            if (string.Equals(args.PropertyName, nameof(ServicePresetToggleItem.IsEnabled), StringComparison.Ordinal))
             {
-                _ = PushPresetToggleSafeAsync(id);
+                OnPropertyChanged(nameof(EnabledPresetsCount));
+                if (!_suppressPresetPush)
+                {
+                    _ = PushPresetToggleSafeAsync(id);
+                }
             }
         };
 

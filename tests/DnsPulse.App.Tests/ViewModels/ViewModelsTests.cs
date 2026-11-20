@@ -1268,6 +1268,61 @@ public sealed class ViewModelsTests : IDisposable
         ((Thickness)resources["PulsePagePadding"]!).Left.Should().Be(24);
     }
 
+    [Fact]
+    public async Task OverviewViewModel_ActivateServerAndConnectAsync_ImmediatelyConnectsCustomPhoneDns()
+    {
+        IPulseRuntimeService runtime = CreateMockRuntime();
+        LocalizationService localization = new();
+        using OverviewViewModel vm = new(runtime, localization);
+
+        DnsServerEntry phoneCustomDns = new()
+        {
+            Id = "custom_phone_dns",
+            Name = "My Phone Working DNS",
+            Provider = "Custom",
+            Protocol = DnsProtocol.DoT,
+            TrustTier = TrustTier.Tier3CustomOrSelfHosted,
+            PrimaryIp = "94.140.14.14",
+            DotHostname = "dns.adguard-dns.com",
+            SupportsBypass = true
+        };
+
+        await vm.ActivateServerAndConnectAsync(phoneCustomDns);
+
+        vm.SelectedGeoUnlockUpstream.Should().BeSameAs(phoneCustomDns);
+        vm.SelectedTrustedUpstream.Should().BeSameAs(phoneCustomDns);
+        await runtime.Received(1).ConnectAsync(
+            Arg.Is<DnsServerEntry?>(s => s != null && s.Id == "custom_phone_dns"),
+            Arg.Is<DnsServerEntry?>(s => s != null && s.Id == "custom_phone_dns"),
+            Arg.Any<IReadOnlyList<DnsServerEntry>?>(),
+            Arg.Any<PulseAppSettings?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RoutingAndServersViewModels_ExposeSubTabsKpisAndCuratedGitHubFeeds()
+    {
+        using PulseCatalogRepository repo = new(_dbPath);
+        await repo.InitializeAsync();
+        IPulseRuntimeService runtime = CreateMockRuntime();
+        LocalizationService localization = new();
+
+        using ServersCatalogViewModel servers = new(repo, runtime, localization);
+        servers.AvailableFeeds.Should().HaveCountGreaterThanOrEqualTo(15);
+        servers.IsCatalogTabSelected.Should().BeTrue();
+        servers.SelectSubTabCommand.Execute(1);
+        servers.IsDatabasesTabSelected.Should().BeTrue();
+
+        RoutingInspectorViewModel routing = new(runtime, localization);
+        routing.IsServicesTabSelected.Should().BeTrue();
+        routing.IsLogEmpty.Should().BeTrue();
+        routing.SelectSubTabCommand.Execute(1);
+        routing.IsLogTabSelected.Should().BeTrue();
+
+        routing.ApplyImportedIpRanges(["104.18.0.0/16", "172.64.0.0/13"]);
+        routing.ImportedIpRangesCount.Should().Be(2);
+    }
+
     private static int FindAvailableDualPort()
     {
         using System.Net.Sockets.Socket udp = new(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Dgram, System.Net.Sockets.ProtocolType.Udp);

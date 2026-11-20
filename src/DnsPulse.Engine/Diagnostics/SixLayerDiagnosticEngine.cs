@@ -139,6 +139,7 @@ public sealed class SixLayerDiagnosticEngine
         Layer6Outcome layer6 = ExecuteLayer6(
             normalizedDomain,
             upstream,
+            effectiveOptions.IncludeTlsAndApplicationProbes,
             layer1,
             layer2,
             layer3,
@@ -693,9 +694,13 @@ public sealed class SixLayerDiagnosticEngine
             && baselineIps.Count > 0;
 
         bool isDnsPoisoned = hasBogonOrSinkhole || poisonedNxDomain;
+        bool upstreamResolutionFailed = upstream.Protocol != DnsProtocol.SniProxy
+            && !isDnsPoisoned
+            && (upstreamResponse.EffectiveResponseCode != DnsResponseCode.NoError
+                || validation.AcceptedAddresses.Count == 0);
 
         bool directIpOnBypass = false;
-        if (upstream.SupportsBypass && !isDnsPoisoned)
+        if (upstream.SupportsBypass && !isDnsPoisoned && !upstreamResolutionFailed)
         {
             foreach (IPAddress ip in validation.AcceptedAddresses)
             {
@@ -729,7 +734,24 @@ public sealed class SixLayerDiagnosticEngine
                 baselineIps,
                 IsDnsPoisoned: true,
                 DirectIpOnBypassUpstream: directIpOnBypass,
-                EchAdvertised: echAdvertised);
+                EchAdvertised: echAdvertised,
+                UpstreamResolutionFailed: false);
+        }
+
+        if (upstreamResolutionFailed)
+        {
+            string failReason = upstreamResponse.EffectiveResponseCode != DnsResponseCode.NoError
+                ? string.Create(CultureInfo.InvariantCulture, $"Upstream DNS returned {upstreamResponse.EffectiveResponseCode} with no usable IP records.")
+                : "Upstream DNS returned zero routable IP addresses.";
+
+            return new Layer3Outcome(
+                new DiagnosticLayerResult(3, "DNS Integrity & Poisoning Check", DiagnosticLayerStatus.Failed, sw.Elapsed, failReason, metrics),
+                validation.AcceptedAddresses,
+                baselineIps,
+                IsDnsPoisoned: false,
+                DirectIpOnBypassUpstream: false,
+                EchAdvertised: echAdvertised,
+                UpstreamResolutionFailed: true);
         }
 
         DiagnosticLayerStatus status = directIpOnBypass ? DiagnosticLayerStatus.Warning : DiagnosticLayerStatus.Passed;
@@ -743,7 +765,8 @@ public sealed class SixLayerDiagnosticEngine
             baselineIps,
             IsDnsPoisoned: false,
             DirectIpOnBypassUpstream: directIpOnBypass,
-            EchAdvertised: echAdvertised);
+            EchAdvertised: echAdvertised,
+            UpstreamResolutionFailed: false);
     }
 
     private static async Task<Layer4Outcome> ExecuteLayer4Async(
@@ -960,7 +983,7 @@ public sealed class SixLayerDiagnosticEngine
         }
 
         string probePath = options.HttpProbePath ?? GetDefaultProbePath(domain);
-        bool requireGoogleSignature = upstream.Protocol == DnsProtocol.SniProxy
+        bool requireGoogleSignature = (upstream.Protocol == DnsProtocol.SniProxy || upstream.SupportsBypass)
             && AntiDirectAndGeoSignatures.IsStrictGoogleAiDomain(domain);
 
         HttpProbeOutcome primaryProbe = await ProbeHttpsEndpointAsync(
@@ -1011,6 +1034,11 @@ public sealed class SixLayerDiagnosticEngine
 
                     if (companionEndpoint is null)
                     {
+                        allCompanionsOk = false;
+                        companionGatewayFailure = true;
+                        geoReason ??= string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Companion '{companion}' could not be resolved by '{upstream.Name}'.");
                         continue;
                     }
 
@@ -1045,10 +1073,10 @@ public sealed class SixLayerDiagnosticEngine
                         break;
                     }
 
-                    if (compProbe.IsGeoBlocked || compProbe.IsGatewayFailure)
+                    if (compProbe.IsGeoBlocked || compProbe.IsGatewayFailure || compProbe.IsTransportFailure)
                     {
                         allCompanionsOk = false;
-                        if (compProbe.IsGatewayFailure)
+                        if (compProbe.IsGatewayFailure || compProbe.IsTransportFailure)
                         {
                             companionGatewayFailure = true;
                             geoReason ??= string.Create(CultureInfo.InvariantCulture, $"Companion '{companion}' relay failure: {compProbe.Detail}");
@@ -1118,12 +1146,16 @@ public sealed class SixLayerDiagnosticEngine
                 TlsMitmOnCompanion: false);
         }
 
-        bool relayFailed = upstream.Protocol == DnsProtocol.SniProxy
-            && (primaryProbe.IsGatewayFailure || primaryProbe.IsTransportFailure || companionGatewayFailure);
+        bool primaryServerError = primaryProbe.StatusCode is int primaryCode && primaryCode >= 500;
+        bool relayFailed = primaryProbe.IsGatewayFailure
+            || primaryProbe.IsTransportFailure
+            || primaryServerError
+            || ((upstream.Protocol == DnsProtocol.SniProxy || upstream.SupportsBypass)
+                && (companionGatewayFailure || companionPassed == false));
 
         DiagnosticLayerStatus status = relayFailed
             ? DiagnosticLayerStatus.Failed
-            : primaryProbe.IsGatewayFailure || primaryProbe.IsTransportFailure || companionPassed == false
+            : companionPassed == false
                 ? DiagnosticLayerStatus.Warning
                 : DiagnosticLayerStatus.Passed;
 
@@ -1146,6 +1178,7 @@ public sealed class SixLayerDiagnosticEngine
     private static Layer6Outcome ExecuteLayer6(
         string domain,
         DnsServerEntry upstream,
+        bool includeTlsAndApplicationProbes,
         Layer1Outcome layer1,
         Layer2Outcome layer2,
         Layer3Outcome layer3,
@@ -1213,6 +1246,16 @@ public sealed class SixLayerDiagnosticEngine
                     domain);
             }
         }
+        else if (layer3.UpstreamResolutionFailed)
+        {
+            verdict = upstream.IsEncrypted ? DiagnosticVerdict.EncryptedDnsDpiBlocked : DiagnosticVerdict.IpBlockedByIsp;
+            reason = layer3.Result.Summary;
+            remediation = new RecommendedRemediation(
+                RemediationActionKind.RouteViaVerifiedGeoUnlock,
+                "Switch to a Working Verified Resolver",
+                "DNS upstream returned REFUSED/SERVFAIL or zero usable IP records for the target domain.",
+                domain);
+        }
         else if (layer4.TlsSniDpiReset)
         {
             verdict = DiagnosticVerdict.TlsSniDpiReset;
@@ -1231,6 +1274,16 @@ public sealed class SixLayerDiagnosticEngine
                 RemediationActionKind.DeploySelfHostedVps,
                 "Deploy Self-Hosted VPS Relay",
                 "TCP connection to resolved destination IP was blocked or timed out.",
+                domain);
+        }
+        else if (includeTlsAndApplicationProbes && !layer4.Succeeded)
+        {
+            verdict = DiagnosticVerdict.IpBlockedByIsp;
+            reason = layer4.Result.Summary;
+            remediation = new RecommendedRemediation(
+                RemediationActionKind.RouteViaVerifiedGeoUnlock,
+                "Switch to a Verified Working Resolver",
+                "End-to-end TLS verification did not succeed for the IP returned by this resolver.",
                 domain);
         }
         else if (layer5.IsGeoBlocked)
@@ -1260,9 +1313,9 @@ public sealed class SixLayerDiagnosticEngine
             verdict = DiagnosticVerdict.IpBlockedByIsp;
             reason = layer5.GeoReason ?? layer5.Result.Summary;
             remediation = new RecommendedRemediation(
-                RemediationActionKind.DeploySelfHostedVps,
-                "Switch SNI-Proxy Relay or Deploy Self-Hosted VPS",
-                "SNI-Proxy relay returned an upstream gateway/HTTP error or non-authentic response.",
+                RemediationActionKind.RouteViaVerifiedGeoUnlock,
+                "Switch to Another Working Resolver",
+                "Upstream proxy or HTTPS endpoint returned a gateway/HTTP error or timed out.",
                 domain);
         }
         else if (layer1.HasBrowserDohBypass)
@@ -1660,11 +1713,9 @@ public sealed class SixLayerDiagnosticEngine
             return new IPEndPoint(resolvedAddresses[0], options.HttpsPort);
         }
 
-        if (baselineAddresses.Count > 0)
-        {
-            return new IPEndPoint(baselineAddresses[0], options.HttpsPort);
-        }
-
+        // Never fall back to baselineAddresses when the tested upstream failed to resolve the target,
+        // otherwise broken/REFUSED/SERVFAIL servers would falsely pass Layer 4 & 5 against baseline IPs.
+        _ = baselineAddresses;
         return null;
     }
 
@@ -1826,7 +1877,8 @@ public sealed class SixLayerDiagnosticEngine
         IReadOnlyList<IPAddress> BaselineAddresses,
         bool IsDnsPoisoned,
         bool DirectIpOnBypassUpstream,
-        bool EchAdvertised);
+        bool EchAdvertised,
+        bool UpstreamResolutionFailed = false);
 
     private sealed record Layer4Outcome(
         DiagnosticLayerResult Result,

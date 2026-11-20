@@ -1,13 +1,15 @@
 <UserControl x:Class="DnsPulse.App.Views.ServersCatalogPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:behaviors="clr-namespace:DnsPulse.App.Behaviors"
              xmlns:conv="clr-namespace:DnsPulse.App.Converters">
   <UserControl.Resources>
     <DataTemplate x:Key="ServerRowTemplate">
       <Border Padding="12,10"
               Margin="0,0,0,6"
-              CornerRadius="8"
+              CornerRadius="10"
               Background="{DynamicResource PulseInnerPanelBrush}"
               BorderBrush="{DynamicResource PulseInnerPanelBorderBrush}"
               BorderThickness="1">
@@ -134,7 +136,7 @@
             </Ellipse.ToolTip>
           </Ellipse>
 
-          <!-- Select Upstream Action -->
+          <!-- Immediate Connect / Hot-Swap Action -->
           <ui:Button Grid.Column="5"
                      Padding="14,7"
                      Appearance="Primary"
@@ -153,174 +155,468 @@
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <!-- ONE Clean Category Bar + Search, Sort & Benchmark Toolbar -->
-    <ui:Card Grid.Row="0" Padding="16" Margin="0,0,0,12">
+    <!-- Page Header + Clean 3-Tab Segmented Switcher -->
+    <Grid Grid.Row="0" Margin="0,0,0,16">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+      <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+        <TextBlock FontSize="22"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                   Text="{conv:Localization Servers_Page_Title}" />
+        <TextBlock Margin="0,3,0,0"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                   Text="{conv:Localization Servers_Page_Subtitle}"
+                   TextWrapping="Wrap" />
+      </StackPanel>
+
+      <Border Grid.Column="1"
+              Padding="4"
+              CornerRadius="11"
+              VerticalAlignment="Center"
+              Background="{DynamicResource PulseSegmentTrackBrush}"
+              BorderBrush="{DynamicResource PulseGlassCardBorderBrush}"
+              BorderThickness="1">
+        <StackPanel Orientation="Horizontal">
+          <RadioButton GroupName="ServersSubTabs"
+                       Style="{StaticResource PulseIosSegmentRadioStyle}"
+                       Command="{Binding SelectSubTabCommand}"
+                       IsChecked="{Binding IsCatalogTabSelected, Mode=OneWay}"
+                       AutomationProperties.Name="{conv:Localization Servers_SubTab_Catalog}">
+            <RadioButton.CommandParameter>
+              <sys:Int32>0</sys:Int32>
+            </RadioButton.CommandParameter>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+              <TextBlock Text="{conv:Localization Servers_SubTab_Catalog}" VerticalAlignment="Center" />
+              <Border Margin="7,0,0,0" Padding="6,1" CornerRadius="9" Background="{DynamicResource PulseCountBadgeBgBrush}">
+                <TextBlock FontSize="11" FontWeight="SemiBold" Text="{Binding AllCount}" />
+              </Border>
+            </StackPanel>
+          </RadioButton>
+
+          <RadioButton GroupName="ServersSubTabs"
+                       Style="{StaticResource PulseIosSegmentRadioStyle}"
+                       Command="{Binding SelectSubTabCommand}"
+                       IsChecked="{Binding IsDatabasesTabSelected, Mode=OneWay}"
+                       Content="{conv:Localization Servers_SubTab_Databases}"
+                       AutomationProperties.Name="{conv:Localization Servers_SubTab_Databases}">
+            <RadioButton.CommandParameter>
+              <sys:Int32>1</sys:Int32>
+            </RadioButton.CommandParameter>
+          </RadioButton>
+
+          <RadioButton GroupName="ServersSubTabs"
+                       Style="{StaticResource PulseIosSegmentRadioStyle}"
+                       Command="{Binding SelectSubTabCommand}"
+                       IsChecked="{Binding IsManualImportTabSelected, Mode=OneWay}"
+                       Content="{conv:Localization Servers_SubTab_CustomVps}"
+                       AutomationProperties.Name="{conv:Localization Servers_SubTab_CustomVps}">
+            <RadioButton.CommandParameter>
+              <sys:Int32>2</sys:Int32>
+            </RadioButton.CommandParameter>
+          </RadioButton>
+        </StackPanel>
+      </Border>
+    </Grid>
+
+    <!-- SUB-TAB 0: Decongested Server Catalog -->
+    <Grid Grid.Row="1"
+          Visibility="{Binding IsCatalogTabSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+      </Grid.RowDefinitions>
+
+      <Border Grid.Row="0"
+              Padding="16"
+              Margin="0,0,0,12"
+              CornerRadius="14"
+              Background="{DynamicResource PulseGlassCardBrush}"
+              BorderBrush="{DynamicResource PulseGlassCardBorderBrush}"
+              BorderThickness="1">
+        <StackPanel>
+          <!-- Category Pills -->
+          <ItemsControl ItemsSource="{Binding CategoryFilterOptions}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <RadioButton GroupName="CatalogCategoryChips"
+                             Style="{StaticResource PulseFilterChipStyle}"
+                             Command="{Binding DataContext.SelectCategoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                             CommandParameter="{Binding Category}"
+                             AutomationProperties.Name="{Binding Title}"
+                             AutomationProperties.HelpText="{Binding Description}">
+                  <RadioButton.IsChecked>
+                    <MultiBinding Converter="{StaticResource EqualityToBoolConverter}" Mode="OneWay">
+                      <Binding Path="Category" />
+                      <Binding Path="DataContext.SelectedCategoryFilter" RelativeSource="{RelativeSource AncestorType=UserControl}" />
+                    </MultiBinding>
+                  </RadioButton.IsChecked>
+                  <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+                    <Border Margin="8,0,0,0"
+                            Padding="6,1"
+                            CornerRadius="10"
+                            Background="{DynamicResource PulseCountBadgeBgBrush}"
+                            VerticalAlignment="Center">
+                      <TextBlock FontSize="11"
+                                 FontWeight="SemiBold"
+                                 Text="{Binding Count}"
+                                 VerticalAlignment="Center" />
+                    </Border>
+                  </StackPanel>
+                </RadioButton>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <TextBlock Margin="2,0,0,10"
+                     Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                     FontSize="12"
+                     Text="{Binding ActiveCategoryDescription}"
+                     TextWrapping="Wrap" />
+
+          <!-- Search, Sort, Favorites, Benchmark Toolbar -->
+          <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <ui:TextBox Width="220"
+                        Margin="0,0,10,6"
+                        PlaceholderText="{conv:Localization Auto_SearchInput}"
+                        Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                        AutomationProperties.Name="{conv:Localization Auto_SearchInput}"
+                        AutomationProperties.HelpText="{conv:Localization Auto_SearchInput}">
+              <ui:TextBox.Icon>
+                <ui:SymbolIcon Symbol="Search24" />
+              </ui:TextBox.Icon>
+            </ui:TextBox>
+
+            <ComboBox MinWidth="230"
+                      Margin="0,0,10,6"
+                      ItemsSource="{Binding AvailableSortOrders}"
+                      SelectedItem="{Binding SelectedSortOrder, Mode=TwoWay}"
+                      AutomationProperties.Name="{conv:Localization Servers_Sort_P50}"
+                      AutomationProperties.HelpText="{conv:Localization Servers_Sort_P50}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock>
+                    <TextBlock.Text>
+                      <MultiBinding Converter="{StaticResource EnumLocalizationConverter}">
+                        <Binding />
+                        <Binding Path="[App_Title]" Source="{x:Static conv:LocalizationSource.Instance}" />
+                      </MultiBinding>
+                    </TextBlock.Text>
+                  </TextBlock>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+
+            <CheckBox Margin="0,0,14,6"
+                      VerticalAlignment="Center"
+                      IsChecked="{Binding ShowFavoritesOnly, Mode=TwoWay}"
+                      Content="{conv:Localization Servers_Filter_FavoritesOnly}"
+                      AutomationProperties.Name="{conv:Localization Servers_Filter_FavoritesOnly}"
+                      AutomationProperties.HelpText="{conv:Localization Servers_Filter_FavoritesOnly}" />
+
+            <ui:TextBox Width="185"
+                        Margin="0,0,8,6"
+                        PlaceholderText="{conv:Localization Servers_Benchmark_Target}"
+                        Text="{Binding BenchmarkTargetDomain, UpdateSourceTrigger=PropertyChanged}"
+                        AutomationProperties.Name="{conv:Localization Servers_Benchmark_Target}"
+                        AutomationProperties.HelpText="{conv:Localization Servers_Benchmark_Run}" />
+
+            <ui:Button Margin="0,0,8,6"
+                       Appearance="Primary"
+                       Content="{conv:Localization Servers_Benchmark_Run}"
+                       Command="{Binding RunSectionBenchmarkCommand}"
+                       IsEnabled="{Binding IsBenchmarkRunning, Converter={StaticResource InverseBoolConverter}}"
+                       AutomationProperties.Name="{conv:Localization Servers_Benchmark_Run}"
+                       AutomationProperties.HelpText="{conv:Localization Servers_Benchmark_Target}">
+              <ui:Button.Icon>
+                <ui:SymbolIcon Symbol="Play24" />
+              </ui:Button.Icon>
+            </ui:Button>
+
+            <ui:Button Margin="0,0,8,6"
+                       Appearance="Caution"
+                       Content="{conv:Localization Servers_Benchmark_Cancel}"
+                       Command="{Binding CancelBenchmarkCommand}"
+                       Visibility="{Binding IsBenchmarkRunning, Converter={StaticResource BooleanToVisibilityConverter}}"
+                       AutomationProperties.Name="{conv:Localization Servers_Benchmark_Cancel}"
+                       AutomationProperties.HelpText="{conv:Localization Servers_Benchmark_Cancel}">
+              <ui:Button.Icon>
+                <ui:SymbolIcon Symbol="Stop24" />
+              </ui:Button.Icon>
+            </ui:Button>
+          </WrapPanel>
+
+          <!-- Benchmark Progress -->
+          <StackPanel Visibility="{Binding IsBenchmarkRunning, Converter={StaticResource BooleanToVisibilityConverter}}"
+                      Margin="0,6,0,0"
+                      AutomationProperties.LiveSetting="Polite">
+            <ProgressBar Height="6"
+                         Minimum="0"
+                         Maximum="100"
+                         Value="{Binding BenchmarkProgressPercent}" />
+            <TextBlock Margin="0,4,0,0"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       FontSize="12">
+              <Run Text="{Binding BenchmarkCompletedCount, Mode=OneWay}" />
+              <Run Text=" / " />
+              <Run Text="{Binding BenchmarkTotalCount, Mode=OneWay}" />
+              <Run Text=" (" />
+              <Run Text="{Binding BenchmarkProgressPercent, Mode=OneWay, StringFormat={}{0:F1}%}" />
+              <Run Text=")" />
+            </TextBlock>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <ListView Grid.Row="1"
+                Style="{StaticResource PulseDarkCardListViewStyle}"
+                ItemContainerStyle="{StaticResource PulseDarkListViewItemStyle}"
+                behaviors:SmoothScrollBehavior.IsEnabled="True"
+                ItemsSource="{Binding FilteredServers}"
+                SelectedItem="{Binding SelectedServer, Mode=TwoWay}"
+                ItemTemplate="{StaticResource ServerRowTemplate}"
+                AutomationProperties.Name="{conv:Localization Nav_Servers}" />
+    </Grid>
+
+    <!-- SUB-TAB 1: Public GitHub DNS, Domain & IP Subnet Databases -->
+    <ScrollViewer Grid.Row="1"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled"
+                  behaviors:SmoothScrollBehavior.IsEnabled="True"
+                  Visibility="{Binding IsDatabasesTabSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
       <StackPanel>
-        <!-- Category Pills -->
-        <ItemsControl ItemsSource="{Binding CategoryFilterOptions}">
+        <!-- Action & Preset Header Card -->
+        <Border Margin="0,0,0,14"
+                Padding="18"
+                CornerRadius="14"
+                Background="{DynamicResource PulseGlassCardBrush}"
+                BorderBrush="{DynamicResource PulseGlassCardBorderBrush}"
+                BorderThickness="1">
+          <StackPanel>
+            <TextBlock FontSize="15"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                       Text="{conv:Localization Servers_Databases_Title}" />
+            <TextBlock Margin="0,3,0,12"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       Text="{conv:Localization Servers_Databases_Subtitle}"
+                       TextWrapping="Wrap" />
+
+            <!-- Quick Preset Filter Buttons -->
+            <WrapPanel Orientation="Horizontal" Margin="0,0,0,12">
+              <ui:Button Margin="0,0,8,6"
+                         Padding="12,5"
+                         Appearance="Secondary"
+                         Content="{conv:Localization Servers_Feeds_Preset_All}"
+                         Command="{Binding SelectFeedCategoryPresetCommand}"
+                         CommandParameter="ALL" />
+              <ui:Button Margin="0,0,8,6"
+                         Padding="12,5"
+                         Appearance="Secondary"
+                         Content="{conv:Localization Servers_Feeds_Preset_Dns}"
+                         Command="{Binding SelectFeedCategoryPresetCommand}"
+                         CommandParameter="DNS" />
+              <ui:Button Margin="0,0,8,6"
+                         Padding="12,5"
+                         Appearance="Secondary"
+                         Content="{conv:Localization Servers_Feeds_Preset_Domains}"
+                         Command="{Binding SelectFeedCategoryPresetCommand}"
+                         CommandParameter="DOMAINS" />
+              <ui:Button Margin="0,0,8,6"
+                         Padding="12,5"
+                         Appearance="Secondary"
+                         Content="{conv:Localization Servers_Feeds_Preset_Ips}"
+                         Command="{Binding SelectFeedCategoryPresetCommand}"
+                         CommandParameter="IPS" />
+            </WrapPanel>
+
+            <!-- Primary Sync & Auto-Test Bar -->
+            <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+              <ui:Button Margin="0,0,12,8"
+                         Padding="18,9"
+                         Appearance="Primary"
+                         Content="{conv:Localization Servers_Feeds_SyncAndPick}"
+                         Command="{Binding SyncSelectedFeedsAndTestCommand}"
+                         IsEnabled="{Binding IsSyncingFeeds, Converter={StaticResource InverseBoolConverter}}"
+                         AutomationProperties.Name="{conv:Localization Servers_Feeds_SyncAndPick}">
+                <ui:Button.Icon>
+                  <ui:SymbolIcon Symbol="CloudArrowDown24" />
+                </ui:Button.Icon>
+              </ui:Button>
+
+              <ui:Button Margin="0,0,14,8"
+                         Padding="12,8"
+                         Appearance="Secondary"
+                         Content="{conv:Localization Servers_Feeds_Sync}"
+                         Command="{Binding SyncFeedsCommand}"
+                         IsEnabled="{Binding IsSyncingFeeds, Converter={StaticResource InverseBoolConverter}}"
+                         AutomationProperties.Name="{conv:Localization Servers_Feeds_Sync}"
+                         AutomationProperties.HelpText="{conv:Localization Servers_Feeds_Title}">
+                <ui:Button.Icon>
+                  <ui:SymbolIcon Symbol="ArrowSync24" />
+                </ui:Button.Icon>
+              </ui:Button>
+
+              <CheckBox Margin="0,0,14,8"
+                        VerticalAlignment="Center"
+                        IsChecked="{Binding AutoTestAfterFeedSync, Mode=TwoWay}"
+                        Content="{conv:Localization Servers_Feeds_AutoTest}" />
+
+              <CheckBox Margin="0,0,0,8"
+                        VerticalAlignment="Center"
+                        IsChecked="{Binding AllowUnsignedFeeds, Mode=TwoWay}"
+                        Content="{conv:Localization Servers_Feeds_AllowUnsigned}"
+                        AutomationProperties.Name="{conv:Localization Servers_Feeds_AllowUnsigned}"
+                        AutomationProperties.HelpText="{conv:Localization Servers_Feeds_Title}" />
+            </WrapPanel>
+
+            <TextBlock Margin="0,4,0,0"
+                       Foreground="{DynamicResource PulseIosGreenBrush}"
+                       FontSize="12"
+                       Text="{Binding FeedSyncStatusMessage}"
+                       TextWrapping="Wrap"
+                       Visibility="{Binding FeedSyncStatusMessage, Converter={StaticResource NullToVisibilityConverter}}" />
+          </StackPanel>
+        </Border>
+
+        <!-- Custom GitHub / Raw HTTPS URL Loader -->
+        <Border Margin="0,0,0,14"
+                Padding="16"
+                CornerRadius="12"
+                Background="{DynamicResource PulseGlassCardBrush}"
+                BorderBrush="{DynamicResource PulseGlassCardBorderBrush}"
+                BorderThickness="1">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <ui:TextBox Grid.Column="0"
+                        Margin="0,0,10,0"
+                        PlaceholderText="{conv:Localization Servers_Feeds_CustomUrlPlaceholder}"
+                        Text="{Binding CustomFeedUrl, UpdateSourceTrigger=PropertyChanged}"
+                        AutomationProperties.Name="{conv:Localization Servers_Feeds_AddCustomUrl}" />
+            <ui:Button Grid.Column="1"
+                       Padding="14,7"
+                       Appearance="Secondary"
+                       Content="{conv:Localization Servers_Feeds_AddCustomUrl}"
+                       Command="{Binding AddAndSyncCustomFeedUrlCommand}"
+                       IsEnabled="{Binding IsSyncingFeeds, Converter={StaticResource InverseBoolConverter}}">
+              <ui:Button.Icon>
+                <ui:SymbolIcon Symbol="Link24" />
+              </ui:Button.Icon>
+            </ui:Button>
+          </Grid>
+        </Border>
+
+        <!-- Curated GitHub Sources 2-Column Grid -->
+        <ItemsControl ItemsSource="{Binding AvailableFeeds}">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
-              <WrapPanel Orientation="Horizontal" />
+              <UniformGrid Columns="2" />
             </ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate>
-              <RadioButton GroupName="CatalogCategoryChips"
-                           Style="{StaticResource PulseFilterChipStyle}"
-                           Command="{Binding DataContext.SelectCategoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                           CommandParameter="{Binding Category}"
-                           AutomationProperties.Name="{Binding Title}"
-                           AutomationProperties.HelpText="{Binding Description}">
-                <RadioButton.IsChecked>
-                  <MultiBinding Converter="{StaticResource EqualityToBoolConverter}" Mode="OneWay">
-                    <Binding Path="Category" />
-                    <Binding Path="DataContext.SelectedCategoryFilter" RelativeSource="{RelativeSource AncestorType=UserControl}" />
-                  </MultiBinding>
-                </RadioButton.IsChecked>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                  <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
-                  <Border Margin="8,0,0,0"
-                          Padding="6,1"
-                          CornerRadius="10"
-                          Background="{DynamicResource PulseCountBadgeBgBrush}"
-                          VerticalAlignment="Center">
-                    <TextBlock FontSize="11"
-                               FontWeight="SemiBold"
-                               Text="{Binding Count}"
-                               VerticalAlignment="Center" />
-                  </Border>
-                </StackPanel>
-              </RadioButton>
+              <Border Margin="0,0,10,10"
+                      Padding="14,12"
+                      CornerRadius="12"
+                      Background="{DynamicResource PulseInnerPanelBrush}"
+                      BorderBrush="{DynamicResource PulseInnerPanelBorderBrush}"
+                      BorderThickness="1">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+
+                  <CheckBox Grid.Column="0"
+                            Margin="0,2,10,0"
+                            VerticalAlignment="Top"
+                            IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                            AutomationProperties.Name="{Binding Name}" />
+
+                  <StackPanel Grid.Column="1">
+                    <DockPanel>
+                      <Border DockPanel.Dock="Right"
+                              Margin="8,0,0,0"
+                              Padding="7,2"
+                              CornerRadius="8"
+                              Background="{DynamicResource PulseProtocolBadgeBgBrush}"
+                              VerticalAlignment="Center">
+                        <TextBlock FontSize="10"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource PulseProtocolBadgeFgBrush}"
+                                   Text="{Binding CategoryLabel}" />
+                      </Border>
+                      <TextBlock FontSize="13"
+                                 FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                 Text="{Binding Name}"
+                                 TextTrimming="CharacterEllipsis"
+                                 ToolTip="{Binding Name}" />
+                    </DockPanel>
+                    <TextBlock Margin="0,4,0,0"
+                               FontSize="11"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               Text="{Binding Description}"
+                               TextWrapping="Wrap" />
+                    <TextBlock Margin="0,4,0,0"
+                               FontSize="11"
+                               FontWeight="Medium"
+                               Foreground="{DynamicResource PulseIosGreenBrush}"
+                               Text="{Binding StatusText}"
+                               Visibility="{Binding StatusText, Converter={StaticResource NullToVisibilityConverter}}" />
+                  </StackPanel>
+                </Grid>
+              </Border>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
-
-        <!-- Active Category Caption -->
-        <TextBlock Margin="2,0,0,10"
-                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                   FontSize="12"
-                   Text="{Binding ActiveCategoryDescription}"
-                   TextWrapping="Wrap" />
-
-        <!-- Toolbar: Search, Sort, Favorites, Benchmark Target & Run CTA -->
-        <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-          <ui:TextBox Width="230"
-                      Margin="0,0,10,6"
-                      PlaceholderText="{conv:Localization Auto_SearchInput}"
-                      Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
-                      AutomationProperties.Name="{conv:Localization Auto_SearchInput}"
-                      AutomationProperties.HelpText="{conv:Localization Auto_SearchInput}">
-            <ui:TextBox.Icon>
-              <ui:SymbolIcon Symbol="Search24" />
-            </ui:TextBox.Icon>
-          </ui:TextBox>
-
-          <ComboBox MinWidth="250"
-                    Margin="0,0,10,6"
-                    ItemsSource="{Binding AvailableSortOrders}"
-                    SelectedItem="{Binding SelectedSortOrder, Mode=TwoWay}"
-                    AutomationProperties.Name="{conv:Localization Servers_Sort_P50}"
-                    AutomationProperties.HelpText="{conv:Localization Servers_Sort_P50}">
-            <ComboBox.ItemTemplate>
-              <DataTemplate>
-                <TextBlock>
-                  <TextBlock.Text>
-                    <MultiBinding Converter="{StaticResource EnumLocalizationConverter}">
-                      <Binding />
-                      <Binding Path="[App_Title]" Source="{x:Static conv:LocalizationSource.Instance}" />
-                    </MultiBinding>
-                  </TextBlock.Text>
-                </TextBlock>
-              </DataTemplate>
-            </ComboBox.ItemTemplate>
-          </ComboBox>
-
-          <CheckBox Margin="0,0,14,6"
-                    VerticalAlignment="Center"
-                    IsChecked="{Binding ShowFavoritesOnly, Mode=TwoWay}"
-                    Content="{conv:Localization Servers_Filter_FavoritesOnly}"
-                    AutomationProperties.Name="{conv:Localization Servers_Filter_FavoritesOnly}"
-                    AutomationProperties.HelpText="{conv:Localization Servers_Filter_FavoritesOnly}" />
-
-          <ui:TextBox Width="190"
-                      Margin="0,0,8,6"
-                      PlaceholderText="{conv:Localization Servers_Benchmark_Target}"
-                      Text="{Binding BenchmarkTargetDomain, UpdateSourceTrigger=PropertyChanged}"
-                      AutomationProperties.Name="{conv:Localization Servers_Benchmark_Target}"
-                      AutomationProperties.HelpText="{conv:Localization Servers_Benchmark_Run}" />
-
-          <ui:Button Margin="0,0,8,6"
-                     Appearance="Primary"
-                     Content="{conv:Localization Servers_Benchmark_Run}"
-                     Command="{Binding RunSectionBenchmarkCommand}"
-                     IsEnabled="{Binding IsBenchmarkRunning, Converter={StaticResource InverseBoolConverter}}"
-                     AutomationProperties.Name="{conv:Localization Servers_Benchmark_Run}"
-                     AutomationProperties.HelpText="{conv:Localization Servers_Benchmark_Target}">
-            <ui:Button.Icon>
-              <ui:SymbolIcon Symbol="Play24" />
-            </ui:Button.Icon>
-          </ui:Button>
-
-          <ui:Button Margin="0,0,8,6"
-                     Appearance="Caution"
-                     Content="{conv:Localization Servers_Benchmark_Cancel}"
-                     Command="{Binding CancelBenchmarkCommand}"
-                     Visibility="{Binding IsBenchmarkRunning, Converter={StaticResource BooleanToVisibilityConverter}}"
-                     AutomationProperties.Name="{conv:Localization Servers_Benchmark_Cancel}"
-                     AutomationProperties.HelpText="{conv:Localization Servers_Benchmark_Cancel}">
-            <ui:Button.Icon>
-              <ui:SymbolIcon Symbol="Stop24" />
-            </ui:Button.Icon>
-          </ui:Button>
-        </WrapPanel>
-
-        <!-- Benchmark Progress -->
-        <StackPanel Visibility="{Binding IsBenchmarkRunning, Converter={StaticResource BooleanToVisibilityConverter}}"
-                    Margin="0,6,0,0"
-                    AutomationProperties.LiveSetting="Polite">
-          <ProgressBar Height="6"
-                       Minimum="0"
-                       Maximum="100"
-                       Value="{Binding BenchmarkProgressPercent}" />
-          <TextBlock Margin="0,4,0,0"
-                     Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                     FontSize="12">
-            <Run Text="{Binding BenchmarkCompletedCount, Mode=OneWay}" />
-            <Run Text=" / " />
-            <Run Text="{Binding BenchmarkTotalCount, Mode=OneWay}" />
-            <Run Text=" (" />
-            <Run Text="{Binding BenchmarkProgressPercent, Mode=OneWay, StringFormat={}{0:F1}%}" />
-            <Run Text=")" />
-          </TextBlock>
-        </StackPanel>
       </StackPanel>
-    </ui:Card>
+    </ScrollViewer>
 
-    <!-- Single Virtualized Dark Card ListView (No Tabs, No Fixed Height, No White Backgrounds) -->
-    <ListView Grid.Row="1"
-              Margin="0,0,0,12"
-              Style="{StaticResource PulseDarkCardListViewStyle}"
-              ItemContainerStyle="{StaticResource PulseDarkListViewItemStyle}"
-              ItemsSource="{Binding FilteredServers}"
-              SelectedItem="{Binding SelectedServer, Mode=TwoWay}"
-              ItemTemplate="{StaticResource ServerRowTemplate}"
-              AutomationProperties.Name="{conv:Localization Nav_Servers}" />
-
-    <!-- Collapsible Bottom Tools: Import sdns://, Feed Sync, Self-Hosted VPS Wizard -->
-    <ScrollViewer Grid.Row="2"
-                  MaxHeight="340"
+    <!-- SUB-TAB 2: Custom Phone / Manual DNS Import & Self-Hosted VPS Wizard -->
+    <ScrollViewer Grid.Row="1"
                   VerticalScrollBarVisibility="Auto"
-                  HorizontalScrollBarVisibility="Disabled">
+                  HorizontalScrollBarVisibility="Disabled"
+                  behaviors:SmoothScrollBehavior.IsEnabled="True"
+                  Visibility="{Binding IsManualImportTabSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
       <StackPanel>
-        <ui:CardExpander Header="{conv:Localization Servers_Import_Title}"
-                         Margin="0,0,0,8">
-          <ui:CardExpander.Icon>
-            <ui:SymbolIcon Symbol="Add24" />
-          </ui:CardExpander.Icon>
+        <!-- Prominent Custom DNS Card (Works with Phone Private DNS / DoH / DoT / Plain IP / sdns://) -->
+        <Border Margin="0,0,0,16"
+                Padding="18"
+                CornerRadius="14"
+                Background="{DynamicResource PulseGlassCardBrush}"
+                BorderBrush="{DynamicResource PulseGlassCardBorderBrush}"
+                BorderThickness="1">
           <StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+              <ui:SymbolIcon Symbol="AddCircle24" FontSize="18" Margin="0,0,8,0" Foreground="{DynamicResource PulseIosBlueBrush}" />
+              <TextBlock FontSize="15"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                         Text="{conv:Localization Servers_Import_Title}" />
+            </StackPanel>
+            <TextBlock Margin="0,0,0,12"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       Text="{conv:Localization Servers_Import_PhoneHint}"
+                       TextWrapping="Wrap" />
+
             <WrapPanel Orientation="Horizontal">
               <ui:TextBox Width="380"
                           Margin="0,0,8,8"
@@ -341,53 +637,31 @@
                          AutomationProperties.Name="{conv:Localization Servers_Import_Button}"
                          AutomationProperties.HelpText="{conv:Localization Servers_Import_Title}" />
             </WrapPanel>
-            <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+            <TextBlock Foreground="{DynamicResource PulseIosGreenBrush}"
                        FontSize="12"
                        Text="{Binding ImportStatusMessage}"
+                       TextWrapping="Wrap"
                        Visibility="{Binding ImportStatusMessage, Converter={StaticResource NullToVisibilityConverter}}" />
           </StackPanel>
-        </ui:CardExpander>
+        </Border>
 
-        <ui:CardExpander Header="{conv:Localization Servers_Feeds_Title}"
-                         Margin="0,0,0,8">
-          <ui:CardExpander.Icon>
-            <ui:SymbolIcon Symbol="ArrowSync24" />
-          </ui:CardExpander.Icon>
+        <!-- Self-Hosted VPS Wizard Card -->
+        <Border Padding="18"
+                CornerRadius="14"
+                Background="{DynamicResource PulseGlassCardBrush}"
+                BorderBrush="{DynamicResource PulseGlassCardBorderBrush}"
+                BorderThickness="1">
           <StackPanel>
-            <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-              <CheckBox Margin="0,0,16,8"
-                        VerticalAlignment="Center"
-                        IsChecked="{Binding AllowUnsignedFeeds, Mode=TwoWay}"
-                        Content="{conv:Localization Servers_Feeds_AllowUnsigned}"
-                        AutomationProperties.Name="{conv:Localization Servers_Feeds_AllowUnsigned}"
-                        AutomationProperties.HelpText="{conv:Localization Servers_Feeds_Title}" />
-              <ui:Button Margin="0,0,12,8"
-                         Appearance="Primary"
-                         Content="{conv:Localization Servers_Feeds_Sync}"
-                         Command="{Binding SyncFeedsCommand}"
-                         IsEnabled="{Binding IsSyncingFeeds, Converter={StaticResource InverseBoolConverter}}"
-                         AutomationProperties.Name="{conv:Localization Servers_Feeds_Sync}"
-                         AutomationProperties.HelpText="{conv:Localization Servers_Feeds_Title}">
-                <ui:Button.Icon>
-                  <ui:SymbolIcon Symbol="ArrowSync24" />
-                </ui:Button.Icon>
-              </ui:Button>
-            </WrapPanel>
-            <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                       FontSize="12"
-                       Text="{Binding FeedSyncStatusMessage}"
-                       Visibility="{Binding FeedSyncStatusMessage, Converter={StaticResource NullToVisibilityConverter}}" />
-          </StackPanel>
-        </ui:CardExpander>
-
-        <ui:CardExpander Header="{conv:Localization Servers_Vps_Title}">
-          <ui:CardExpander.Icon>
-            <ui:SymbolIcon Symbol="Server24" />
-          </ui:CardExpander.Icon>
-          <StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+              <ui:SymbolIcon Symbol="Server24" FontSize="18" Margin="0,0,8,0" />
+              <TextBlock FontSize="15"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                         Text="{conv:Localization Servers_Vps_Title}" />
+            </StackPanel>
             <TextBlock Margin="0,0,0,12"
                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                       FontSize="13"
+                       FontSize="12"
                        Text="{conv:Localization Servers_Vps_Desc}"
                        TextWrapping="Wrap" />
 
@@ -535,7 +809,7 @@
               </TabItem>
             </TabControl>
           </StackPanel>
-        </ui:CardExpander>
+        </Border>
       </StackPanel>
     </ScrollViewer>
   </Grid>

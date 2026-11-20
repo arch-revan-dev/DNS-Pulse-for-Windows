@@ -2,22 +2,24 @@ using System.Collections;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Data;
+using System.Windows.Threading;
 using DnsPulse.App.Services;
 using DnsPulse.App.ViewModels;
+using Microsoft.Extensions.DependencyInjection;
 using Wpf.Ui.Controls;
 
 namespace DnsPulse.App.Views;
 
 /// <summary>
-/// Primary Fluent 2 application shell hosting proactive advisories, 5-page navigation, and tray-minimize lifecycle.
+/// Primary application shell hosting proactive advisories, custom glass sidebar navigation, and tray-minimize lifecycle.
 /// </summary>
 public sealed partial class MainWindow : FluentWindow
 {
     private readonly MainShellViewModel _viewModel;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ThemeAppearanceService _themeService;
     private readonly object _collectionSyncLock = new();
     private bool _allowClose;
-    private bool _isSyncingNavigation;
 
     public MainWindow(
         MainShellViewModel viewModel,
@@ -29,13 +31,13 @@ public sealed partial class MainWindow : FluentWindow
         ArgumentNullException.ThrowIfNull(themeService);
 
         _viewModel = viewModel;
+        _serviceProvider = serviceProvider;
         _themeService = themeService;
         DataContext = viewModel;
 
         InitializeComponent();
         EnableCrossThreadCollectionSync();
 
-        RootNavigation.SetServiceProvider(serviceProvider);
         WindowBackdropType = _themeService.CurrentBackdrop;
 
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
@@ -80,7 +82,9 @@ public sealed partial class MainWindow : FluentWindow
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         WindowBackdropType = _themeService.CurrentBackdrop;
+        _themeService.ReapplyCurrentTheme();
         NavigateToSelectedPage();
+        _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, _themeService.ReapplyCurrentTheme);
         _ = _viewModel.Settings.TryAutoCheckUpdatesOnStartupAsync();
     }
 
@@ -100,31 +104,9 @@ public sealed partial class MainWindow : FluentWindow
         }
     }
 
-    private void OnNavigationNavigated(NavigationView sender, NavigatedEventArgs args)
-    {
-        if (_isSyncingNavigation)
-        {
-            return;
-        }
-
-        ShellPageKind target = args.Page switch
-        {
-            RoutingInspectorPage => ShellPageKind.Routing,
-            ServersCatalogPage => ShellPageKind.Servers,
-            DiagnosticsDoctorPage => ShellPageKind.Diagnostics,
-            SettingsSafetyPage => ShellPageKind.Settings,
-            _ => ShellPageKind.Overview
-        };
-
-        if (_viewModel.SelectedPage != target)
-        {
-            _viewModel.NavigateTo(target);
-        }
-    }
-
     private void NavigateToSelectedPage()
     {
-        if (!RootNavigation.IsLoaded)
+        if (!IsLoaded)
         {
             return;
         }
@@ -138,15 +120,8 @@ public sealed partial class MainWindow : FluentWindow
             _ => typeof(OverviewPage)
         };
 
-        _isSyncingNavigation = true;
-        try
-        {
-            RootNavigation.Navigate(pageType);
-        }
-        finally
-        {
-            _isSyncingNavigation = false;
-        }
+        object page = _serviceProvider.GetRequiredService(pageType);
+        PageHost.Content = page;
     }
 
     private void EnableCrossThreadCollectionSync()
@@ -161,8 +136,10 @@ public sealed partial class MainWindow : FluentWindow
             _viewModel.Routing.ServicePresets,
             _viewModel.Routing.TelemetryEvents,
             _viewModel.Routing.FilteredTelemetryEvents,
+            _viewModel.Routing.ImportedIpRanges,
             _viewModel.Servers.FilteredServers,
             _viewModel.Servers.CategoryFilterOptions,
+            _viewModel.Servers.AvailableFeeds,
             _viewModel.Servers.Tier1Servers,
             _viewModel.Servers.Tier2Servers,
             _viewModel.Servers.Tier3Servers,

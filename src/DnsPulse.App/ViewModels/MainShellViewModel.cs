@@ -853,7 +853,12 @@ public sealed partial class MainShellViewModel : ObservableObject
         Servers.ServerActivated += (_, e) =>
         {
             DnsServerEntry entry = e.Server;
-            if (TrustTierPolicy.CanServeDefaultInternet(entry.TrustTier, entry.Protocol))
+            if (entry.TrustTier == TrustTier.Tier3CustomOrSelfHosted && entry.Protocol != DnsProtocol.SniProxy)
+            {
+                Overview.SelectedTrustedUpstream = entry;
+                Overview.SelectedGeoUnlockUpstream = entry;
+            }
+            else if (TrustTierPolicy.CanServeDefaultInternet(entry.TrustTier, entry.Protocol))
             {
                 Overview.SelectedTrustedUpstream = entry;
             }
@@ -861,14 +866,24 @@ public sealed partial class MainShellViewModel : ObservableObject
             {
                 Overview.SelectedGeoUnlockUpstream = entry;
             }
+
+            _ = Overview.ActivateServerAndConnectAsync(entry);
         };
 
         Servers.FeedBypassDomainsDiscovered += async (_, e) =>
         {
-            foreach (string domain in e.Domains.Take(50))
-            {
-                await Routing.AddCustomGeoUnlockDomainAsync(domain).ConfigureAwait(false);
-            }
+            await Routing.AddCustomGeoUnlockDomainsAsync(e.Domains.Take(500)).ConfigureAwait(false);
+        };
+
+        Servers.FeedIpRangesDiscovered += (_, e) =>
+        {
+            Routing.ApplyImportedIpRanges(e.IpRanges.Take(500));
+        };
+
+        Servers.AutoPickFastestRequested += (_, _) =>
+        {
+            NavigateTo(ShellPageKind.Overview);
+            _ = Overview.AutoConnectBestAsync();
         };
 
         Diagnostics.ConfigureTargetProvider(

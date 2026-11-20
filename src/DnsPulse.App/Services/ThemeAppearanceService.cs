@@ -131,6 +131,15 @@ public sealed class ThemeAppearanceService : ObservableObject
     }
 
     /// <summary>
+    /// Re-applies the active theme, accent palette, and explicit foreground brushes to all open windows
+    /// (prevents WPF-UI Mica backdrop initialization from reverting inherited window foreground to black).
+    /// </summary>
+    public void ReapplyCurrentTheme()
+    {
+        ApplyTheme(_currentTheme != ApplicationTheme.Light, _currentAccentPreset.ToString());
+    }
+
+    /// <summary>
     /// Updates shared layout density tokens (<c>PulsePagePadding</c>, <c>PulseHeroPadding</c>, <c>PulseSectionMargin</c>)
     /// so enabling Compact Layout Mode immediately tightens page spacing across the shell.
     /// </summary>
@@ -212,6 +221,15 @@ public sealed class ThemeAppearanceService : ObservableObject
         }
 
         ApplyResourceTokenOverrides(app.Resources, targetTheme, preset, highContrast);
+
+        if (app.Resources["TextFillColorPrimaryBrush"] is System.Windows.Media.Brush primaryBrush)
+        {
+            foreach (Window window in app.Windows)
+            {
+                window.Foreground = primaryBrush;
+                System.Windows.Documents.TextElement.SetForeground(window, primaryBrush);
+            }
+        }
     }
 
     /// <summary>
@@ -362,6 +380,15 @@ public sealed class ThemeAppearanceService : ObservableObject
             palette.Primary.R,
             palette.Primary.G,
             palette.Primary.B));
+        SetBrush(resources, "PulseSidebarSurfaceBrush", isDark
+            ? MediaColor.FromArgb(0xCC, 0x14, 0x17, 0x1E)
+            : MediaColor.FromArgb(0xDD, 0xF3, 0xF6, 0xFA));
+        SetBrush(resources, "PulseSidebarBorderBrush", isDark
+            ? MediaColor.FromArgb(0x1E, 0xFF, 0xFF, 0xFF)
+            : MediaColor.FromArgb(0x18, 0x0F, 0x17, 0x2A));
+        SetBrush(resources, "PulseSidebarHoverBrush", isDark
+            ? MediaColor.FromArgb(0x18, 0xFF, 0xFF, 0xFF)
+            : MediaColor.FromArgb(0x12, 0x0F, 0x17, 0x2A));
     }
 
     private static void ApplyHighContrastSemanticOverrides(ResourceDictionary resources)
@@ -404,6 +431,9 @@ public sealed class ThemeAppearanceService : ObservableObject
         SetBrush(resources, "PulseIosBlueBrush", highlight);
         SetBrush(resources, "PulseIosRedBrush", windowText);
         SetBrush(resources, "PulseOrbHaloBrush", control);
+        SetBrush(resources, "PulseSidebarSurfaceBrush", window);
+        SetBrush(resources, "PulseSidebarBorderBrush", windowText);
+        SetBrush(resources, "PulseSidebarHoverBrush", control);
     }
 
     private static void ApplyAccessibleAccentOverrides(

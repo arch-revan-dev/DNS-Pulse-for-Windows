@@ -124,6 +124,7 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
     private bool _suppressQuickServicePersistence;
     private bool _suppressSelectionPersistence;
     private CancellationTokenSource? _watchdogCts;
+    private CancellationTokenSource? _speedOptimizerCts;
     private bool _disposed;
 
     [ObservableProperty]
@@ -230,6 +231,18 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _checklistHttpReachableSummary = string.Empty;
+
+    [ObservableProperty]
+    private bool _isOptimizingSpeed;
+
+    [ObservableProperty]
+    private string _speedOptimizerStatusText = string.Empty;
+
+    [ObservableProperty]
+    private int _speedOptimizerCheckedCount;
+
+    [ObservableProperty]
+    private int _speedOptimizerTotalCount;
 
     public OverviewViewModel(
         IPulseRuntimeService runtimeService,
@@ -442,6 +455,8 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
             return;
         }
 
+        CancelSpeedOptimization();
+
         IsBusy = true;
         IsAutoFinding = true;
         IsConnecting = true;
@@ -479,11 +494,12 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
             List<DnsServerEntry> candidates = await GetRankedGeoCandidatesAsync(targetDomain, catalog, cancellationToken).ConfigureAwait(false);
 
             DnsServerEntry? bestGeoServer = null;
+            double bestGeoLatencyMs = double.MaxValue;
             DiagnosticReport? bestFailureReport = null;
+            HashSet<string> probedIds = new(StringComparer.OrdinalIgnoreCase);
 
             if (candidates.Count > 0)
             {
-                List<DnsServerEntry> probeBatch = [.. candidates.Take(10)];
                 DiagnosticProbeOptions probeOptions = new()
                 {
                     TransportProbeSamples = 2,
@@ -493,100 +509,101 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
                 };
 
                 List<(DnsServerEntry Server, DiagnosticReport Report)> probed = [];
-                using CancellationTokenSource earlyStopCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                using SemaphoreSlim gate = new(4, 4);
-                int completedCount = 0;
-                int healthyFound = 0;
-                Lock probeLock = new();
+                int totalInitialCap = Math.Min(candidates.Count, 24);
+                int waveSize = 10;
 
-                Task[] probeTasks = new Task[probeBatch.Count];
-                for (int i = 0; i < probeBatch.Count; i++)
+                for (int waveStart = 0; waveStart < totalInitialCap && bestGeoServer is null; waveStart += waveSize)
                 {
-                    DnsServerEntry candidate = probeBatch[i];
-                    probeTasks[i] = Task.Run(async () =>
+                    List<DnsServerEntry> probeBatch = [.. candidates.Skip(waveStart).Take(Math.Min(waveSize, totalInitialCap - waveStart))];
+                    if (probeBatch.Count == 0)
                     {
-                        await gate.WaitAsync(earlyStopCts.Token).ConfigureAwait(false);
-                        try
+                        break;
+                    }
+
+                    using CancellationTokenSource earlyStopCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    using SemaphoreSlim gate = new(4, 4);
+                    int completedCount = 0;
+                    int healthyFound = 0;
+                    Lock probeLock = new();
+
+                    Task[] probeTasks = new Task[probeBatch.Count];
+                    for (int i = 0; i < probeBatch.Count; i++)
+                    {
+                        DnsServerEntry candidate = probeBatch[i];
+                        probeTasks[i] = Task.Run(async () =>
                         {
-                            DiagnosticReport? report = await RunQuickProbeAsync(candidate, targetDomain, probeOptions, earlyStopCts.Token).ConfigureAwait(false);
-                            if (report is null)
+                            await gate.WaitAsync(earlyStopCts.Token).ConfigureAwait(false);
+                            try
                             {
-                                return;
-                            }
-
-                            DnsServerEntry updated = ApplyReportToServerEntry(candidate, report);
-                            if (_catalogRepository is not null)
-                            {
-                                await _catalogRepository.UpdateProbeMetricsAsync(updated, cancellationToken).ConfigureAwait(false);
-                            }
-
-                            _catalogEntryUpdatedHandler?.Invoke(updated);
-
-                            bool shouldCancel;
-                            lock (probeLock)
-                            {
-                                probed.Add((updated, report));
-                                if (report.Verdict == DiagnosticVerdict.Healthy && report.TlsHandshakeSucceeded && report.CompanionPassed != false)
+                                DiagnosticReport? report = await RunQuickProbeAsync(candidate, targetDomain, probeOptions, earlyStopCts.Token).ConfigureAwait(false);
+                                if (report is null)
                                 {
-                                    healthyFound++;
+                                    return;
                                 }
 
-                                completedCount++;
-                                int progress = 10 + (int)Math.Round(completedCount / (double)probeBatch.Count * 45.0, MidpointRounding.AwayFromZero);
-                                AutoSetupProgress = Math.Clamp(progress, 10, 55);
+                                DnsServerEntry updated = ApplyReportToServerEntry(candidate, report);
+                                if (_catalogRepository is not null)
+                                {
+                                    await _catalogRepository.UpdateProbeMetricsAsync(updated, cancellationToken).ConfigureAwait(false);
+                                }
 
-                                shouldCancel = healthyFound >= 2;
+                                _catalogEntryUpdatedHandler?.Invoke(updated);
+
+                                bool shouldCancel;
+                                lock (probeLock)
+                                {
+                                    probedIds.Add(updated.Id);
+                                    probed.Add((updated, report));
+                                    if (IsStrictlyVerifiedHealthy(report))
+                                    {
+                                        healthyFound++;
+                                    }
+
+                                    completedCount++;
+                                    int progress = 10 + (int)Math.Round((waveStart + completedCount) / (double)totalInitialCap * 45.0, MidpointRounding.AwayFromZero);
+                                    AutoSetupProgress = Math.Clamp(progress, 10, 55);
+
+                                    shouldCancel = healthyFound >= 2;
+                                }
+
+                                if (shouldCancel)
+                                {
+                                    await earlyStopCts.CancelAsync().ConfigureAwait(false);
+                                }
                             }
-
-                            if (shouldCancel)
+                            catch (OperationCanceledException) when (earlyStopCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                             {
-                                await earlyStopCts.CancelAsync().ConfigureAwait(false);
+                                // Early stop after finding verified healthy fast servers.
                             }
-                        }
-                        catch (OperationCanceledException) when (earlyStopCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-                        {
-                            // Early stop after finding healthy fast servers.
-                        }
-                        finally
-                        {
-                            gate.Release();
-                        }
-                    }, earlyStopCts.Token);
-                }
+                            finally
+                            {
+                                gate.Release();
+                            }
+                        }, earlyStopCts.Token);
+                    }
 
-                try
-                {
-                    await Task.WhenAll(probeTasks).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (earlyStopCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-                {
-                    // Early stop triggered by finding >= 2 healthy fast candidates.
-                }
+                    try
+                    {
+                        await Task.WhenAll(probeTasks).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (earlyStopCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                    {
+                        // Early stop triggered by finding >= 2 verified healthy fast candidates.
+                    }
 
-                (DnsServerEntry Server, DiagnosticReport Report)? healthyWinner = probed
-                    .Where(static item => item.Report.Verdict == DiagnosticVerdict.Healthy
-                        && item.Report.TlsHandshakeSucceeded
-                        && item.Report.CompanionPassed != false)
-                    .OrderBy(static item => item.Server.IsEncrypted ? 0 : 1)
-                    .ThenBy(static item => item.Report.LatencyP50Ms ?? item.Server.LatencyP50Ms ?? double.MaxValue)
-                    .Cast<(DnsServerEntry Server, DiagnosticReport Report)?>()
-                    .FirstOrDefault();
-
-                if (healthyWinner.HasValue)
-                {
-                    bestGeoServer = healthyWinner.Value.Server;
-                }
-                else
-                {
-                    (DnsServerEntry Server, DiagnosticReport Report)? sniFallback = probed
-                        .Where(static item => item.Report.Verdict == DiagnosticVerdict.TlsSniDpiReset)
-                        .OrderBy(static item => item.Report.LatencyP50Ms ?? item.Server.LatencyP50Ms ?? double.MaxValue)
+                    (DnsServerEntry Server, DiagnosticReport Report)? healthyWinner = probed
+                        .Where(static item => IsStrictlyVerifiedHealthy(item.Report))
+                        .OrderBy(static item => item.Server.IsEncrypted ? 0 : 1)
+                        .ThenBy(static item => item.Report.LatencyP50Ms ?? item.Server.LatencyP50Ms ?? double.MaxValue)
                         .Cast<(DnsServerEntry Server, DiagnosticReport Report)?>()
                         .FirstOrDefault();
 
-                    if (sniFallback.HasValue && settings.EnableLocalTlsSplitPac)
+                    if (healthyWinner.HasValue)
                     {
-                        bestGeoServer = sniFallback.Value.Server;
+                        bestGeoServer = healthyWinner.Value.Server;
+                        bestGeoLatencyMs = healthyWinner.Value.Report.LatencyP50Ms
+                            ?? healthyWinner.Value.Server.LatencyP50Ms
+                            ?? double.MaxValue;
                     }
                     else
                     {
@@ -640,6 +657,20 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
             await VerifyTargetInternalAsync(targetDomain, settings, cancellationToken).ConfigureAwait(false);
             await PersistQuickServiceChoiceAsync(targetDomain, cancellationToken).ConfigureAwait(false);
             AutoSetupProgress = 100;
+
+            List<DnsServerEntry> remainingCandidates =
+            [
+                .. candidates.Where(c => !probedIds.Contains(c.Id))
+            ];
+            if (IsConnected && remainingCandidates.Count > 0)
+            {
+                StartContinuousFastestSearch(
+                    targetDomain,
+                    bestGeoServer,
+                    bestGeoLatencyMs,
+                    remainingCandidates,
+                    settings);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -808,6 +839,7 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
         {
             if (IsConnected)
             {
+                CancelSpeedOptimization();
                 IsDisconnecting = true;
                 NotifyButtonStateChanged();
                 ServiceStatusSnapshot disconnected = await _runtimeService.DisconnectAsync(cancellationToken).ConfigureAwait(false);
@@ -854,6 +886,135 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
             IsBusy = false;
             NotifyButtonStateChanged();
         }
+    }
+
+    /// <summary>
+    /// Immediately activates the selected server (including custom/phone DNS servers) and applies it
+    /// live by hot-swapping if already connected or connecting right away if disconnected.
+    /// </summary>
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Direct server activation surfaces any connection error inline without crashing the shell.")]
+    public async Task ActivateServerAndConnectAsync(
+        DnsServerEntry server,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(server);
+        if (IsBusy)
+        {
+            return;
+        }
+
+        CancelSpeedOptimization();
+        IsBusy = true;
+        IsConnecting = !IsConnected;
+        LastErrorMessage = null;
+        NotifyButtonStateChanged();
+
+        try
+        {
+            bool isCustomDirectDns = server.TrustTier == TrustTier.Tier3CustomOrSelfHosted
+                && server.Protocol != DnsProtocol.SniProxy;
+
+            if (isCustomDirectDns)
+            {
+                // User explicitly chose their own custom DNS (e.g., working mobile/private DoH/DoT/UDP):
+                // apply it to both Geo-Unlock and Default Internet zones so every request uses it.
+                SelectedTrustedUpstream = server;
+                SelectedGeoUnlockUpstream = server;
+            }
+            else if (TrustTierPolicy.CanServeDefaultInternet(server.TrustTier, server.Protocol))
+            {
+                SelectedTrustedUpstream = server;
+            }
+            else if (TrustTierPolicy.CanServeGeoUnlock(server.TrustTier))
+            {
+                SelectedGeoUnlockUpstream = server;
+            }
+
+            IReadOnlyList<DnsServerEntry> catalog = _catalogProvider();
+            EnsureDefaultUpstreamsSelected(catalog);
+
+            List<DnsServerEntry> trustedPool =
+            [
+                .. catalog.Where(static s => TrustTierPolicy.CanServeDefaultInternet(s.TrustTier, s.Protocol)).Take(6)
+            ];
+
+            PulseAppSettings settings = _settingsProvider();
+            DnsServerEntry? effectiveGeo = SelectedStrategyProfile == StrategyProfileKind.EncryptedDnsOnly && !isCustomDirectDns
+                ? null
+                : SelectedGeoUnlockUpstream;
+
+            ServiceStatusSnapshot snapshot;
+            if (IsConnected && _runtimeService is HybridPulseRuntimeService hybridRuntime)
+            {
+                snapshot = await hybridRuntime.HotSwapUpstreamsAsync(
+                    SelectedTrustedUpstream,
+                    effectiveGeo,
+                    trustedPool,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                if (IsConnected)
+                {
+                    await _runtimeService.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                snapshot = await _runtimeService.ConnectAsync(
+                    SelectedTrustedUpstream,
+                    effectiveGeo,
+                    trustedPool,
+                    settings,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            ApplySnapshot(snapshot);
+            OnPropertyChanged(nameof(TrustedUpstreamName));
+            OnPropertyChanged(nameof(TrustedUpstreamBadge));
+            OnPropertyChanged(nameof(ActiveGeoUnlockName));
+            OnPropertyChanged(nameof(ActiveNodeSubtitle));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            LastErrorMessage = string.Format(CultureInfo.CurrentCulture, _localization["Error_ConnectionFailed"], ex.Message);
+            HasDegradedCondition = true;
+            UpdateHeroState();
+        }
+        finally
+        {
+            IsConnecting = false;
+            IsBusy = false;
+            NotifyButtonStateChanged();
+        }
+    }
+
+    [RelayCommand]
+    public void CancelSpeedOptimization()
+    {
+        CancellationTokenSource? existing = Interlocked.Exchange(ref _speedOptimizerCts, null);
+        if (existing is not null)
+        {
+            try
+            {
+                existing.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            finally
+            {
+                existing.Dispose();
+            }
+        }
+
+        RunOnUiThread(() =>
+        {
+            IsOptimizingSpeed = false;
+            SpeedOptimizerStatusText = string.Empty;
+        });
     }
 
     [RelayCommand]
@@ -1053,6 +1214,7 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
         _watchdogCts?.Cancel();
         _watchdogCts?.Dispose();
         _watchdogCts = null;
+        CancelSpeedOptimization();
         IsWatchdogActive = false;
         WatchdogStatusSummary = string.Empty;
     }
@@ -1161,6 +1323,235 @@ public sealed partial class OverviewViewModel : ObservableObject, IDisposable
                 .ThenBy(static s => s.IsFavorite ? 0 : 1)
                 .ThenBy(static s => s.LatencyP50Ms ?? s.LastLatencyMs ?? double.MaxValue)
         ];
+    }
+
+    private static bool IsStrictlyVerifiedHealthy(DiagnosticReport report)
+    {
+        return report.Verdict == DiagnosticVerdict.Healthy
+            && report.TlsHandshakeSucceeded
+            && report.CompanionPassed != false
+            && report.ResolvedAddresses.Count > 0;
+    }
+
+    private void StartContinuousFastestSearch(
+        string targetDomain,
+        DnsServerEntry currentBest,
+        double currentBestLatencyMs,
+        IReadOnlyList<DnsServerEntry> remainingCandidates,
+        PulseAppSettings settings)
+    {
+        CancelSpeedOptimization();
+
+        CancellationTokenSource optimizerCts = new();
+        _speedOptimizerCts = optimizerCts;
+        CancellationToken token = optimizerCts.Token;
+
+        List<DnsServerEntry> queue = [.. remainingCandidates.Take(60)];
+        RunOnUiThread(() =>
+        {
+            IsOptimizingSpeed = true;
+            SpeedOptimizerCheckedCount = 0;
+            SpeedOptimizerTotalCount = queue.Count;
+            SpeedOptimizerStatusText = string.Format(
+                CultureInfo.CurrentCulture,
+                _localization["Overview_Optimizer_Searching"],
+                0,
+                queue.Count);
+        });
+
+        _ = Task.Run(async () =>
+        {
+            await RunContinuousFastestSearchLoopAsync(
+                targetDomain,
+                currentBest,
+                currentBestLatencyMs,
+                queue,
+                settings,
+                token).ConfigureAwait(false);
+        }, token);
+    }
+
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Background fastest-node optimizer must never crash the UI on transient probe or network errors.")]
+    private async Task RunContinuousFastestSearchLoopAsync(
+        string targetDomain,
+        DnsServerEntry currentBest,
+        double currentBestLatencyMs,
+        IReadOnlyList<DnsServerEntry> candidates,
+        PulseAppSettings settings,
+        CancellationToken cancellationToken)
+    {
+        DnsServerEntry bestServer = currentBest;
+        double bestLatencyMs = currentBestLatencyMs;
+        int checkedCount = 0;
+        int upgradesCount = 0;
+        Lock stateLock = new();
+
+        DiagnosticProbeOptions probeOptions = new()
+        {
+            TransportProbeSamples = 2,
+            ProbeTimeout = TimeSpan.FromMilliseconds(Math.Clamp(settings.ProbeTimeoutMs, 1200, 3000)),
+            IncludeTlsAndApplicationProbes = true,
+            ProbeCompanionDomains = true
+        };
+
+        using SemaphoreSlim gate = new(2, 2);
+
+        try
+        {
+            Task[] tasks = new Task[candidates.Count];
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                DnsServerEntry candidate = candidates[i];
+                tasks[i] = Task.Run(async () =>
+                {
+                    await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        if (_disposed || !IsConnected)
+                        {
+                            return;
+                        }
+
+                        DiagnosticReport? report = await RunQuickProbeAsync(candidate, targetDomain, probeOptions, cancellationToken).ConfigureAwait(false);
+                        if (report is null)
+                        {
+                            return;
+                        }
+
+                        DnsServerEntry updated = ApplyReportToServerEntry(candidate, report);
+                        if (_catalogRepository is not null)
+                        {
+                            await _catalogRepository.UpdateProbeMetricsAsync(updated, cancellationToken).ConfigureAwait(false);
+                        }
+
+                        _catalogEntryUpdatedHandler?.Invoke(updated);
+
+                        bool candidateIsSignificantlyFaster = false;
+                        double candidateLatency = report.LatencyP50Ms ?? updated.LatencyP50Ms ?? double.MaxValue;
+                        if (IsStrictlyVerifiedHealthy(report) && candidateLatency < double.MaxValue)
+                        {
+                            lock (stateLock)
+                            {
+                                double thresholdMs = Math.Min(bestLatencyMs - 15.0, bestLatencyMs * 0.85);
+                                if (candidateLatency < thresholdMs)
+                                {
+                                    candidateIsSignificantlyFaster = true;
+                                }
+                            }
+                        }
+
+                        if (candidateIsSignificantlyFaster && !cancellationToken.IsCancellationRequested && IsConnected)
+                        {
+                            // Double-check candidate with a fresh confirmation probe before hot-swapping.
+                            DiagnosticReport? confirmReport = await RunQuickProbeAsync(updated, targetDomain, probeOptions, cancellationToken).ConfigureAwait(false);
+                            double confirmedLatency = confirmReport?.LatencyP50Ms ?? double.MaxValue;
+                            if (confirmReport is not null && IsStrictlyVerifiedHealthy(confirmReport))
+                            {
+                                bool shouldSwap = false;
+                                lock (stateLock)
+                                {
+                                    double thresholdMs = Math.Min(bestLatencyMs - 15.0, bestLatencyMs * 0.85);
+                                    if (confirmedLatency < thresholdMs)
+                                    {
+                                        bestServer = ApplyReportToServerEntry(updated, confirmReport);
+                                        bestLatencyMs = confirmedLatency;
+                                        upgradesCount++;
+                                        shouldSwap = true;
+                                    }
+                                }
+
+                                if (shouldSwap && IsConnected && !cancellationToken.IsCancellationRequested)
+                                {
+                                    DnsServerEntry promoted = bestServer;
+                                    if (_runtimeService is HybridPulseRuntimeService hybridRuntime)
+                                    {
+                                        ServiceStatusSnapshot swapped = await hybridRuntime.HotSwapGeoUnlockUpstreamAsync(
+                                            promoted,
+                                            cancellationToken).ConfigureAwait(false);
+                                        RunOnUiThread(() =>
+                                        {
+                                            SelectedGeoUnlockUpstream = promoted;
+                                            ApplySnapshot(swapped);
+                                            RecordLatencySample(confirmedLatency);
+                                            SpeedOptimizerStatusText = string.Format(
+                                                CultureInfo.CurrentCulture,
+                                                _localization["Overview_Optimizer_Upgraded"],
+                                                promoted.Name,
+                                                confirmedLatency.ToString("F0", CultureInfo.InvariantCulture));
+                                        });
+                                    }
+                                    else
+                                    {
+                                        RunOnUiThread(() =>
+                                        {
+                                            SelectedGeoUnlockUpstream = promoted;
+                                            RecordLatencySample(confirmedLatency);
+                                        });
+                                    }
+
+                                    Log.Information(
+                                        "Continuous speed optimizer hot-swapped to faster verified server {ServerName} ({LatencyMs}ms).",
+                                        promoted.Name,
+                                        confirmedLatency.ToString("F0", CultureInfo.InvariantCulture));
+                                }
+                            }
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Debug(ex, "Speed optimizer skipped candidate {ServerId}.", candidate.Id);
+                    }
+                    finally
+                    {
+                        int currentChecked = Interlocked.Increment(ref checkedCount);
+                        int total = candidates.Count;
+                        RunOnUiThread(() =>
+                        {
+                            SpeedOptimizerCheckedCount = currentChecked;
+                            if (IsOptimizingSpeed && upgradesCount == 0)
+                            {
+                                SpeedOptimizerStatusText = string.Format(
+                                    CultureInfo.CurrentCulture,
+                                    _localization["Overview_Optimizer_Searching"],
+                                    currentChecked,
+                                    total);
+                            }
+                        });
+                        gate.Release();
+                    }
+                }, cancellationToken);
+            }
+
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+
+            if (!cancellationToken.IsCancellationRequested && IsConnected)
+            {
+                string finalSummary = string.Format(
+                    CultureInfo.CurrentCulture,
+                    _localization["Overview_Optimizer_Done"],
+                    bestServer.Name,
+                    bestLatencyMs < double.MaxValue ? bestLatencyMs.ToString("F0", CultureInfo.InvariantCulture) : "—");
+                RunOnUiThread(() =>
+                {
+                    IsOptimizingSpeed = false;
+                    SpeedOptimizerStatusText = finalSummary;
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Continuous speed optimizer ended early.");
+        }
+        finally
+        {
+            RunOnUiThread(() => IsOptimizingSpeed = false);
+        }
     }
 
     private async Task<DiagnosticReport?> RunQuickProbeAsync(

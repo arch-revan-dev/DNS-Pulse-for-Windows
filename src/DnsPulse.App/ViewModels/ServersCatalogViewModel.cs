@@ -33,6 +33,53 @@ public sealed class FeedBypassDomainsDiscoveredEventArgs(IReadOnlyList<string> d
 }
 
 /// <summary>
+/// Event arguments carrying IP/CIDR ranges discovered via repository synchronization.
+/// </summary>
+public sealed class FeedIpRangesDiscoveredEventArgs(IReadOnlyList<string> ipRanges) : EventArgs
+{
+    public IReadOnlyList<string> IpRanges { get; } = ipRanges ?? throw new ArgumentNullException(nameof(ipRanges));
+}
+
+/// <summary>
+/// Selectable remote repository item for DNS server, domain, and IP/CIDR databases.
+/// </summary>
+public sealed partial class FeedSourceSelectableItem : ObservableObject
+{
+    [ObservableProperty]
+    private bool _isSelected;
+
+    [ObservableProperty]
+    private string _statusText = string.Empty;
+
+    [ObservableProperty]
+    private int _importedCount;
+
+    public FeedSourceSelectableItem(
+        FeedSourceDescriptor descriptor,
+        string categoryLabel,
+        bool isSelected)
+    {
+        Descriptor = descriptor ?? throw new ArgumentNullException(nameof(descriptor));
+        CategoryLabel = categoryLabel;
+        _isSelected = isSelected;
+    }
+
+    public FeedSourceDescriptor Descriptor { get; }
+
+    public string Id => Descriptor.Id;
+
+    public string Name => Descriptor.Name;
+
+    public string Description => Descriptor.Description ?? Descriptor.FeedUrl;
+
+    public string FeedUrl => Descriptor.FeedUrl;
+
+    public FeedCategory Category => Descriptor.Category;
+
+    public string CategoryLabel { get; }
+}
+
+/// <summary>
 /// Sort modes available for the DNS server catalog.
 /// </summary>
 public enum ServerSortOrder
@@ -220,6 +267,18 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
     [ObservableProperty]
     private FeedSyncSummary? _lastFeedSyncSummary;
 
+    [ObservableProperty]
+    private int _selectedSubTabIndex;
+
+    [ObservableProperty]
+    private string _customFeedUrl = string.Empty;
+
+    [ObservableProperty]
+    private bool _autoTestAfterFeedSync = true;
+
+    [ObservableProperty]
+    private int _importedIpRangesCount;
+
     public ServersCatalogViewModel(
         PulseCatalogRepository repository,
         IPulseRuntimeService runtimeService,
@@ -235,12 +294,25 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
 
         _localization.CultureChanged += OnCultureChanged;
         InitializeCategoryFilterOptions();
+        InitializeAvailableFeeds();
         RebuildTierSections();
     }
 
     public event EventHandler<ServerActivatedEventArgs>? ServerActivated;
 
     public event EventHandler<FeedBypassDomainsDiscoveredEventArgs>? FeedBypassDomainsDiscovered;
+
+    public event EventHandler<FeedIpRangesDiscoveredEventArgs>? FeedIpRangesDiscovered;
+
+    public event EventHandler? AutoPickFastestRequested;
+
+    public ObservableCollection<FeedSourceSelectableItem> AvailableFeeds { get; } = [];
+
+    public bool IsCatalogTabSelected => SelectedSubTabIndex == 0;
+
+    public bool IsDatabasesTabSelected => SelectedSubTabIndex == 1;
+
+    public bool IsManualImportTabSelected => SelectedSubTabIndex == 2;
 
     public LocalizationService Localization => _localization;
 
@@ -549,12 +621,182 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
             FeedSyncSummary summary = await feedService.SyncAllAsync(mode, cancellationToken: cancellationToken).ConfigureAwait(false);
             LastFeedSyncSummary = summary;
 
-            await ApplyFeedSyncResultsAsync(summary.AggregatedServers, summary.AggregatedBypassDomains, cancellationToken)
-                .ConfigureAwait(false);
+            await ApplyFeedSyncResultsAsync(
+                summary.AggregatedServers,
+                summary.AggregatedBypassDomains,
+                summary.AggregatedIpRanges,
+                cancellationToken).ConfigureAwait(false);
 
             FeedSyncStatusMessage = string.Create(
                 CultureInfo.InvariantCulture,
-                $"{summary.AggregatedServers.Count} servers, {summary.AggregatedBypassDomains.Count} domains ({mode})");
+                $"{summary.AggregatedServers.Count} servers, {summary.AggregatedBypassDomains.Count} domains, {summary.AggregatedIpRanges.Count} IP ranges ({mode})");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            FeedSyncStatusMessage = ex.Message;
+        }
+        finally
+        {
+            IsSyncingFeeds = false;
+        }
+    }
+
+    [RelayCommand]
+    public void SelectSubTab(int tabIndex)
+    {
+        SelectedSubTabIndex = Math.Clamp(tabIndex, 0, 2);
+    }
+
+    [RelayCommand]
+    public void SelectFeedCategoryPreset(string? preset)
+    {
+        string normalized = preset?.Trim().ToUpperInvariant() ?? "ALL";
+        foreach (FeedSourceSelectableItem item in AvailableFeeds)
+        {
+            item.IsSelected = normalized switch
+            {
+                "DNS" => item.Category == FeedCategory.DnsServers,
+                "DOMAINS" => item.Category == FeedCategory.DomainList,
+                "IPS" => item.Category == FeedCategory.IpSubnetList,
+                _ => true
+            };
+        }
+    }
+
+    [RelayCommand]
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Feed database sync errors are surfaced cleanly via FeedSyncStatusMessage.")]
+    public async Task SyncSelectedFeedsAndTestAsync(CancellationToken cancellationToken = default)
+    {
+        if (IsSyncingFeeds)
+        {
+            return;
+        }
+
+        List<FeedSourceDescriptor> selectedDescriptors =
+        [
+            .. AvailableFeeds.Where(static item => item.IsSelected).Select(static item => item.Descriptor)
+        ];
+
+        bool hasCustomUrl = !string.IsNullOrWhiteSpace(CustomFeedUrl);
+        if (hasCustomUrl)
+        {
+            FeedSourceDescriptor? customDesc = SignedFeedSyncService.CreateCustomUrlDescriptor(CustomFeedUrl.Trim());
+            if (customDesc is not null)
+            {
+                selectedDescriptors.Add(customDesc);
+            }
+        }
+
+        if (selectedDescriptors.Count == 0)
+        {
+            FeedSyncStatusMessage = _localization["Servers_Feeds_NoneSelected"];
+            return;
+        }
+
+        IsSyncingFeeds = true;
+        FeedSyncStatusMessage = _localization["Servers_Feeds_Syncing"];
+        try
+        {
+            using SignedFeedSyncService feedService = new(_runtimeService.BootstrapResolver);
+            FeedVerificationMode mode = hasCustomUrl || AllowUnsignedFeeds
+                ? FeedVerificationMode.AllowUnsignedFeeds
+                : FeedVerificationMode.BuiltInCommunityTrusted;
+
+            FeedSyncSummary summary = await feedService.SyncAllAsync(
+                mode,
+                feeds: selectedDescriptors,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            LastFeedSyncSummary = summary;
+            UpdateFeedItemStatuses(summary);
+
+            await ApplyFeedSyncResultsAsync(
+                summary.AggregatedServers,
+                summary.AggregatedBypassDomains,
+                summary.AggregatedIpRanges,
+                cancellationToken).ConfigureAwait(false);
+
+            FeedSyncStatusMessage = string.Format(
+                CultureInfo.CurrentCulture,
+                _localization["Servers_Feeds_ResultFormat"],
+                summary.AggregatedServers.Count,
+                summary.AggregatedBypassDomains.Count,
+                summary.AggregatedIpRanges.Count);
+
+            if (hasCustomUrl)
+            {
+                CustomFeedUrl = string.Empty;
+            }
+
+            if (AutoTestAfterFeedSync && summary.AggregatedServers.Count > 0)
+            {
+                SelectedSubTabIndex = 0;
+                AutoPickFastestRequested?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            FeedSyncStatusMessage = ex.Message;
+        }
+        finally
+        {
+            IsSyncingFeeds = false;
+        }
+    }
+
+    [RelayCommand]
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Custom feed URL validation and fetch errors are surfaced via FeedSyncStatusMessage.")]
+    public async Task AddAndSyncCustomFeedUrlAsync(CancellationToken cancellationToken = default)
+    {
+        if (IsSyncingFeeds)
+        {
+            return;
+        }
+
+        string trimmed = CustomFeedUrl.Trim();
+        FeedSourceDescriptor? customDesc = SignedFeedSyncService.CreateCustomUrlDescriptor(trimmed);
+        if (customDesc is null)
+        {
+            FeedSyncStatusMessage = string.Format(
+                CultureInfo.CurrentCulture,
+                _localization["Error_InvalidInput"],
+                "HTTPS URL");
+            return;
+        }
+
+        IsSyncingFeeds = true;
+        FeedSyncStatusMessage = _localization["Servers_Feeds_Syncing"];
+        try
+        {
+            using SignedFeedSyncService feedService = new(_runtimeService.BootstrapResolver);
+            FeedSyncSummary summary = await feedService.SyncAllAsync(
+                FeedVerificationMode.AllowUnsignedFeeds,
+                feeds: [customDesc],
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            LastFeedSyncSummary = summary;
+            await ApplyFeedSyncResultsAsync(
+                summary.AggregatedServers,
+                summary.AggregatedBypassDomains,
+                summary.AggregatedIpRanges,
+                cancellationToken).ConfigureAwait(false);
+
+            FeedSyncStatusMessage = string.Format(
+                CultureInfo.CurrentCulture,
+                _localization["Servers_Feeds_ResultFormat"],
+                summary.AggregatedServers.Count,
+                summary.AggregatedBypassDomains.Count,
+                summary.AggregatedIpRanges.Count);
+
+            CustomFeedUrl = string.Empty;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -610,6 +852,7 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
             await ApplyFeedSyncResultsAsync(
                 result.EffectiveDiscoveredServers,
                 result.EffectiveBypassDomains,
+                result.NetworkSummary?.AggregatedIpRanges ?? [],
                 cancellationToken).ConfigureAwait(false);
 
             FeedSyncStatusMessage = string.Create(
@@ -636,6 +879,7 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
     private async Task ApplyFeedSyncResultsAsync(
         IReadOnlyList<DnsServerEntry> discoveredServers,
         IReadOnlyList<string> bypassDomains,
+        IReadOnlyList<string> ipRanges,
         CancellationToken cancellationToken)
     {
         if (discoveredServers.Count > 0)
@@ -652,6 +896,12 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
         if (bypassDomains.Count > 0)
         {
             FeedBypassDomainsDiscovered?.Invoke(this, new FeedBypassDomainsDiscoveredEventArgs(bypassDomains));
+        }
+
+        if (ipRanges.Count > 0)
+        {
+            ImportedIpRangesCount += ipRanges.Count;
+            FeedIpRangesDiscovered?.Invoke(this, new FeedIpRangesDiscoveredEventArgs(ipRanges));
         }
     }
 
@@ -859,6 +1109,56 @@ public sealed partial class ServersCatalogViewModel : ObservableObject, IDisposa
     partial void OnSearchQueryChanged(string value) => ApplyFilterAndSort();
 
     partial void OnSelectedSortOrderChanged(ServerSortOrder value) => ApplyFilterAndSort();
+
+    partial void OnSelectedSubTabIndexChanged(int value)
+    {
+        OnPropertyChanged(nameof(IsCatalogTabSelected));
+        OnPropertyChanged(nameof(IsDatabasesTabSelected));
+        OnPropertyChanged(nameof(IsManualImportTabSelected));
+    }
+
+    private void InitializeAvailableFeeds()
+    {
+        AvailableFeeds.Clear();
+        foreach (FeedSourceDescriptor feed in SignedFeedSyncService.AllCuratedFeeds)
+        {
+            string categoryLabel = feed.Category switch
+            {
+                FeedCategory.DnsServers => "DNS",
+                FeedCategory.DomainList => "Domains",
+                FeedCategory.IpSubnetList => "IP / CIDR",
+                _ => "Community"
+            };
+
+            bool preSelected = feed.Category == FeedCategory.DnsServers
+                || string.Equals(feed.Id, "v2fly-ai-all", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(feed.Id, "malw-link-hosts", StringComparison.OrdinalIgnoreCase);
+
+            AvailableFeeds.Add(new FeedSourceSelectableItem(feed, categoryLabel, preSelected));
+        }
+    }
+
+    private void UpdateFeedItemStatuses(FeedSyncSummary summary)
+    {
+        RunOnUiThread(() =>
+        {
+            foreach (FeedSyncItemResult result in summary.Items)
+            {
+                FeedSourceSelectableItem? item = AvailableFeeds.FirstOrDefault(f =>
+                    string.Equals(f.Id, result.FeedId, StringComparison.OrdinalIgnoreCase));
+                if (item is null)
+                {
+                    continue;
+                }
+
+                int totalFound = result.DiscoveredServers.Count + result.BypassDomains.Count + result.DiscoveredIpRanges.Count;
+                item.ImportedCount = totalFound;
+                item.StatusText = result.VerificationStatus == FeedVerificationStatus.FetchFailed
+                    ? result.DiagnosticMessage
+                    : string.Create(CultureInfo.InvariantCulture, $"+{totalFound}");
+            }
+        });
+    }
 
     private void UpsertInMemory(DnsServerEntry entry)
     {

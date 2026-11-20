@@ -82,6 +82,11 @@ public sealed class AdapterDnsInterceptor : IDnsInterceptor
 
         _priorSmhnrDisabled = SmhnrPolicyManager.IsSmhnrDisabled();
         IReadOnlyList<AdapterDnsConfiguration> adapters = Win32NetworkInterop.GetActivePhysicalAdapters();
+        if (adapters.Count == 0)
+        {
+            throw new InvalidOperationException("No active Windows network adapters were found to apply Adapter DNS.");
+        }
+
         _capturedAdapters = adapters;
 
         IReadOnlyList<IPAddress> ipv4Servers = localDnsIp.AddressFamily == AddressFamily.InterNetwork
@@ -140,6 +145,23 @@ public sealed class AdapterDnsInterceptor : IDnsInterceptor
             if (localDnsIp.AddressFamily == AddressFamily.InterNetwork)
             {
                 AdapterDnsVerificationResult verification = Win32NetworkInterop.VerifyAdapterDnsApplied(localDnsIp);
+                if (!verification.IsApplied)
+                {
+                    Thread.Sleep(250);
+                    verification = Win32NetworkInterop.VerifyAdapterDnsApplied(localDnsIp);
+                }
+
+                if (!verification.IsApplied)
+                {
+                    string observed = verification.ObservedDnsServers.Count > 0
+                        ? string.Join(", ", verification.ObservedDnsServers)
+                        : "none";
+                    throw new InvalidOperationException(
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Windows adapter DNS did not apply {localDnsIp} (observed DNS: {observed}). Check Administrator privileges."));
+                }
+
                 _verifiedAdapterNames = verification.VerifiedAdapterNames;
             }
             else

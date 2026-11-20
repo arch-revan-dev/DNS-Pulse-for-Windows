@@ -192,6 +192,52 @@ public sealed class SignedFeedSyncServiceTests
     }
 
     [Fact]
+    public void CuratedRepositoryFeedsAndParsers_ExtractDnsServersDomainsAndIpCidrs()
+    {
+        SignedFeedSyncService.AllCuratedFeeds.Should().HaveCountGreaterThanOrEqualTo(15);
+        SignedFeedSyncService.CuratedRepositoryFeeds.Should().Contain(static f => f.Category == FeedCategory.DnsServers);
+        SignedFeedSyncService.CuratedRepositoryFeeds.Should().Contain(static f => f.Category == FeedCategory.DomainList);
+        SignedFeedSyncService.CuratedRepositoryFeeds.Should().Contain(static f => f.Category == FeedCategory.IpSubnetList);
+
+        string domainContent = """
+            # v2fly geosite style
+            full:aistudio.google.com
+            domain:openai.com
+            claude.ai @ads
+            include:ignored-ref
+            """;
+        IReadOnlyList<string> parsedDomains = SignedFeedSyncService.ParseDomainListCommunity(domainContent);
+        parsedDomains.Should().Contain(["aistudio.google.com", "openai.com", "claude.ai"]);
+        parsedDomains.Should().NotContain(static d => d.Contains("include:", StringComparison.OrdinalIgnoreCase));
+
+        string ipContent = """
+            # Public IPv4 ranges and bogon filter
+            104.18.0.0/16
+            127.0.0.1
+            192.168.1.0/24
+            203.0.113.10
+            """;
+        IReadOnlyList<string> parsedIps = SignedFeedSyncService.ParseIpCidrList(ipContent);
+        parsedIps.Should().Contain(["104.18.0.0/16", "203.0.113.10/32"]);
+        parsedIps.Should().NotContain(static ip => ip.StartsWith("127.", StringComparison.Ordinal) || ip.StartsWith("192.168.", StringComparison.Ordinal));
+
+        string plainResolvers = """
+            # Public resolver list
+            1.1.1.1
+            https://dns.quad9.net/dns-query
+            tls://dns.adguard-dns.com
+            192.168.0.1
+            """;
+        IReadOnlyList<DnsPulse.Core.Models.DnsServerEntry> parsedResolvers = SignedFeedSyncService.ParsePlainResolverList(plainResolvers, "PublicList");
+        parsedResolvers.Should().HaveCount(3);
+        parsedResolvers.Should().NotContain(static s => s.PrimaryIp == "192.168.0.1");
+
+        FeedSourceDescriptor customIpDesc = SignedFeedSyncService.CreateCustomUrlDescriptor("https://raw.githubusercontent.com/example/repo/main/cidr-ips.txt");
+        customIpDesc.Category.Should().Be(FeedCategory.IpSubnetList);
+        customIpDesc.Kind.Should().Be(FeedKind.IpCidrList);
+    }
+
+    [Fact]
     public async Task SyncStartupFeedsAsync_BuiltInCommunityTrusted_SavesAndFallsBackToOfflineCache_WhileRejectingUntrustedUnsigned()
     {
         byte[] hostsPayload = Encoding.UTF8.GetBytes("185.236.10.37 gemini.google.com\n185.236.10.37 aistudio.google.com\n");

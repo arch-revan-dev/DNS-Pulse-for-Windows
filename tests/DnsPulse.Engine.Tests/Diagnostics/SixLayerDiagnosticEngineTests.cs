@@ -378,6 +378,75 @@ public sealed class SixLayerDiagnosticEngineTests
         report.Remediation.Action.Should().Be(RemediationActionKind.RouteViaVerifiedGeoUnlock);
     }
 
+    [Fact]
+    public async Task DiagnoseAsync_RefusedOrServFailUpstream_NeverBorrowsBaselineIpOrReturnsHealthy()
+    {
+        using TestPkiBundle pki = CreateTestPki("example.com");
+        await using MockTlsHttpServer server = new(
+            pki.LeafServerCert,
+            _ => new MockHttpResponse(200, "<html>OK</html>"));
+
+        DnsServerEntry upstream = CreateTestUpstream();
+        IBootstrapResolver bootstrap = CreateMockBootstrap("example.com", PublicExampleIp);
+        IDnsUpstreamClient refusedClient = CreateMockUpstreamClient(null, DnsResponseCode.Refused);
+
+        SixLayerDiagnosticEngine engine = new(bootstrap, refusedClient);
+        DiagnosticProbeOptions options = new()
+        {
+            TransportProbeSamples = 2,
+            OverrideTlsEndpoint = server.Endpoint,
+            AdditionalTrustedRoots = [pki.RootPublicCert],
+            ProbeCompanionDomains = false,
+            CheckEchViaBaseline = false
+        };
+
+        DiagnosticReport report = await engine.DiagnoseAsync("example.com", upstream, options);
+
+        report.Verdict.Should().NotBe(DiagnosticVerdict.Healthy);
+        report.ResolvedAddresses.Should().BeEmpty();
+        report.Layers[2].Status.Should().Be(DiagnosticLayerStatus.Failed);
+    }
+
+    [Fact]
+    public async Task DiagnoseAsync_SmartDnsUpstreamReturningHttp502_NeverReturnsHealthy()
+    {
+        using TestPkiBundle pki = CreateTestPki("aistudio.google.com");
+        await using MockTlsHttpServer badGatewayServer = new(
+            pki.LeafServerCert,
+            _ => new MockHttpResponse(502, "<html>Bad Gateway</html>"));
+
+        IPAddress smartProxyIp = IPAddress.Parse("198.51.100.42");
+        DnsServerEntry smartDns = new()
+        {
+            Id = "smart_502_test",
+            Name = "Broken SmartDNS",
+            Provider = "Test",
+            Protocol = DnsProtocol.DoH,
+            TrustTier = TrustTier.Tier2VerifiedGeoUnlock,
+            PrimaryIp = "198.51.100.42",
+            DohUrl = "https://broken-smart.example/dns-query",
+            SupportsBypass = true
+        };
+
+        IBootstrapResolver bootstrap = CreateMockBootstrap("aistudio.google.com", PublicExampleIp);
+        IDnsUpstreamClient client = CreateMockUpstreamClient(smartProxyIp, DnsResponseCode.NoError);
+
+        SixLayerDiagnosticEngine engine = new(bootstrap, client);
+        DiagnosticProbeOptions options = new()
+        {
+            TransportProbeSamples = 1,
+            OverrideTlsEndpoint = badGatewayServer.Endpoint,
+            AdditionalTrustedRoots = [pki.RootPublicCert],
+            ProbeCompanionDomains = false,
+            CheckEchViaBaseline = false
+        };
+
+        DiagnosticReport report = await engine.DiagnoseAsync("aistudio.google.com", smartDns, options);
+
+        report.Verdict.Should().NotBe(DiagnosticVerdict.Healthy);
+        report.HttpStatusCode.Should().Be(502);
+    }
+
     private static DnsServerEntry CreateTestUpstream()
     {
         return new DnsServerEntry

@@ -343,6 +343,106 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         return next;
     }
 
+    /// <summary>
+    /// Seamlessly promotes a faster verified Geo-Unlock upstream while connected without tearing down
+    /// local listeners or OS interception, flushing caches so new queries use the faster node immediately.
+    /// </summary>
+    public async Task<ServiceStatusSnapshot> HotSwapGeoUnlockUpstreamAsync(
+        DnsServerEntry fasterServer,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(fasterServer);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        await _lifecycleLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            DnsServerEntry? nextTrusted = _activeTrustedUpstream;
+            if (fasterServer.TrustTier == TrustTier.Tier3CustomOrSelfHosted
+                && fasterServer.Protocol != DnsProtocol.SniProxy
+                && _activeTrustedUpstream is not null
+                && string.Equals(_activeTrustedUpstream.Id, _activeGeoUnlockUpstream?.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                nextTrusted = fasterServer;
+            }
+
+            ConfigureEngineUpstreams(nextTrusted, fasterServer, fallbackPool: null, _lastSettings);
+            _cache.Clear();
+            _ = Win32NetworkInterop.FlushDnsResolverCache();
+
+            Log.Information(
+                "Hot-swapped Geo-Unlock upstream to {ServerId} ({ServerName}, {Protocol}) without disconnecting.",
+                fasterServer.Id,
+                fasterServer.Name,
+                fasterServer.Protocol);
+
+            if (_currentStatus.IsConnected && _isServiceMode)
+            {
+                ServiceStatusSnapshot? ipcStatus = await TrySendIpcAsync<ServiceStatusSnapshot>(
+                    PipeCommandNames.UpdatePool,
+                    BuildPoolUpdateRequest(_lastSettings),
+                    cancellationToken).ConfigureAwait(false);
+
+                if (ipcStatus is not null)
+                {
+                    UpdateSnapshot(ipcStatus);
+                    return ipcStatus;
+                }
+            }
+
+            ServiceStatusSnapshot portable = BuildPortableSnapshot(lastError: _currentStatus.LastErrorMessage);
+            UpdateSnapshot(portable);
+            return portable;
+        }
+        finally
+        {
+            _lifecycleLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Seamlessly switches the active upstream(s) while already connected (e.g., when the user activates
+    /// their own working custom DNS from the catalog) and flushes local and Windows DNS caches.
+    /// </summary>
+    public async Task<ServiceStatusSnapshot> HotSwapUpstreamsAsync(
+        DnsServerEntry? trustedUpstream,
+        DnsServerEntry? geoUnlockUpstream,
+        IReadOnlyList<DnsServerEntry>? fallbackPool = null,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        await _lifecycleLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ConfigureEngineUpstreams(trustedUpstream, geoUnlockUpstream, fallbackPool, _lastSettings);
+            _cache.Clear();
+            _ = Win32NetworkInterop.FlushDnsResolverCache();
+
+            if (_currentStatus.IsConnected && _isServiceMode)
+            {
+                ServiceStatusSnapshot? ipcStatus = await TrySendIpcAsync<ServiceStatusSnapshot>(
+                    PipeCommandNames.UpdatePool,
+                    BuildPoolUpdateRequest(_lastSettings),
+                    cancellationToken).ConfigureAwait(false);
+
+                if (ipcStatus is not null)
+                {
+                    UpdateSnapshot(ipcStatus);
+                    return ipcStatus;
+                }
+            }
+
+            ServiceStatusSnapshot portable = BuildPortableSnapshot(lastError: _currentStatus.LastErrorMessage);
+            UpdateSnapshot(portable);
+            return portable;
+        }
+        finally
+        {
+            _lifecycleLock.Release();
+        }
+    }
+
     public async Task<NetworkRestoredResult> EmergencyRestoreAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -590,7 +690,12 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
         PulseAppSettings settings)
     {
         List<DnsServerEntry> zone4Candidates = [];
-        if (trustedUpstream is not null && TrustTierPolicy.CanServeDefaultInternet(trustedUpstream.TrustTier, trustedUpstream.Protocol))
+        bool canUseCustomTrusted = trustedUpstream is not null
+            && (TrustTierPolicy.CanServeDefaultInternet(trustedUpstream.TrustTier, trustedUpstream.Protocol)
+                || (trustedUpstream.TrustTier == TrustTier.Tier3CustomOrSelfHosted
+                    && trustedUpstream.Protocol != DnsProtocol.SniProxy));
+
+        if (canUseCustomTrusted && trustedUpstream is not null)
         {
             _activeTrustedUpstream = trustedUpstream;
             zone4Candidates.Add(trustedUpstream);
@@ -869,13 +974,30 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
             pacServer = null;
             interceptor = null;
 
-            ServiceStatusSnapshot connected = BuildPortableSnapshot(lastError: null);
+            bool zapretDetected = Win32NetworkInterop.IsZapretOrDpiToolActive();
+            if (zapretDetected)
+            {
+                Log.Information("Zapret/DPI bypass tool detected; local proxy TLS fragmentation disabled to prevent double-fragmentation.");
+                _activeInterceptionStatusDetail = string.IsNullOrWhiteSpace(_activeInterceptionStatusDetail)
+                    ? "Zapret-compatible mode (TLS split delegated to Zapret)"
+                    : string.Create(CultureInfo.InvariantCulture, $"{_activeInterceptionStatusDetail} · Zapret OK");
+            }
+
+            _ = Win32NetworkInterop.FlushDnsResolverCache();
+
+            string? portableWarning = _activeInterceptionStatusDetail is not null
+                && _activeInterceptionStatusDetail.StartsWith("Fallback", StringComparison.OrdinalIgnoreCase)
+                ? _activeInterceptionStatusDetail
+                : null;
+
+            ServiceStatusSnapshot connected = BuildPortableSnapshot(lastError: portableWarning);
             UpdateSnapshot(connected);
-            Log.Information("PulseCore connected in Portable Mode (DNS:{DnsPort}, DoH:{DohPort}, PAC:{PacPort}, Mode:{Mode}).",
+            Log.Information("PulseCore connected in Portable Mode (DNS:{DnsPort}, DoH:{DohPort}, PAC:{PacPort}, Mode:{Mode}, Zapret:{Zapret}).",
                 connected.BoundDnsPort,
                 connected.BoundDoHPort,
                 connected.BoundPacPort,
-                connected.ActiveMode);
+                connected.ActiveMode,
+                zapretDetected);
             return connected;
         }
         catch (Exception ex)
@@ -1043,6 +1165,13 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
     private bool ShouldFragmentProxyHost(string host)
     {
         if (string.IsNullOrWhiteSpace(host))
+        {
+            return false;
+        }
+
+        // When Zapret / GoodbyeDPI / ByeDPI is active on the PC, delegating TLS ClientHello
+        // fragmentation to Zapret prevents double-fragmented packets that break handshakes.
+        if (Win32NetworkInterop.IsZapretOrDpiToolActive())
         {
             return false;
         }

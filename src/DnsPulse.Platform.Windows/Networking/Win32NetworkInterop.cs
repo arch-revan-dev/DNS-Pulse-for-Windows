@@ -112,8 +112,50 @@ public static class Win32NetworkInterop
     }
 
     /// <summary>
-    /// Applies static IPv4 and IPv6 DNS server addresses via both Windows <c>netsh</c> and Registry <c>NameServer</c>,
-    /// then notifies DHCP and flushes the OS DNS resolver cache.
+    /// Detects whether an external DPI-bypass tool such as Zapret (<c>winws</c>) or GoodbyeDPI is currently running,
+    /// so PulseCore avoids double-fragmenting TLS ClientHello packets.
+    /// </summary>
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Best-effort process scan must remain resilient on restricted environments.")]
+    public static bool IsZapretOrDpiToolActive()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        string[] dpiProcessNames = ["winws", "goodbyedpi", "ciadpi", "byedpi", "zapret"];
+        try
+        {
+            foreach (string procName in dpiProcessNames)
+            {
+                Process[] matches = Process.GetProcessesByName(procName);
+                try
+                {
+                    if (matches.Length > 0)
+                    {
+                        return true;
+                    }
+                }
+                finally
+                {
+                    foreach (Process p in matches)
+                    {
+                        p.Dispose();
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Applies static IPv4 and IPv6 DNS server addresses via native Windows <c>SetInterfaceDnsSettings</c>,
+    /// numeric-index <c>netsh</c> (immune to non-ASCII/Russian adapter names), Registry <c>NameServer</c>,
+    /// and PowerShell fallback, then notifies DHCP and flushes the OS DNS resolver cache.
     /// </summary>
     public static void ApplyAdapterDnsServers(
         string interfaceGuid,
@@ -126,28 +168,56 @@ public static class Win32NetworkInterop
         ArgumentNullException.ThrowIfNull(ipv6Servers);
 
         string normalizedGuid = NormalizeInterfaceGuid(interfaceGuid);
-        string? resolvedName = !string.IsNullOrWhiteSpace(interfaceName)
-            ? interfaceName
-            : TryResolveInterfaceName(normalizedGuid);
+        (string? resolvedName, int? ipv4Index, int? ipv6Index) = TryResolveInterfaceInfo(normalizedGuid);
+        if (!string.IsNullOrWhiteSpace(interfaceName))
+        {
+            resolvedName = interfaceName;
+        }
 
         List<IPAddress> validIpv4 = [.. ipv4Servers.Where(static ip => ip.AddressFamily == AddressFamily.InterNetwork)];
         List<IPAddress> validIpv6 = [.. ipv6Servers.Where(static ip => ip.AddressFamily == AddressFamily.InterNetworkV6)];
 
-        if (!string.IsNullOrWhiteSpace(resolvedName))
+        string ipv4Value = string.Join(",", validIpv4.Select(static ip => ip.ToString()));
+        string ipv6Value = string.Join(",", validIpv6.Select(static ip => ip.ToString()));
+
+        bool appliedIpv4Native = false;
+        if (Guid.TryParse(normalizedGuid, out Guid parsedGuid))
         {
-            foreach (string args in BuildNetshSetDnsArguments(resolvedName, AddressFamily.InterNetwork, validIpv4))
+            if (validIpv4.Count > 0)
             {
-                TryRunNetshBestEffort(args);
+                appliedIpv4Native = TrySetInterfaceDnsSettingsNative(parsedGuid, isIpv6: false, ipv4Value);
             }
 
-            foreach (string args in BuildNetshSetDnsArguments(resolvedName, AddressFamily.InterNetworkV6, validIpv6))
+            if (validIpv6.Count > 0)
             {
-                TryRunNetshBestEffort(args);
+                _ = TrySetInterfaceDnsSettingsNative(parsedGuid, isIpv6: true, ipv6Value);
             }
         }
 
-        string ipv4Value = string.Join(",", validIpv4.Select(static ip => ip.ToString()));
-        string ipv6Value = string.Join(",", validIpv6.Select(static ip => ip.ToString()));
+        bool appliedIpv4Netsh = false;
+        if (ipv4Index.HasValue && validIpv4.Count > 0)
+        {
+            appliedIpv4Netsh = RunNetshCommands(BuildNetshSetDnsArgumentsByIndex(ipv4Index.Value, AddressFamily.InterNetwork, validIpv4));
+        }
+
+        if (!appliedIpv4Netsh && !string.IsNullOrWhiteSpace(resolvedName) && validIpv4.Count > 0)
+        {
+            appliedIpv4Netsh = RunNetshCommands(BuildNetshSetDnsArguments(resolvedName, AddressFamily.InterNetwork, validIpv4));
+        }
+
+        if (ipv6Index.HasValue && validIpv6.Count > 0)
+        {
+            _ = RunNetshCommands(BuildNetshSetDnsArgumentsByIndex(ipv6Index.Value, AddressFamily.InterNetworkV6, validIpv6));
+        }
+        else if (!string.IsNullOrWhiteSpace(resolvedName) && validIpv6.Count > 0)
+        {
+            _ = RunNetshCommands(BuildNetshSetDnsArguments(resolvedName, AddressFamily.InterNetworkV6, validIpv6));
+        }
+
+        if (!appliedIpv4Native && !appliedIpv4Netsh && ipv4Index.HasValue && validIpv4.Count > 0)
+        {
+            TrySetDnsViaPowerShellBestEffort(ipv4Index.Value, validIpv4, resetToDhcp: false);
+        }
 
         WriteInterfaceNameServer(TcpipInterfacesSubKey, normalizedGuid, ipv4Value);
         WriteInterfaceNameServer(Tcpip6InterfacesSubKey, normalizedGuid, ipv6Value);
@@ -165,21 +235,10 @@ public static class Win32NetworkInterop
         ArgumentException.ThrowIfNullOrWhiteSpace(original.InterfaceGuid);
 
         string normalizedGuid = NormalizeInterfaceGuid(original.InterfaceGuid);
-        string? resolvedName = !string.IsNullOrWhiteSpace(original.InterfaceName)
-            ? original.InterfaceName
-            : TryResolveInterfaceName(normalizedGuid);
-
-        if (!string.IsNullOrWhiteSpace(resolvedName))
+        (string? resolvedName, int? ipv4Index, int? ipv6Index) = TryResolveInterfaceInfo(normalizedGuid);
+        if (!string.IsNullOrWhiteSpace(original.InterfaceName))
         {
-            foreach (string args in BuildNetshRestoreDnsArguments(resolvedName, AddressFamily.InterNetwork, original.WasDhcpIpv4, original.OriginalIpv4Dns))
-            {
-                TryRunNetshBestEffort(args);
-            }
-
-            foreach (string args in BuildNetshRestoreDnsArguments(resolvedName, AddressFamily.InterNetworkV6, original.WasDhcpIpv6, original.OriginalIpv6Dns))
-            {
-                TryRunNetshBestEffort(args);
-            }
+            resolvedName = original.InterfaceName;
         }
 
         string ipv4Value = original.WasDhcpIpv4
@@ -189,6 +248,46 @@ public static class Win32NetworkInterop
         string ipv6Value = original.WasDhcpIpv6
             ? string.Empty
             : string.Join(",", original.OriginalIpv6Dns);
+
+        if (Guid.TryParse(normalizedGuid, out Guid parsedGuid))
+        {
+            _ = TrySetInterfaceDnsSettingsNative(parsedGuid, isIpv6: false, ipv4Value);
+            _ = TrySetInterfaceDnsSettingsNative(parsedGuid, isIpv6: true, ipv6Value);
+        }
+
+        bool restoredIpv4Netsh = false;
+        if (ipv4Index.HasValue)
+        {
+            restoredIpv4Netsh = RunNetshCommands(BuildNetshRestoreDnsArgumentsByIndex(ipv4Index.Value, AddressFamily.InterNetwork, original.WasDhcpIpv4, original.OriginalIpv4Dns));
+        }
+
+        if (!restoredIpv4Netsh && !string.IsNullOrWhiteSpace(resolvedName))
+        {
+            restoredIpv4Netsh = RunNetshCommands(BuildNetshRestoreDnsArguments(resolvedName, AddressFamily.InterNetwork, original.WasDhcpIpv4, original.OriginalIpv4Dns));
+        }
+
+        if (ipv6Index.HasValue)
+        {
+            _ = RunNetshCommands(BuildNetshRestoreDnsArgumentsByIndex(ipv6Index.Value, AddressFamily.InterNetworkV6, original.WasDhcpIpv6, original.OriginalIpv6Dns));
+        }
+        else if (!string.IsNullOrWhiteSpace(resolvedName))
+        {
+            _ = RunNetshCommands(BuildNetshRestoreDnsArguments(resolvedName, AddressFamily.InterNetworkV6, original.WasDhcpIpv6, original.OriginalIpv6Dns));
+        }
+
+        if (!restoredIpv4Netsh && ipv4Index.HasValue)
+        {
+            List<IPAddress> origV4 = [];
+            foreach (string raw in original.OriginalIpv4Dns)
+            {
+                if (IPAddress.TryParse(raw, out IPAddress? ip) && ip.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    origV4.Add(ip);
+                }
+            }
+
+            TrySetDnsViaPowerShellBestEffort(ipv4Index.Value, origV4, resetToDhcp: original.WasDhcpIpv4 || origV4.Count == 0);
+        }
 
         WriteInterfaceNameServer(TcpipInterfacesSubKey, normalizedGuid, ipv4Value);
         WriteInterfaceNameServer(Tcpip6InterfacesSubKey, normalizedGuid, ipv6Value);
@@ -344,32 +443,152 @@ public static class Win32NetworkInterop
             : string.Create(CultureInfo.InvariantCulture, $"{{{trimmed}}}");
     }
 
-    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Interface name lookup is best-effort for netsh helper execution.")]
-    private static string? TryResolveInterfaceName(string normalizedGuid)
+    /// <summary>
+    /// Builds locale-independent <c>netsh.exe</c> command-line arguments using numeric interface index.
+    /// </summary>
+    public static IReadOnlyList<string> BuildNetshSetDnsArgumentsByIndex(
+        int interfaceIndex,
+        AddressFamily family,
+        IReadOnlyList<IPAddress> servers)
+    {
+        ArgumentNullException.ThrowIfNull(servers);
+        if (servers.Count == 0 || interfaceIndex <= 0)
+        {
+            return [];
+        }
+
+        string protocol = family == AddressFamily.InterNetworkV6 ? "ipv6" : "ipv4";
+        List<string> commands = new(servers.Count)
+        {
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"interface {protocol} set dnsservers name={interfaceIndex} source=static address={servers[0]} register=primary validate=no")
+        };
+
+        for (int i = 1; i < servers.Count; i++)
+        {
+            commands.Add(string.Create(
+                CultureInfo.InvariantCulture,
+                $"interface {protocol} add dnsservers name={interfaceIndex} address={servers[i]} index={i + 1} validate=no"));
+        }
+
+        return commands;
+    }
+
+    /// <summary>
+    /// Builds locale-independent <c>netsh.exe</c> restore arguments using numeric interface index.
+    /// </summary>
+    public static IReadOnlyList<string> BuildNetshRestoreDnsArgumentsByIndex(
+        int interfaceIndex,
+        AddressFamily family,
+        bool wasDhcp,
+        IReadOnlyList<string> originalServers)
+    {
+        ArgumentNullException.ThrowIfNull(originalServers);
+        if (interfaceIndex <= 0)
+        {
+            return [];
+        }
+
+        string protocol = family == AddressFamily.InterNetworkV6 ? "ipv6" : "ipv4";
+        if (wasDhcp || originalServers.Count == 0)
+        {
+            return
+            [
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"interface {protocol} set dnsservers name={interfaceIndex} source=dhcp")
+            ];
+        }
+
+        List<IPAddress> parsed = [];
+        foreach (string raw in originalServers)
+        {
+            if (IPAddress.TryParse(raw, out IPAddress? ip) && ip.AddressFamily == family)
+            {
+                parsed.Add(ip);
+            }
+        }
+
+        if (parsed.Count == 0)
+        {
+            return
+            [
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"interface {protocol} set dnsservers name={interfaceIndex} source=dhcp")
+            ];
+        }
+
+        return BuildNetshSetDnsArgumentsByIndex(interfaceIndex, family, parsed);
+    }
+
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Interface lookup is best-effort for Windows DNS configuration.")]
+    private static (string? Name, int? Ipv4Index, int? Ipv6Index) TryResolveInterfaceInfo(string normalizedGuid)
     {
         try
         {
             foreach (NetworkInterface adapter in NetworkInterface.GetAllNetworkInterfaces())
             {
-                if (string.Equals(NormalizeInterfaceGuid(adapter.Id), normalizedGuid, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(NormalizeInterfaceGuid(adapter.Id), normalizedGuid, StringComparison.OrdinalIgnoreCase))
                 {
-                    return adapter.Name;
+                    continue;
                 }
+
+                int? v4Idx = null;
+                int? v6Idx = null;
+                try
+                {
+                    IPInterfaceProperties props = adapter.GetIPProperties();
+                    if (adapter.Supports(NetworkInterfaceComponent.IPv4))
+                    {
+                        v4Idx = props.GetIPv4Properties()?.Index;
+                    }
+
+                    if (adapter.Supports(NetworkInterfaceComponent.IPv6))
+                    {
+                        v6Idx = props.GetIPv6Properties()?.Index;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                return (adapter.Name, v4Idx, v6Idx);
             }
         }
         catch (Exception)
         {
         }
 
-        return null;
+        return (null, null, null);
     }
 
-    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "netsh execution is defense-in-depth alongside Registry NameServer writes.")]
-    private static void TryRunNetshBestEffort(string arguments)
+    private static bool RunNetshCommands(IReadOnlyList<string> commands)
+    {
+        if (commands.Count == 0)
+        {
+            return false;
+        }
+
+        bool allOk = true;
+        foreach (string args in commands)
+        {
+            if (!TryRunNetshBestEffort(args))
+            {
+                allOk = false;
+            }
+        }
+
+        return allOk;
+    }
+
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "netsh execution is defense-in-depth alongside native SetInterfaceDnsSettings and Registry writes.")]
+    private static bool TryRunNetshBestEffort(string arguments)
     {
         if (!OperatingSystem.IsWindows())
         {
-            return;
+            return false;
         }
 
         try
@@ -386,13 +605,127 @@ public static class Win32NetworkInterop
             };
 
             using Process? process = Process.Start(startInfo);
+            if (process is null)
+            {
+                return false;
+            }
+
+            Task<string> outTask = process.StandardOutput.ReadToEndAsync();
+            Task<string> errTask = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(NetshTimeoutMs))
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch (Exception)
+                {
+                }
+
+                return false;
+            }
+
+            _ = outTask.Wait(200);
+            _ = errTask.Wait(200);
+            return process.ExitCode == 0;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "PowerShell Set-DnsClientServerAddress is a best-effort last-resort fallback.")]
+    private static void TrySetDnsViaPowerShellBestEffort(
+        int interfaceIndex,
+        IReadOnlyList<IPAddress> servers,
+        bool resetToDhcp)
+    {
+        if (!OperatingSystem.IsWindows() || interfaceIndex <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            string psCommand = resetToDhcp || servers.Count == 0
+                ? string.Create(CultureInfo.InvariantCulture, $"Set-DnsClientServerAddress -InterfaceIndex {interfaceIndex} -ResetServerAddresses")
+                : string.Create(CultureInfo.InvariantCulture, $"Set-DnsClientServerAddress -InterfaceIndex {interfaceIndex} -ServerAddresses @({string.Join(",", servers.Select(static s => $"'{s}'"))})");
+
+            ProcessStartInfo startInfo = new()
+            {
+                FileName = "powershell.exe",
+                Arguments = string.Create(CultureInfo.InvariantCulture, $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"{psCommand}\""),
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+
+            using Process? process = Process.Start(startInfo);
             if (process is not null)
             {
+                Task<string> outTask = process.StandardOutput.ReadToEndAsync();
+                Task<string> errTask = process.StandardError.ReadToEndAsync();
                 _ = process.WaitForExit(NetshTimeoutMs);
+                _ = outTask.Wait(200);
+                _ = errTask.Wait(200);
             }
         }
         catch (Exception)
         {
+        }
+    }
+
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Native iphlpapi SetInterfaceDnsSettings is available on Windows 10 2004+ and falls back safely on older builds.")]
+    private static bool TrySetInterfaceDnsSettingsNative(Guid interfaceGuid, bool isIpv6, string nameServers)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        nint nameServerPtr = nint.Zero;
+        try
+        {
+            ulong flags = NativeMethods.DnsSettingNameServer | (isIpv6 ? NativeMethods.DnsSettingIpv6 : 0UL);
+            nameServerPtr = Marshal.StringToHGlobalUni(nameServers ?? string.Empty);
+
+            NativeMethods.DnsInterfaceSettings settings = new()
+            {
+                Version = NativeMethods.DnsInterfaceSettingsVersion1,
+                Flags = flags,
+                Domain = nint.Zero,
+                NameServer = nameServerPtr,
+                SearchList = nint.Zero,
+                RegistrationEnabled = 0,
+                RegisterAdapterName = 0,
+                EnableLLMNR = 0,
+                QueryAdapterName = 0,
+                ProfileNameServer = nint.Zero
+            };
+
+            uint result = NativeMethods.SetInterfaceDnsSettings(interfaceGuid, ref settings);
+            return result == 0;
+        }
+        catch (DllNotFoundException)
+        {
+            return false;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return false;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+        finally
+        {
+            if (nameServerPtr != nint.Zero)
+            {
+                Marshal.FreeHGlobal(nameServerPtr);
+            }
         }
     }
 
@@ -403,9 +736,7 @@ public static class Win32NetworkInterop
             return false;
         }
 
-        if (adapter.NetworkInterfaceType is NetworkInterfaceType.Loopback
-            or NetworkInterfaceType.Tunnel
-            or NetworkInterfaceType.Unknown)
+        if (adapter.NetworkInterfaceType == NetworkInterfaceType.Loopback)
         {
             return false;
         }
@@ -417,6 +748,19 @@ public static class Win32NetworkInterop
         {
             if (description.Contains(token, StringComparison.OrdinalIgnoreCase)
                 || name.Contains(token, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        if (adapter.NetworkInterfaceType is NetworkInterfaceType.Tunnel or NetworkInterfaceType.Unknown)
+        {
+            // Allow active gateway-bearing adapters (e.g., PPPoE/USB/Ethernet bridges) while excluding idle tunnels.
+            try
+            {
+                return adapter.GetIPProperties().GatewayAddresses.Count > 0;
+            }
+            catch (NetworkInformationException)
             {
                 return false;
             }
@@ -518,6 +862,25 @@ public static class Win32NetworkInterop
     [SuppressMessage("Interoperability", "SYSLIB1054:Use 'LibraryImportAttribute' instead of 'DllImportAttribute' to generate P/Invoke marshalling code at compile time", Justification = "AllowUnsafeBlocks is not enabled in the project.")]
     private static class NativeMethods
     {
+        internal const uint DnsInterfaceSettingsVersion1 = 1;
+        internal const ulong DnsSettingIpv6 = 0x0001;
+        internal const ulong DnsSettingNameServer = 0x0008;
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct DnsInterfaceSettings
+        {
+            public uint Version;
+            public ulong Flags;
+            public nint Domain;
+            public nint NameServer;
+            public nint SearchList;
+            public uint RegistrationEnabled;
+            public uint RegisterAdapterName;
+            public uint EnableLLMNR;
+            public uint QueryAdapterName;
+            public nint ProfileNameServer;
+        }
+
         [DllImport("dnsapi.dll", EntryPoint = "DnsFlushResolverCache", ExactSpelling = true)]
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -533,5 +896,11 @@ public static class Win32NetworkInterop
             uint dwIpAddress,
             uint dwSubNetMask,
             int nDhcpAction);
+
+        [DllImport("iphlpapi.dll", EntryPoint = "SetInterfaceDnsSettings", ExactSpelling = true)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        internal static extern uint SetInterfaceDnsSettings(
+            Guid interfaceGuid,
+            ref DnsInterfaceSettings settings);
     }
 }

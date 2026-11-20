@@ -41,6 +41,11 @@
       <SolidColorBrush x:Key="PulseWarningBrush" Color="#F59E0B" />
       <SolidColorBrush x:Key="PulseDangerBrush" Color="#EF4444" />
 
+      <!-- Dark-Mode Safe Default Text Brushes (Prevents Black Text Before Runtime Theme Pass) -->
+      <SolidColorBrush x:Key="TextFillColorPrimaryBrush" Color="#FFFFFFFF" />
+      <SolidColorBrush x:Key="TextFillColorSecondaryBrush" Color="#C8FFFFFF" />
+      <SolidColorBrush x:Key="TextFillColorTertiaryBrush" Color="#8CFFFFFF" />
+
       <!-- Theme-Adaptive Surface & Semantic Brushes (Updated by ThemeAppearanceService on theme switch) -->
       <SolidColorBrush x:Key="PulseInnerPanelBrush" Color="#1A2029" />
       <SolidColorBrush x:Key="PulseInnerPanelBorderBrush" Color="#2C3544" />
@@ -73,6 +78,9 @@
       <SolidColorBrush x:Key="PulseIosBlueBrush" Color="#0A84FF" />
       <SolidColorBrush x:Key="PulseIosRedBrush" Color="#FF453A" />
       <SolidColorBrush x:Key="PulseOrbHaloBrush" Color="#26047857" />
+      <SolidColorBrush x:Key="PulseSidebarSurfaceBrush" Color="#CC14171E" />
+      <SolidColorBrush x:Key="PulseSidebarBorderBrush" Color="#1EFFFFFF" />
+      <SolidColorBrush x:Key="PulseSidebarHoverBrush" Color="#18FFFFFF" />
 
       <!-- Converters -->
       <conv:LocConverter x:Key="LocConverter" />
@@ -165,6 +173,7 @@
         <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
         <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
         <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+        <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel" />
       </Style>
 
       <Style TargetType="ListView">
@@ -176,6 +185,7 @@
         <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
         <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
         <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+        <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel" />
       </Style>
 
       <Style x:Key="PulseDarkGridViewColumnHeaderStyle"
@@ -363,6 +373,63 @@
                 </Trigger>
                 <Trigger Property="IsEnabled" Value="False">
                   <Setter TargetName="OrbSurface" Property="Opacity" Value="0.6" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- Custom Non-Template Floating Sidebar Navigation Item Style -->
+      <Style x:Key="PulseSidebarNavRadioStyle" TargetType="RadioButton">
+        <Setter Property="Padding" Value="12,10" />
+        <Setter Property="Margin" Value="0,0,0,4" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="RadioButton">
+              <Border x:Name="NavBg"
+                      Padding="{TemplateBinding Padding}"
+                      Background="{TemplateBinding Background}"
+                      BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}"
+                      CornerRadius="10"
+                      SnapsToDevicePixels="True">
+                <Grid>
+                  <Border x:Name="ActiveIndicator"
+                          Width="3"
+                          Height="18"
+                          CornerRadius="2"
+                          HorizontalAlignment="Left"
+                          VerticalAlignment="Center"
+                          Margin="-8,0,0,0"
+                          Background="{DynamicResource AccentFillColorDefaultBrush}"
+                          Visibility="Collapsed" />
+                  <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                    VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                </Grid>
+              </Border>
+              <ControlTemplate.Triggers>
+                <MultiTrigger>
+                  <MultiTrigger.Conditions>
+                    <Condition Property="IsMouseOver" Value="True" />
+                    <Condition Property="IsChecked" Value="False" />
+                  </MultiTrigger.Conditions>
+                  <Setter TargetName="NavBg" Property="Background" Value="{DynamicResource PulseSidebarHoverBrush}" />
+                  <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                </MultiTrigger>
+                <Trigger Property="IsChecked" Value="True">
+                  <Setter TargetName="NavBg" Property="Background" Value="{DynamicResource PulseAccentSubtleBrush}" />
+                  <Setter TargetName="NavBg" Property="BorderBrush" Value="{DynamicResource PulseGlassCardBorderBrush}" />
+                  <Setter TargetName="ActiveIndicator" Property="Visibility" Value="Visible" />
+                  <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                  <Setter Property="FontWeight" Value="SemiBold" />
                 </Trigger>
               </ControlTemplate.Triggers>
             </ControlTemplate>

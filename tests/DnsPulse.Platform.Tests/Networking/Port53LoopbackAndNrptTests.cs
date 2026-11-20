@@ -143,4 +143,23 @@ public sealed class Port53LoopbackAndNrptTests
         staticRestore[0].Should().Contain("set dnsservers name=\"Ethernet\" source=static address=1.1.1.1");
         staticRestore[1].Should().Contain("add dnsservers name=\"Ethernet\" address=8.8.8.8 index=2 validate=no");
     }
+
+    [Fact]
+    public void Win32NetworkInterop_BuildNetshArgumentsByIndex_UsesNumericInterfaceIndexForLocaleSafety()
+    {
+        IReadOnlyList<string> setArgs = Win32NetworkInterop.BuildNetshSetDnsArgumentsByIndex(
+            14,
+            AddressFamily.InterNetwork,
+            [IPAddress.Loopback, IPAddress.Parse("1.1.1.1")]);
+        setArgs.Should().HaveCount(2);
+        setArgs[0].Should().Be("interface ipv4 set dnsservers name=14 source=static address=127.0.0.1 register=primary validate=no");
+        setArgs[1].Should().Be("interface ipv4 add dnsservers name=14 address=1.1.1.1 index=2 validate=no");
+
+        IReadOnlyList<string> dhcpRestore = Win32NetworkInterop.BuildNetshRestoreDnsArgumentsByIndex(
+            14,
+            AddressFamily.InterNetwork,
+            wasDhcp: true,
+            []);
+        dhcpRestore.Should().ContainSingle().Which.Should().Be("interface ipv4 set dnsservers name=14 source=dhcp");
+    }
 }

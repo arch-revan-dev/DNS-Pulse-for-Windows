@@ -355,4 +355,53 @@
   <data name="Simple_Adapter_Active" xml:space="preserve"><value>DNS адаптера + NRPT активны ({0})</value></data>
   <data name="Simple_Adapter_AdminNeeded" xml:space="preserve"><value>Нужны права администратора для смены DNS адаптера</value></data>
   <data name="Simple_Adapter_Elevate" xml:space="preserve"><value>Запустить от Админа</value></data>
+  <data name="Nav_Section_Main" xml:space="preserve"><value>НАВИГАЦИЯ</value></data>
+  <data name="Overview_Optimizer_Searching" xml:space="preserve"><value>Ищем более быстрый рабочий сервер в фоне ({0}/{1})...</value></data>
+  <data name="Overview_Optimizer_Upgraded" xml:space="preserve"><value>Автоматически переключено на более быстрый сервер: {0} ({1} мс)</value></data>
+  <data name="Overview_Optimizer_Done" xml:space="preserve"><value>Работает самый быстрый проверенный сервер: {0} ({1} мс)</value></data>
+  <data name="Overview_Optimizer_Stop" xml:space="preserve"><value>Стоп</value></data>
+  <data name="Routing_Page_Title" xml:space="preserve"><value>Сервисы и журнал</value></data>
+  <data name="Routing_Page_Subtitle" xml:space="preserve"><value>Включайте нужные сервисы, подгружайте списки доменов и IP из GitHub и смотрите запросы в реальном времени.</value></data>
+  <data name="Routing_SubTab_Services" xml:space="preserve"><value>Сервисы и списки</value></data>
+  <data name="Routing_SubTab_Log" xml:space="preserve"><value>Журнал запросов</value></data>
+  <data name="Routing_Repos_Title" xml:space="preserve"><value>Базы доменов и IP из GitHub</value></data>
+  <data name="Routing_Repos_Subtitle" xml:space="preserve"><value>Загрузите актуальные списки доменов ИИ/сервисов и подсетей IP из проверенных репозиториев или вставьте свою ссылку HTTPS.</value></data>
+  <data name="Routing_Repos_DomainsBadge" xml:space="preserve"><value>Свои домены</value></data>
+  <data name="Routing_Repos_IpsBadge" xml:space="preserve"><value>Подсети IP</value></data>
+  <data name="Routing_Repos_UrlPlaceholder" xml:space="preserve"><value>Своя ссылка raw HTTPS на список доменов или IP/CIDR (необязательно)</value></data>
+  <data name="Routing_Repos_SyncButton" xml:space="preserve"><value>Загрузить списки</value></data>
+  <data name="Routing_Repos_ResultFormat" xml:space="preserve"><value>Загружено доменов: {0}, подсетей IP/CIDR: {1}.</value></data>
+  <data name="Routing_Kpi_Total" xml:space="preserve"><value>Всего запросов</value></data>
+  <data name="Routing_Kpi_GeoUnlocked" xml:space="preserve"><value>Через обход</value></data>
+  <data name="Routing_Kpi_Blocked" xml:space="preserve"><value>Заблокировано</value></data>
+  <data name="Routing_Kpi_AvgLatency" xml:space="preserve"><value>Средний отклик</value></data>
+  <data name="Routing_Log_EmptyTitle" xml:space="preserve"><value>Журнал запросов пока пуст</value></data>
+  <data name="Routing_Log_EmptySubtitle" xml:space="preserve"><value>Включите защиту на вкладке «Обзор» и откройте любой сайт или программу — все DNS-запросы появятся здесь автоматически.</value></data>
+  <data name="Servers_Page_Title" xml:space="preserve"><value>Серверы и базы</value></data>
+  <data name="Servers_Page_Subtitle" xml:space="preserve"><value>Нажмите «Подключить» у любого сервера для мгновенного запуска, загрузите базы из GitHub или добавьте свой DNS с телефона.</value></data>
+  <data name="Servers_SubTab_Catalog" xml:space="preserve"><value>Каталог</value></data>
+  <data name="Servers_SubTab_Databases" xml:space="preserve"><value>Базы из GitHub</value></data>
+  <data name="Servers_SubTab_CustomVps" xml:space="preserve"><value>Свой DNS и VPS</value></data>
+  <data name="Servers_Databases_Title" xml:space="preserve"><value>Публичные базы DNS, доменов и IP</value></data>
+  <data name="Servers_Databases_Subtitle" xml:space="preserve"><value>Отметьте нужные репозитории, чтобы загрузить свежие DNS-серверы, списки доменов и подсети IP, а затем автоматически подобрать самый быстрый.</value></data>
+  <data name="Servers_Feeds_Preset_All" xml:space="preserve"><value>Выбрать все</value></data>
+  <data name="Servers_Feeds_Preset_Dns" xml:space="preserve"><value>Только DNS-серверы</value></data>
+  <data name="Servers_Feeds_Preset_Domains" xml:space="preserve"><value>Только домены</value></data>
+  <data name="Servers_Feeds_Preset_Ips" xml:space="preserve"><value>Только IP-подсети</value></data>
+  <data name="Servers_Feeds_SyncAndPick" xml:space="preserve"><value>Загрузить и подобрать быстрый</value></data>
+  <data name="Servers_Feeds_AutoTest" xml:space="preserve"><value>Сразу проверить и подключить самый быстрый</value></data>
+  <data name="Servers_Feeds_CustomUrlPlaceholder" xml:space="preserve"><value>Вставьте любую raw-ссылку HTTPS с GitHub (DNS, домены или IP)</value></data>
+  <data name="Servers_Feeds_AddCustomUrl" xml:space="preserve"><value>Загрузить URL</value></data>
+  <data name="Servers_Feeds_NoneSelected" xml:space="preserve"><value>Выберите хотя бы один источник из списка или вставьте свою HTTPS-ссылку.</value></data>
+  <data name="Servers_Feeds_Syncing" xml:space="preserve"><value>Загружаем выбранные базы из GitHub...</value></data>
+  <data name="Servers_Feeds_ResultFormat" xml:space="preserve"><value>Загружено DNS-серверов: {0}, доменов: {1}, подсетей IP: {2}.</value></data>
+  <data name="Servers_Import_PhoneHint" xml:space="preserve"><value>Подходит тот же Частный DNS / DoH / DoT / IP, который работает у вас на телефоне (например, dns.example.com, tls://host, https://host/dns-query или IP). После добавления нажмите «Подключить» в каталоге.</value></data>
+  <data name="Diag_Page_Subtitle" xml:space="preserve"><value>Проверьте причину блокировки сайта, раздайте защиту по Wi-Fi/LAN или просканируйте свою подсеть.</value></data>
+  <data name="Diag_SubTab_Doctor" xml:space="preserve"><value>Проверка</value></data>
+  <data name="Diag_SubTab_Lan" xml:space="preserve"><value>Раздать по LAN / QR</value></data>
+  <data name="Diag_SubTab_Lab" xml:space="preserve"><value>Сетевая лаборатория</value></data>
+  <data name="Settings_Page_Subtitle" xml:space="preserve"><value>Настройка способа подключения в Windows, защита от утечек, внешний вид, обновления и сброс сети.</value></data>
+  <data name="Settings_SubTab_Network" xml:space="preserve"><value>Сеть и запуск</value></data>
+  <data name="Settings_SubTab_PrivacyAppearance" xml:space="preserve"><value>Приватность и вид</value></data>
+  <data name="Settings_SubTab_UpdatesSafety" xml:space="preserve"><value>Обновления и сброс</value></data>
 </root>
