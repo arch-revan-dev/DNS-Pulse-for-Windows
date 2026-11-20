@@ -807,6 +807,7 @@ public sealed class ViewModelsTests : IDisposable
         vm.FilteredServers.Should().OnlyContain(static s => ServerCategoryClassifier.Classify(s) == ServerDisplayCategory.AutoProxy);
         vm.FilteredServers.Should().Contain(static s => s.Protocol == DnsProtocol.SniProxy);
 
+        LocalizationSource.Instance.Attach(localization);
         CategoryToLabelConverter categoryLabelConverter = new();
         categoryLabelConverter.Convert(ServerDisplayCategory.AutoProxy, typeof(string), "Short", System.Globalization.CultureInfo.InvariantCulture)
             .Should().Be(localization["Servers_Category_AutoProxy_Short"]);

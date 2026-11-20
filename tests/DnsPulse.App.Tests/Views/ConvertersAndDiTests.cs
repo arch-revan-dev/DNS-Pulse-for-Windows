@@ -436,6 +436,7 @@ public sealed class ConvertersAndDiTests : IDisposable
             }
             finally
             {
+                LocalizationSource.Instance.Service.SetLanguage("en-US", updateThreadCulture: false);
                 System.Windows.Threading.Dispatcher.CurrentDispatcher.InvokeShutdown();
             }
         });
