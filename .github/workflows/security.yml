@@ -3,13 +3,36 @@ name: Security (CodeQL & OpenSSF Scorecard)
 on:
   push:
     branches: [ main, master ]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'Directory.Build.props'
+      - 'DnsPulse.sln'
+      - '.github/workflows/**'
   pull_request:
     branches: [ main, master ]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'Directory.Build.props'
+      - 'DnsPulse.sln'
+      - '.github/workflows/**'
   schedule:
     - cron: '17 3 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  NUGET_XMLDOC_MODE: 'skip'
 
 jobs:
   codeql:
@@ -40,6 +63,16 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '9.0.x'
+
+      - name: Cache NuGet packages
+        if: matrix.language == 'csharp'
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-codeql-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: |
+            nuget-codeql-${{ runner.os }}-
+            nuget-
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4

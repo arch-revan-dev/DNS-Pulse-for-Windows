@@ -7,16 +7,27 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag (e.g. v2.0.0). Leave empty for dry-run artifact build.'
+        description: 'Release tag (e.g. v2.1.0). Leave empty for dry-run artifact build.'
         required: false
         default: ''
+      skip_arm64:
+        description: 'Build win-x64 only (faster manual build)'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
 
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  NUGET_XMLDOC_MODE: 'skip'
+
 jobs:
   verify-pulsecore:
-    name: Verify PulseCore .NET 9 Suite
+    name: Verify PulseCore .NET 9 Suite & SBOM
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -26,6 +37,17 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '9.0.x'
+
+      - name: Cache NuGet packages & .NET tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.nuget/packages
+            ~/.dotnet/tools
+          key: nuget-verify-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: |
+            nuget-verify-${{ runner.os }}-
+            nuget-
 
       - name: Restore dependencies
         run: dotnet restore DnsPulse.sln
@@ -34,16 +56,36 @@ jobs:
         run: dotnet format DnsPulse.sln --verify-no-changes --no-restore
 
       - name: Run xUnit test suite
-        run: dotnet test DnsPulse.sln --configuration Release --no-restore --verbosity normal
+        run: dotnet test DnsPulse.sln --configuration Release --no-restore --verbosity minimal
+
+      - name: Generate CycloneDX SBOM (once for release)
+        shell: pwsh
+        run: |
+          if (-not (Get-Command dotnet-CycloneDX -ErrorAction SilentlyContinue)) {
+            dotnet tool install --global CycloneDX
+          }
+          New-Item -ItemType Directory -Force -Path staged-sbom | Out-Null
+          dotnet CycloneDX DnsPulse.sln `
+            --json `
+            --disable-package-restore `
+            --output staged-sbom `
+            --filename "sbom-pulsecore.cdx.json" `
+            --exclude-dev
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-sbom
+          path: staged-sbom/sbom-pulsecore.cdx.json
+          retention-days: 14
 
   build-and-package:
     name: Build & Package (${{ matrix.rid }})
-    needs: verify-pulsecore
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
-        rid: [ win-x64, win-arm64 ]
+        rid: ${{ fromJSON(inputs.skip_arm64 == true && '["win-x64"]' || '["win-x64", "win-arm64"]') }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -52,6 +94,16 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '9.0.x'
+
+      - name: Cache NuGet packages (${{ matrix.rid }})
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-publish-${{ runner.os }}-${{ matrix.rid }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: |
+            nuget-publish-${{ runner.os }}-${{ matrix.rid }}-
+            nuget-publish-${{ runner.os }}-
+            nuget-
 
       - name: Resolve release version
         id: version
@@ -61,7 +113,7 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($rawTag) -and "${{ github.ref_name }}".StartsWith("v")) {
             $rawTag = "${{ github.ref_name }}"
           }
-          $appVersion = if ([string]::IsNullOrWhiteSpace($rawTag)) { "2.0.0" } else { $rawTag.TrimStart('v') }
+          $appVersion = if ([string]::IsNullOrWhiteSpace($rawTag)) { "2.1.0" } else { $rawTag.TrimStart('v') }
           "app_version=$appVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Publish deterministic single-file binaries (${{ matrix.rid }})
@@ -77,10 +129,13 @@ jobs:
             -p:PublishSingleFile=true `
             -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=none `
+            -p:DebugSymbols=false `
             -p:ContinuousIntegrationBuild=true `
             -p:Deterministic=true `
             -p:Version=${{ steps.version.outputs.app_version }} `
             -o $outDir
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           dotnet publish src/DnsPulse.Service/DnsPulse.Service.csproj `
             -c Release `
@@ -89,10 +144,13 @@ jobs:
             -p:PublishSingleFile=true `
             -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=none `
+            -p:DebugSymbols=false `
             -p:ContinuousIntegrationBuild=true `
             -p:Deterministic=true `
             -p:Version=${{ steps.version.outputs.app_version }} `
             -o $outDir
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Copy catalog assets, license & READMEs
         shell: pwsh
@@ -109,10 +167,18 @@ jobs:
       - name: Package Portable ZIP (${{ matrix.rid }})
         shell: pwsh
         run: |
-          Compress-Archive `
-            -Path "artifacts/${{ matrix.rid }}/*" `
-            -DestinationPath "artifacts/DNS-Pulse-${{ matrix.rid }}-portable.zip" `
-            -Force
+          $zipPath = "artifacts/DNS-Pulse-${{ matrix.rid }}-portable.zip"
+          if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+          if (Get-Command 7z -ErrorAction SilentlyContinue) {
+            & 7z a -tzip -mx=1 -mmt=on $zipPath "./artifacts/${{ matrix.rid }}/*" | Out-Null
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            Compress-Archive `
+              -Path "artifacts/${{ matrix.rid }}/*" `
+              -DestinationPath $zipPath `
+              -CompressionLevel Fastest `
+              -Force
+          }
 
       - name: Build Inno Setup Installer (${{ matrix.rid }})
         shell: pwsh
@@ -127,6 +193,7 @@ jobs:
             }
           }
           $isccArgs = @(
+            "/Q",
             "/DArch=${{ matrix.rid }}",
             "/DAppVersion=${{ steps.version.outputs.app_version }}",
             "installer\DnsPulse.iss"
@@ -138,34 +205,24 @@ jobs:
           }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Generate CycloneDX SBOM (${{ matrix.rid }})
-        shell: pwsh
-        run: |
-          dotnet tool install --global CycloneDX
-          dotnet CycloneDX DnsPulse.sln `
-            --json `
-            --output artifacts `
-            --filename "sbom-${{ matrix.rid }}.cdx.json" `
-            --exclude-dev
-
       - name: Stage release files (${{ matrix.rid }})
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path staged | Out-Null
           Copy-Item "artifacts/DNS-Pulse-${{ matrix.rid }}-portable.zip" "staged/" -Force
           Copy-Item "artifacts/DNS-Pulse-${{ matrix.rid }}-setup.exe" "staged/" -Force
-          Copy-Item "artifacts/sbom-${{ matrix.rid }}.cdx.json" "staged/" -Force
 
       - name: Upload staged artifacts (${{ matrix.rid }})
         uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.rid }}
           path: staged/*
+          compression-level: 0
           retention-days: 14
 
   attest-and-release:
     name: Attest Provenance & Publish Release
-    needs: build-and-package
+    needs: [ verify-pulsecore, build-and-package ]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -185,6 +242,7 @@ jobs:
       - name: Generate SHA256SUMS.txt
         working-directory: release-assets
         run: |
+          shopt -s nullglob
           sha256sum DNS-Pulse-*.zip DNS-Pulse-*.exe sbom-*.cdx.json > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
@@ -201,6 +259,7 @@ jobs:
         with:
           name: DNS-Pulse-release-bundle
           path: release-assets/*
+          compression-level: 0
           retention-days: 14
 
       - name: Publish GitHub Release
@@ -210,12 +269,9 @@ jobs:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
           name: DNS Pulse ${{ inputs.release_tag || github.ref_name }}
           files: |
-            release-assets/DNS-Pulse-win-x64-portable.zip
-            release-assets/DNS-Pulse-win-x64-setup.exe
-            release-assets/DNS-Pulse-win-arm64-portable.zip
-            release-assets/DNS-Pulse-win-arm64-setup.exe
-            release-assets/sbom-win-x64.cdx.json
-            release-assets/sbom-win-arm64.cdx.json
+            release-assets/DNS-Pulse-*.zip
+            release-assets/DNS-Pulse-*.exe
+            release-assets/sbom-*.cdx.json
             release-assets/SHA256SUMS.txt
           body_path: CHANGELOG.md
           generate_release_notes: true

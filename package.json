@@ -6,8 +6,8 @@
     "tools/web-studio"
   ],
   "scripts": {
-    "dev": "npm --prefix tools/web-studio run dev",
-    "start": "npm --prefix tools/web-studio run start",
+    "dev": "PATH=./tools/web-studio/node_modules/.bin:./node_modules/.bin:$PATH exec tsx tools/web-studio/server.ts",
+    "start": "PATH=./tools/web-studio/node_modules/.bin:./node_modules/.bin:$PATH exec tsx tools/web-studio/server.ts",
     "build": "npm --prefix tools/web-studio run build",
     "preview": "npm --prefix tools/web-studio run preview",
     "lint": "npm --prefix tools/web-studio run lint",

@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import JSZip from 'jszip';
+
+const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(SERVER_DIR, '../../..');
 
 function addDirToZip(zip: JSZip, fsDir: string, zipPrefix: string) {
   if (!fs.existsSync(fsDir)) return;
@@ -26,10 +30,9 @@ function addFileIfExists(zip: JSZip, root: string, relPath: string) {
 
 export async function buildWindowsWpfProjectZip(): Promise<Buffer> {
   const zip = new JSZip();
-  const cwd = process.cwd();
-  const root = fs.existsSync(path.join(cwd, 'assets/dns_catalog_1000.tsv'))
-    ? cwd
-    : path.resolve(cwd, '../..');
+  const root = fs.existsSync(path.join(REPO_ROOT, 'assets/dns_catalog_1000.tsv'))
+    ? REPO_ROOT
+    : process.cwd();
 
   addDirToZip(zip, path.join(root, 'windows-wpf'), 'windows-wpf');
   addDirToZip(zip, path.join(root, '.github'), '.github');

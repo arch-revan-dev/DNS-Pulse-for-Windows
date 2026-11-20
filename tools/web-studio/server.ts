@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'node:path';
-import { createServer as createViteServer } from 'vite';
+import { fileURLToPath } from 'node:url';
+import { createServer as createViteServer, ViteDevServer } from 'vite';
 import { createDefaultServerTemplate, parseImportedServers } from './src/core/filterSort';
 import { dnsDb } from './server/db';
 import { runParserAndBypassCheck, scanSubnetNodes, syncOnlineHostsAndCommunityDns } from './server/discovery';
@@ -9,17 +10,23 @@ import { tunnelManager } from './server/tunnel';
 import { buildWindowsWpfProjectZip } from './server/wpfZip';
 
 const PORT = 3000;
+const WEB_STUDIO_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 async function startServer() {
   const app = express();
   app.use(express.json({ limit: '5mb' }));
 
+  app.get('/api/health', (_req, res) => {
+    res.json({ ok: true });
+  });
+
   // Background non-blocking online hosts & community DNS refresh on startup
-  setTimeout(() => {
+  const syncTimer = setTimeout(() => {
     syncOnlineHostsAndCommunityDns().catch(() => {
       // Offline fallback cache remains active
     });
-  }, 1500);
+  }, 4000);
+  syncTimer.unref();
 
   // --- API Routes ---
   app.get('/api/bootstrap', (_req, res) => {
@@ -220,21 +227,29 @@ async function startServer() {
     res.send(buffer);
   });
 
+  let viteServer: ViteDevServer | null = null;
+
   // Vite middleware for dev, or static dist for production
   if (process.env.NODE_ENV === 'production') {
-    const distDir = path.resolve(process.cwd(), 'dist');
+    const distDir = path.join(WEB_STUDIO_DIR, 'dist');
     app.use(express.static(distDir));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distDir, 'index.html'));
     });
   } else {
-    const vite = await createViteServer({
+    // Initialize Vite asynchronously so Express binds port 3000 immediately
+    const viteReadyPromise = createViteServer({
+      root: WEB_STUDIO_DIR,
+      configFile: path.join(WEB_STUDIO_DIR, 'vite.config.ts'),
       server: {
         middlewareMode: true,
         hmr: false,
         ws: false,
       },
       appType: 'spa',
+    }).then((server) => {
+      viteServer = server;
+      return server;
     });
 
     // HMR is disabled in this environment (and remote proxies only forward port 3000).
@@ -242,6 +257,7 @@ async function startServer() {
     // when hmr/ws are false, so strip the connect call while preserving CSS/HMR exports.
     app.get('/@vite/client', async (_req, res, next) => {
       try {
+        const vite = await viteReadyPromise;
         const transformed = await vite.transformRequest('/@vite/client');
         if (!transformed) {
           next();
@@ -264,12 +280,30 @@ async function startServer() {
       }
     });
 
-    app.use(vite.middlewares);
+    app.use(async (req, res, next) => {
+      try {
+        const vite = await viteReadyPromise;
+        vite.middlewares(req, res, next);
+      } catch (err) {
+        next(err);
+      }
+    });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const httpServer = app.listen(PORT, '0.0.0.0', () => {
     console.log(`DNS Pulse server listening on http://0.0.0.0:${PORT}`);
   });
+
+  const shutdown = () => {
+    tunnelManager.stop();
+    httpServer.close(() => {
+      void viteServer?.close().finally(() => process.exit(0));
+    });
+    setTimeout(() => process.exit(0), 1500).unref();
+  };
+
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 }
 
 startServer().catch((err) => {

@@ -1,17 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { buildFullBuiltinCatalog } from '../src/core/catalogSeed';
 import { DnsServer, ProbeResult, SyncStatus } from '../src/core/types';
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
+const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
+const WEB_STUDIO_DIR = path.resolve(SERVER_DIR, '..');
+const DATA_DIR = path.join(WEB_STUDIO_DIR, 'data');
 const DB_PATH = path.join(DATA_DIR, 'dns_pulse.db');
 const VAULT_PATH = path.join(DATA_DIR, 'custom_dns_vault.json');
 const HOSTS_CACHE_PATH = path.join(DATA_DIR, 'dynamic_bypass_domains_cache.json');
 const RESTORE_STATE_PATH = path.join(DATA_DIR, 'restore_network_state.json');
 const SETTINGS_PATH = path.join(DATA_DIR, 'app_settings.json');
-const REPO_ROOT_TSV_PATH = path.resolve(process.cwd(), '../../assets/dns_catalog_1000.tsv');
-const LOCAL_TSV_PATH = path.resolve(process.cwd(), 'assets/dns_catalog_1000.tsv');
+const REPO_ROOT_TSV_PATH = path.resolve(WEB_STUDIO_DIR, '../../assets/dns_catalog_1000.tsv');
+const LOCAL_TSV_PATH = path.join(WEB_STUDIO_DIR, 'assets/dns_catalog_1000.tsv');
 const TSV_PATH = fs.existsSync(REPO_ROOT_TSV_PATH) ? REPO_ROOT_TSV_PATH : LOCAL_TSV_PATH;
 
 export interface AppSettings {
@@ -107,7 +110,9 @@ class DnsDatabase {
     ensureDataDir();
     this.db = new DatabaseSync(DB_PATH);
     this.initSchema();
-    this.seedBuiltinsIfMissing();
+    if (this.getCount() < 1050) {
+      this.seedBuiltinsIfMissing();
+    }
     this.restoreFromVaultIfNeeded();
     this.ensureDefaultHostsCache();
     this.ensureRestoreStatePlaceholder();

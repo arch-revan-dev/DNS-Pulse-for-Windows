@@ -3,11 +3,31 @@ name: CI (PulseCore .NET 9 & Web Studio)
 on:
   push:
     branches: [ main, master ]
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - 'CHANGELOG.md'
+      - '.gitignore'
   pull_request:
     branches: [ main, master ]
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - 'CHANGELOG.md'
+      - '.gitignore'
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  NUGET_XMLDOC_MODE: 'skip'
 
 jobs:
   pulsecore-dotnet:
@@ -21,6 +41,15 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '9.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-ci-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: |
+            nuget-ci-${{ runner.os }}-
+            nuget-
 
       - name: Restore NuGet dependencies
         run: dotnet restore DnsPulse.sln
@@ -36,7 +65,7 @@ jobs:
           dotnet test DnsPulse.sln
           --configuration Release
           --no-build
-          --verbosity normal
+          --verbosity minimal
           --collect:"XPlat Code Coverage"
           --results-directory TestResults
 
@@ -51,8 +80,8 @@ jobs:
 
       - name: Verify win-arm64 compilation (App & Service)
         run: |
-          dotnet build src/DnsPulse.App/DnsPulse.App.csproj --configuration Release -r win-arm64 --self-contained false
-          dotnet build src/DnsPulse.Service/DnsPulse.Service.csproj --configuration Release -r win-arm64 --self-contained false
+          dotnet build src/DnsPulse.App/DnsPulse.App.csproj --configuration Release -r win-arm64 --self-contained false -p:DebugType=none
+          dotnet build src/DnsPulse.Service/DnsPulse.Service.csproj --configuration Release -r win-arm64 --self-contained false -p:DebugType=none
 
   web-studio:
     name: Companion Web Studio (tools/web-studio)
@@ -68,14 +97,23 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Cache npm cache
+        if: hashFiles('tools/web-studio/package.json') != ''
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-web-studio-${{ runner.os }}-${{ hashFiles('tools/web-studio/package.json') }}
+          restore-keys: |
+            npm-web-studio-${{ runner.os }}-
+
       - name: Install dependencies
         if: hashFiles('tools/web-studio/package.json') != ''
         working-directory: tools/web-studio
         run: |
           if [ -f package-lock.json ]; then
-            npm ci
+            npm ci --prefer-offline --no-audit --no-fund
           else
-            npm install --no-audit --no-fund
+            npm install --prefer-offline --no-audit --no-fund
           fi
 
       - name: Run Web Studio unit tests
