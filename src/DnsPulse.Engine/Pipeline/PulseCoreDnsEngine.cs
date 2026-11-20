@@ -341,14 +341,9 @@ public sealed class PulseCoreDnsEngine : IPulseDnsResolver
         PulseCoreEngineOptions options,
         CancellationToken cancellationToken)
     {
-        List<DnsServerEntry> eligible = [];
-        foreach (DnsServerEntry entry in SelectScopedCandidates(options.GeoUnlockUpstreams, decision.TargetProfileId))
-        {
-            if (TrustTierPolicy.CanServeGeoUnlock(entry.TrustTier) || TrustTierPolicy.CanServeDefaultInternet(entry.TrustTier, entry.Protocol))
-            {
-                eligible.Add(entry);
-            }
-        }
+        List<DnsServerEntry> eligible = SelectZone3Candidates(
+            options.GeoUnlockUpstreams,
+            decision.TargetProfileId);
 
         if (eligible.Count == 0)
         {
@@ -732,6 +727,58 @@ public sealed class PulseCoreDnsEngine : IPulseDnsResolver
         }
 
         return matched.Count > 0 ? matched : configured;
+    }
+
+    private static List<DnsServerEntry> SelectZone3Candidates(
+        IReadOnlyList<DnsServerEntry> configured,
+        string? targetProfileId)
+    {
+        List<DnsServerEntry> allEligible = [];
+        foreach (DnsServerEntry entry in configured)
+        {
+            if (TrustTierPolicy.CanServeGeoUnlock(entry.TrustTier) || TrustTierPolicy.CanServeDefaultInternet(entry.TrustTier, entry.Protocol))
+            {
+                allEligible.Add(entry);
+            }
+        }
+
+        if (allEligible.Count == 0 || string.IsNullOrWhiteSpace(targetProfileId))
+        {
+            return allEligible;
+        }
+
+        List<DnsServerEntry> ordered = [];
+        foreach (DnsServerEntry entry in allEligible)
+        {
+            if (string.Equals(entry.Id, targetProfileId, StringComparison.OrdinalIgnoreCase))
+            {
+                ordered.Add(entry);
+            }
+        }
+
+        if (ordered.Count == 0)
+        {
+            return allEligible;
+        }
+
+        // Targeted SNI-Proxy rules synthesize IPv4 A records directly without DNS-protocol failover.
+        if (ordered[0].Protocol == DnsProtocol.SniProxy)
+        {
+            return ordered;
+        }
+
+        // Prioritize the targeted Smart-DNS upstream first while keeping remaining non-SNI Geo-Unlock
+        // upstreams as per-domain failover backups (for example when the primary returns a direct CDN IP).
+        foreach (DnsServerEntry entry in allEligible)
+        {
+            if (entry.Protocol != DnsProtocol.SniProxy &&
+                !string.Equals(entry.Id, targetProfileId, StringComparison.OrdinalIgnoreCase))
+            {
+                ordered.Add(entry);
+            }
+        }
+
+        return ordered;
     }
 
     private static DnsMessage CreateBlockedResponse(
