@@ -9,6 +9,7 @@ const GOOGLE_DIRECT_PREFIXES = [
   '142.251.',
   '172.217.',
   '172.253.',
+  '173.194.',
   '216.58.',
   '192.178.',
   '74.125.',
@@ -19,9 +20,11 @@ const GOOGLE_DIRECT_PREFIXES = [
   '66.102.',
   '66.249.',
   '72.14.',
+  '34.',
+  '35.',
 ];
 
-// Cloudflare / OpenAI / Anthropic direct ranges
+// Cloudflare / OpenAI / Anthropic / Cursor / Windsurf direct ranges
 const AI_OTHER_DIRECT_CIDR_PREFIXES = [
   '104.18.',
   '172.64.',
@@ -51,7 +54,9 @@ export function isDirectServiceIp(ip: string, domain: string): boolean {
   if (
     cleanDomain.includes('google.com') ||
     cleanDomain.includes('googleapis.com') ||
-    cleanDomain.includes('clients6.google.com')
+    cleanDomain.includes('clients6.google.com') ||
+    cleanDomain.includes('antigravity.google') ||
+    cleanDomain.includes('antigravity-unleash.goog')
   ) {
     return GOOGLE_DIRECT_PREFIXES.some((prefix) => cleanIp.startsWith(prefix));
   }
@@ -61,7 +66,11 @@ export function isDirectServiceIp(ip: string, domain: string): boolean {
     cleanDomain.includes('openai.com') ||
     cleanDomain.includes('claude.ai') ||
     cleanDomain.includes('anthropic.com') ||
-    cleanDomain.includes('copilot.microsoft.com')
+    cleanDomain.includes('copilot.microsoft.com') ||
+    cleanDomain.includes('cursor.sh') ||
+    cleanDomain.includes('cursor.com') ||
+    cleanDomain.includes('windsurf.com') ||
+    cleanDomain.includes('codeium.com')
   ) {
     return AI_OTHER_DIRECT_CIDR_PREFIXES.some((prefix) => cleanIp.startsWith(prefix));
   }

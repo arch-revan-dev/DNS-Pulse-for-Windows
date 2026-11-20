@@ -1014,6 +1014,20 @@ public sealed class SixLayerDiagnosticEngine
                         continue;
                     }
 
+                    bool companionOverridden = options.CompanionEndpointOverrides is not null &&
+                        options.CompanionEndpointOverrides.ContainsKey(companion);
+                    if (upstream.SupportsBypass &&
+                        !companionOverridden &&
+                        AntiDirectAndGeoSignatures.IsDirectServiceIp(companionEndpoint.Address, companion))
+                    {
+                        allCompanionsOk = false;
+                        isGeoBlocked = true;
+                        geoReason ??= string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Companion '{companion}' resolved to direct unproxied CDN IP ({companionEndpoint.Address}).");
+                        continue;
+                    }
+
                     string companionPath = GetDefaultProbePath(companion);
                     HttpProbeOutcome compProbe = await ProbeHttpsEndpointAsync(
                         companion,
@@ -1229,6 +1243,18 @@ public sealed class SixLayerDiagnosticEngine
                 "Target service is geo-restricted on this path. Route this domain through a Tier 2 verified Geo-Unlock resolver.",
                 domain);
         }
+        else if (layer3.DirectIpOnBypassUpstream)
+        {
+            verdict = DiagnosticVerdict.GeoBlockedByService;
+            reason = string.Create(
+                CultureInfo.InvariantCulture,
+                $"Bypass resolver '{upstream.Name}' returned a direct unproxied CDN IP for '{domain}'; regional blocks will not be bypassed.");
+            remediation = new RecommendedRemediation(
+                RemediationActionKind.RouteViaVerifiedGeoUnlock,
+                "Switch to Verified Geo-Unlock Resolver",
+                "Selected bypass resolver returned a direct CDN IP instead of a proxy IP. Switch to a verified Smart-DNS node that proxies this domain.",
+                domain);
+        }
         else if (layer5.IsRelayFailure)
         {
             verdict = DiagnosticVerdict.IpBlockedByIsp;
@@ -1366,9 +1392,13 @@ public sealed class SixLayerDiagnosticEngine
 
             if (requireGoogleAiSignature)
             {
+                bool isGoogleRpcEndpoint = IsGoogleApiRpcDomain(host);
                 bool hasGoogleSignature = AntiDirectAndGeoSignatures.HasGoogleAiSignature(location)
                     || AntiDirectAndGeoSignatures.HasGoogleAiSignature(bodySnippet);
-                if (statusCode >= 400 || (!string.IsNullOrEmpty(bodySnippet) && !hasGoogleSignature))
+                bool statusDisallowed = isGoogleRpcEndpoint
+                    ? statusCode is not (200 or 401 or 404 or 405)
+                    : statusCode >= 400;
+                if (statusDisallowed || (!isGoogleRpcEndpoint && !string.IsNullOrEmpty(bodySnippet) && !hasGoogleSignature))
                 {
                     return new HttpProbeOutcome(
                         statusCode,
@@ -1706,6 +1736,14 @@ public sealed class SixLayerDiagnosticEngine
         }
 
         return false;
+    }
+
+    private static bool IsGoogleApiRpcDomain(string domain)
+    {
+        return domain.Contains("cloudcode-pa", StringComparison.OrdinalIgnoreCase)
+            || domain.Contains("antigravity-pa", StringComparison.OrdinalIgnoreCase)
+            || domain.Contains("cloudaicompanion", StringComparison.OrdinalIgnoreCase)
+            || domain.Equals("generativelanguage.googleapis.com", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string GetDefaultProbePath(string domain)

@@ -7,56 +7,77 @@
                 HorizontalScrollBarVisibility="Disabled"
                 Padding="{DynamicResource PulsePagePadding}">
     <StackPanel MaxWidth="1280">
-      <!-- SIMPLE MODE ("Для чайников"): One-Button AI Autopilot + Desktop AI Apps Capture -->
-      <StackPanel Visibility="{Binding IsSimpleMode, Converter={StaticResource BooleanToVisibilityConverter}}">
-        <ui:Card Padding="28"
-                 Margin="{DynamicResource PulseSectionMargin}">
-          <StackPanel HorizontalAlignment="Center" MaxWidth="680">
-            <Border Width="64"
-                    Height="64"
-                    CornerRadius="32"
+      <!-- SIMPLE MODE: iOS x Windows 11 Frosted Glass Squircle Hub -->
+      <StackPanel MaxWidth="740"
+                  HorizontalAlignment="Center"
+                  Visibility="{Binding IsSimpleMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+
+        <!-- Primary Frosted Squircle Power Orb Card -->
+        <Border Margin="0,4,0,16"
+                Padding="28,32,28,24"
+                CornerRadius="22"
+                Background="{DynamicResource PulseGlassCardBrush}"
+                BorderBrush="{DynamicResource PulseGlassCardBorderBrush}"
+                BorderThickness="1">
+          <StackPanel HorizontalAlignment="Stretch">
+            <!-- Tactile Circular Power Orb inside Concentric Halo -->
+            <Border Width="140"
+                    Height="140"
+                    CornerRadius="70"
                     HorizontalAlignment="Center"
-                    Margin="0,0,0,14"
-                    Background="{Binding HeroState, Converter={StaticResource VerdictToBrushConverter}}">
-              <ui:SymbolIcon Symbol="ShieldCheckmark24"
-                             FontSize="30"
-                             Foreground="White"
-                             HorizontalAlignment="Center"
-                             VerticalAlignment="Center" />
+                    Margin="0,0,0,18"
+                    Background="{DynamicResource PulseOrbHaloBrush}"
+                    BorderBrush="{DynamicResource PulseGlassCardBorderBrush}"
+                    BorderThickness="1">
+              <Button Style="{StaticResource PulsePowerOrbButtonStyle}"
+                      Background="{Binding HeroState, Converter={StaticResource VerdictToBrushConverter}}"
+                      Command="{Binding ToggleAiAutopilotCommand}"
+                      IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}"
+                      AutomationProperties.Name="{Binding SimplePrimaryButtonText}">
+                <ui:SymbolIcon Symbol="Power24"
+                               FontSize="40"
+                               Foreground="White"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center" />
+              </Button>
             </Border>
 
-            <ui:TextBlock FontTypography="TitleLarge"
-                          HorizontalAlignment="Center"
-                          TextAlignment="Center"
-                          Text="{conv:Localization Simple_Title}" />
+            <!-- Crisp Typographic Status Hierarchy -->
+            <TextBlock FontSize="24"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
+                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                       Text="{Binding HeroStatusTitle}" />
 
-            <TextBlock Margin="0,6,0,18"
+            <TextBlock Margin="0,6,0,20"
                        FontSize="13"
+                       HorizontalAlignment="Center"
                        TextAlignment="Center"
                        TextWrapping="Wrap"
+                       MaxWidth="520"
                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                       Text="{conv:Localization Simple_Subtitle}" />
+                       Text="{Binding ActiveNodeSubtitle}" />
 
-            <!-- THE ONE BIG BUTTON -->
+            <!-- Primary Squircle Action Button -->
             <ui:Button HorizontalAlignment="Center"
-                       MinWidth="260"
-                       Height="54"
-                       Padding="28,12"
-                       FontSize="16"
+                       MinWidth="228"
+                       Height="44"
+                       Padding="24,10"
+                       CornerRadius="12"
+                       FontSize="14"
                        FontWeight="SemiBold"
                        Appearance="Primary"
                        Content="{Binding SimplePrimaryButtonText}"
                        Command="{Binding ToggleAiAutopilotCommand}"
-                       IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}">
-              <ui:Button.Icon>
-                <ui:SymbolIcon Symbol="Flash24" FontSize="20" />
-              </ui:Button.Icon>
-            </ui:Button>
+                       IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}" />
 
             <!-- Live Autopilot Progress -->
             <StackPanel Margin="0,16,0,0"
+                        MaxWidth="440"
+                        HorizontalAlignment="Center"
                         Visibility="{Binding IsAutoFinding, Converter={StaticResource BooleanToVisibilityConverter}}">
-              <ProgressBar Height="6"
+              <ProgressBar Height="5"
                            Minimum="0"
                            Maximum="100"
                            Value="{Binding AutoSetupProgress}" />
@@ -67,81 +88,171 @@
                          Text="{Binding AutoSetupStepMessage}" />
             </StackPanel>
 
-            <!-- Live Status & Dynamic Watchdog Summary -->
-            <Border Margin="0,16,0,0"
-                    Padding="14,10"
-                    CornerRadius="8"
-                    Background="{DynamicResource PulseInnerPanelBrush}"
-                    BorderBrush="{DynamicResource PulseInnerPanelBorderBrush}"
-                    BorderThickness="1">
-              <StackPanel>
-                <TextBlock FontSize="13"
-                           FontWeight="SemiBold"
-                           TextAlignment="Center"
-                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                           Text="{Binding HeroStatusTitle}" />
-                <TextBlock Margin="0,3,0,0"
+            <!-- Hairline Divider + Honest Adapter DNS / UAC / Local Tunnel Footer -->
+            <Border Margin="0,22,0,0"
+                    Padding="0,14,0,0"
+                    BorderBrush="{DynamicResource PulseHairlineDividerBrush}"
+                    BorderThickness="0,1,0,0">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                  <TextBlock FontSize="12"
+                             FontWeight="Medium"
+                             Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                             Text="{Binding AdapterDnsStatusSummary}"
+                             TextTrimming="CharacterEllipsis" />
+                  <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                    <TextBlock FontSize="12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               Text="{Binding LocalProxyEndpointText}" />
+                    <TextBlock Margin="10,0,0,0"
+                               FontSize="12"
+                               Foreground="{DynamicResource PulseIosGreenBrush}"
+                               Text="{Binding WatchdogStatusSummary}"
+                               Visibility="{Binding IsWatchdogActive, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                  </StackPanel>
+                </StackPanel>
+
+                <ui:Button Grid.Column="1"
+                           Margin="12,0,0,0"
+                           Padding="12,6"
+                           CornerRadius="10"
                            FontSize="12"
-                           TextAlignment="Center"
-                           TextWrapping="Wrap"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                           Text="{Binding LocalProxyEndpointText}" />
-                <TextBlock Margin="0,4,0,0"
-                           FontSize="12"
-                           TextAlignment="Center"
-                           Foreground="{StaticResource PulseSuccessBrush}"
-                           Text="{Binding WatchdogStatusSummary}"
-                           Visibility="{Binding IsWatchdogActive, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                <TextBlock Margin="0,4,0,0"
-                           FontSize="12"
-                           TextAlignment="Center"
-                           TextWrapping="Wrap"
-                           Foreground="{StaticResource PulseDangerBrush}"
-                           Text="{Binding LastErrorMessage}"
-                           Visibility="{Binding LastErrorMessage, Converter={StaticResource NullToVisibilityConverter}}" />
-              </StackPanel>
+                           Appearance="Secondary"
+                           Content="{conv:Localization Simple_Adapter_Elevate}"
+                           Command="{Binding RestartAsAdministratorCommand}"
+                           Visibility="{Binding NeedsAdminElevation, Converter={StaticResource BooleanToVisibilityConverter}}" />
+              </Grid>
+            </Border>
+
+            <TextBlock Margin="0,10,0,0"
+                       FontSize="12"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource PulseIosRedBrush}"
+                       Text="{Binding LastErrorMessage}"
+                       Visibility="{Binding LastErrorMessage, Converter={StaticResource NullToVisibilityConverter}}" />
+          </StackPanel>
+        </Border>
+
+        <!-- 4-Service Live AI Readiness Strip (Antigravity · Gemini · ChatGPT · Claude) -->
+        <Border Margin="0,0,0,16"
+                CornerRadius="18"
+                Background="{DynamicResource PulseGlassCardBrush}"
+                BorderBrush="{DynamicResource PulseGlassCardBorderBrush}"
+                BorderThickness="1">
+          <StackPanel>
+            <DockPanel Margin="18,14,14,12">
+              <ui:Button DockPanel.Dock="Right"
+                         Padding="10,5"
+                         CornerRadius="9"
+                         FontSize="12"
+                         Appearance="Secondary"
+                         Content="{conv:Localization Simple_Services_Check}"
+                         Command="{Binding VerifyAllAiServicesCommand}"
+                         IsEnabled="{Binding IsCheckingAiServices, Converter={StaticResource InverseBoolConverter}}" />
+              <TextBlock VerticalAlignment="Center"
+                         FontSize="13"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                         Text="{conv:Localization Simple_Services_Title}" />
+            </DockPanel>
+
+            <Border BorderBrush="{DynamicResource PulseHairlineDividerBrush}"
+                    BorderThickness="0,1,0,0">
+              <ItemsControl ItemsSource="{Binding AiServiceChecks}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <UniformGrid Columns="4" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Padding="16,14"
+                            BorderBrush="{DynamicResource PulseHairlineDividerBrush}"
+                            BorderThickness="0,0,1,0">
+                      <StackPanel>
+                        <TextBlock FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                   Text="{Binding DisplayName}" />
+                        <TextBlock Margin="0,4,0,0"
+                                   FontSize="12"
+                                   FontWeight="Medium"
+                                   Text="{Binding StatusDetail}">
+                          <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                              <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsHealthy}" Value="True">
+                                  <Setter Property="Foreground" Value="{DynamicResource PulseIosGreenBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsBlocked}" Value="True">
+                                  <Setter Property="Foreground" Value="{DynamicResource PulseIosRedBrush}" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Margin="0,2,0,0"
+                                   FontSize="11"
+                                   FontFamily="Consolas"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   Text="{Binding ResolvedIp}"
+                                   Visibility="{Binding ResolvedIp, Converter={StaticResource NullToVisibilityConverter}}" />
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
             </Border>
           </StackPanel>
-        </ui:Card>
+        </Border>
 
-        <!-- Desktop & CLI AI Apps Local Tunnel Capture Card -->
-        <ui:Card Padding="20"
-                 Margin="{DynamicResource PulseSectionMargin}">
+        <!-- iOS Grouped Inset List: Desktop & CLI AI Applications -->
+        <Border Margin="0,0,0,16"
+                CornerRadius="18"
+                Background="{DynamicResource PulseGlassCardBrush}"
+                BorderBrush="{DynamicResource PulseGlassCardBorderBrush}"
+                BorderThickness="1">
           <StackPanel>
-            <DockPanel Margin="0,0,0,12">
+            <DockPanel Margin="18,14,14,12">
               <ui:Button DockPanel.Dock="Right"
-                         Padding="12,6"
+                         Padding="10,5"
+                         CornerRadius="9"
+                         FontSize="12"
                          Appearance="Secondary"
                          Content="{conv:Localization Simple_Apps_Refresh}"
                          Command="{Binding RefreshAiAppsCommand}" />
-              <StackPanel>
-                <TextBlock FontSize="15"
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock FontSize="13"
                            FontWeight="SemiBold"
-                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                            Text="{conv:Localization Simple_Apps_Title}" />
                 <TextBlock Margin="0,2,0,0"
-                           FontSize="12"
-                           TextWrapping="Wrap"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextFillColorTertiaryBrush}"
                            Text="{conv:Localization Simple_Apps_Subtitle}" />
               </StackPanel>
             </DockPanel>
 
-            <TextBlock Margin="0,0,0,8"
+            <TextBlock Margin="18,0,18,10"
                        FontSize="12"
-                       Foreground="{StaticResource PulseSuccessBrush}"
+                       Foreground="{DynamicResource PulseIosGreenBrush}"
                        Text="{Binding AiAppActionStatus}"
+                       TextWrapping="Wrap"
                        Visibility="{Binding AiAppActionStatus, Converter={StaticResource NullToVisibilityConverter}}" />
 
             <ItemsControl ItemsSource="{Binding DetectedAiApps}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                  <Border Margin="0,0,0,8"
-                          Padding="12,10"
-                          CornerRadius="8"
-                          Background="{DynamicResource PulseInnerPanelBrush}"
-                          BorderBrush="{DynamicResource PulseInnerPanelBorderBrush}"
-                          BorderThickness="1">
+                  <Border Padding="18,12"
+                          BorderBrush="{DynamicResource PulseHairlineDividerBrush}"
+                          BorderThickness="0,1,0,0">
                     <Grid>
                       <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -158,24 +269,39 @@
                           <TextBlock Margin="8,0,0,0"
                                      FontSize="11"
                                      VerticalAlignment="Center"
-                                     Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                     Foreground="{DynamicResource TextFillColorTertiaryBrush}"
                                      Text="{Binding Category}" />
                           <TextBlock Margin="8,0,0,0"
                                      FontSize="11"
-                                     FontWeight="SemiBold"
+                                     FontWeight="Medium"
                                      VerticalAlignment="Center"
-                                     Foreground="{StaticResource PulseSuccessBrush}"
-                                     Text="{Binding StatusBadgeText}" />
+                                     Text="{Binding StatusBadgeText}">
+                            <TextBlock.Style>
+                              <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding IsInstalled}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource PulseIosBlueBrush}" />
+                                  </DataTrigger>
+                                  <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource PulseIosGreenBrush}" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </TextBlock.Style>
+                          </TextBlock>
                         </StackPanel>
                         <TextBlock Margin="0,2,0,0"
                                    FontSize="11"
-                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   FontFamily="Consolas"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
                                    Text="{Binding PrimaryDomain}" />
                       </StackPanel>
 
                       <ui:Button Grid.Column="1"
                                  Margin="0,0,8,0"
                                  Padding="10,5"
+                                 CornerRadius="9"
                                  Appearance="Secondary"
                                  FontSize="12"
                                  Content="{conv:Localization Simple_Apps_CopyCmd}"
@@ -184,6 +310,7 @@
 
                       <ui:Button Grid.Column="2"
                                  Padding="12,5"
+                                 CornerRadius="9"
                                  Appearance="Primary"
                                  FontSize="12"
                                  Content="{conv:Localization Simple_Apps_Launch}"
@@ -195,7 +322,7 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
           </StackPanel>
-        </ui:Card>
+        </Border>
       </StackPanel>
 
       <!-- EXPERT MODE: Full Guided 1-2-3 Hero, Strategy Profiles & Live Telemetry -->

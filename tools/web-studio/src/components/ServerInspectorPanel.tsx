@@ -39,7 +39,7 @@ export const ServerInspectorPanel: React.FC<ServerInspectorPanelProps> = ({
     return (
       <aside
         aria-label="Инспектор DNS"
-        className="hidden xl:flex flex-col justify-center items-center text-center rounded-lg bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] p-8 min-h-[320px] sticky top-20"
+        className="hidden xl:flex flex-col justify-center items-center text-center glass-surface rounded-2xl p-8 min-h-[320px] sticky top-20"
       >
         <div className="text-sm font-semibold text-[#0F172A] dark:text-[#F1F5F9]">
           Выберите узел для инспекции
@@ -59,7 +59,7 @@ export const ServerInspectorPanel: React.FC<ServerInspectorPanelProps> = ({
   return (
     <aside
       aria-label={`Инспектор ${server.name}`}
-      className="hidden xl:flex flex-col gap-4 rounded-lg bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] p-5 sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto"
+      className="hidden xl:flex flex-col gap-4 glass-surface rounded-2xl p-5 sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">

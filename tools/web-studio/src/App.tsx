@@ -21,9 +21,11 @@ import {
 import { ConfigsTab } from './components/ConfigsTab';
 import { DiscoveryModal } from './components/DiscoveryModal';
 import { ManualAddModal } from './components/ManualAddModal';
+import { OverviewHub, ServiceReadinessState } from './components/OverviewHub';
 import { getEndpointLabel, ServerCard } from './components/ServerCard';
 import { ServerDetailsDrawer } from './components/ServerDetailsDrawer';
 import { ServerInspectorPanel } from './components/ServerInspectorPanel';
+import { AI_READINESS_SERVICES, AiReadinessService } from './core/aiApps';
 import {
   CATEGORY_LIST,
   filterServers,
@@ -31,7 +33,7 @@ import {
   hasActiveFilter,
   sortServers,
 } from './core/filterSort';
-import { DOMAIN_PRESETS, getPresetsForGroup, PRESET_GROUPS } from './core/presets';
+import { getPresetsForGroup, PRESET_GROUPS } from './core/presets';
 import {
   DnsServer,
   FilterState,
@@ -41,7 +43,14 @@ import {
   TunnelState,
 } from './core/types';
 
-type ActiveTab = 'tester' | 'catalog' | 'configs';
+type ActiveTab = 'overview' | 'tester' | 'catalog' | 'configs';
+
+const INITIAL_SERVICE_CHECKS: Record<AiReadinessService['id'], ServiceReadinessState> = {
+  antigravity: { status: 'idle', latencyMs: null, resolvedIp: null, detail: 'Не проверено' },
+  gemini: { status: 'idle', latencyMs: null, resolvedIp: null, detail: 'Не проверено' },
+  chatgpt: { status: 'idle', latencyMs: null, resolvedIp: null, detail: 'Не проверено' },
+  claude: { status: 'idle', latencyMs: null, resolvedIp: null, detail: 'Не проверено' },
+};
 
 interface AppSettings {
   theme: 'dark' | 'light';
@@ -63,7 +72,13 @@ const DEFAULT_FILTER: FilterState = {
 export default function App() {
   const [servers, setServers] = useState<DnsServer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('tester');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
+  const [autopilotBusy, setAutopilotBusy] = useState(false);
+  const [autopilotMessage, setAutopilotMessage] = useState<string | null>(null);
+  const [serviceChecks, setServiceChecks] = useState<
+    Record<AiReadinessService['id'], ServiceReadinessState>
+  >(INITIAL_SERVICE_CHECKS);
+  const [checkingServices, setCheckingServices] = useState(false);
 
   const [presetGroup, setPresetGroup] = useState<PresetGroupId>('ai');
   const [targetDomain, setTargetDomain] = useState<string>('gemini.google.com');
@@ -410,47 +425,240 @@ export default function App() {
     if (Array.isArray(data.servers)) setServers(data.servers);
   };
 
+  const activeServerLatencyMs = useMemo(() => {
+    if (!tunnel.serverId) return null;
+    return servers.find((s) => s.id === tunnel.serverId)?.lastLatencyMs ?? null;
+  }, [servers, tunnel.serverId]);
+
+  const pickSmartDnsCandidatePool = useCallback(
+    (source: DnsServer[]): DnsServer[] => {
+      const smart = source.filter(
+        (s) => s.category === 'Smart-DNS' && !s.isSubscription && s.protocol !== 'UDP'
+      );
+      const base = smart.length >= 4
+        ? smart
+        : source.filter((s) => s.category === 'Smart-DNS' && !s.isSubscription);
+      const ranked = sortServers(base.length > 0 ? base : source, 'BEST');
+      return ranked.slice(0, 8);
+    },
+    []
+  );
+
+  const handleVerifyAllServices = useCallback(
+    async (explicitServerId?: string) => {
+      const targetServerId =
+        explicitServerId ||
+        tunnel.serverId ||
+        bestVerifiedId ||
+        pickSmartDnsCandidatePool(servers)[0]?.id;
+
+      if (!targetServerId) return;
+
+      setCheckingServices(true);
+      setServiceChecks({
+        antigravity: { status: 'checking', latencyMs: null, resolvedIp: null, detail: 'Проверка...' },
+        gemini: { status: 'checking', latencyMs: null, resolvedIp: null, detail: 'Проверка...' },
+        chatgpt: { status: 'checking', latencyMs: null, resolvedIp: null, detail: 'Проверка...' },
+        claude: { status: 'checking', latencyMs: null, resolvedIp: null, detail: 'Проверка...' },
+      });
+
+      try {
+        await Promise.all(
+          AI_READINESS_SERVICES.map(async (svc) => {
+            try {
+              const res = await fetch('/api/probe/single', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  serverId: targetServerId,
+                  targetDomain: svc.domain,
+                  requiresBypass: svc.requiresBypass,
+                }),
+              });
+              const data = await res.json();
+              const probe = data.result;
+              const verdict = probe?.verdict as DnsServer['verdict'] | undefined;
+              const ip = Array.isArray(probe?.resolvedIps) && probe.resolvedIps.length > 0
+                ? String(probe.resolvedIps[0])
+                : null;
+              const latency = typeof probe?.latencyMs === 'number' ? probe.latencyMs : null;
+
+              const nextState: ServiceReadinessState =
+                verdict === 'VERIFIED_PROXY_OK'
+                  ? {
+                      status: 'ok',
+                      verdict,
+                      latencyMs: latency,
+                      resolvedIp: ip,
+                      detail: ip ? `Доступен · ${ip}` : 'Доступен',
+                    }
+                  : verdict === 'DIRECT_NO_PROXY'
+                    ? {
+                        status: 'direct',
+                        verdict,
+                        latencyMs: latency,
+                        resolvedIp: ip,
+                        detail: 'Прямой IP (нужен другой узел)',
+                      }
+                    : {
+                        status: 'error',
+                        verdict,
+                        latencyMs: latency,
+                        resolvedIp: ip,
+                        detail: probe?.verdictReason || 'Нет ответа',
+                      };
+
+              setServiceChecks((prev) => ({ ...prev, [svc.id]: nextState }));
+            } catch {
+              setServiceChecks((prev) => ({
+                ...prev,
+                [svc.id]: {
+                  status: 'error',
+                  latencyMs: null,
+                  resolvedIp: null,
+                  detail: 'Ошибка проверки',
+                },
+              }));
+            }
+          })
+        );
+      } finally {
+        setCheckingServices(false);
+      }
+    },
+    [tunnel.serverId, bestVerifiedId, pickSmartDnsCandidatePool, servers]
+  );
+
+  const handleToggleAutopilot = useCallback(async () => {
+    if (tunnel.active) {
+      setAutopilotBusy(true);
+      setAutopilotMessage('Отключаем локальный DNS-туннель...');
+      try {
+        const res = await fetch('/api/tunnel/stop', { method: 'POST' });
+        const data = await res.json();
+        if (data.tunnel) setTunnel(data.tunnel);
+        setTunnelTestFeedback(null);
+        setAutopilotMessage(null);
+      } finally {
+        setAutopilotBusy(false);
+      }
+      return;
+    }
+
+    setAutopilotBusy(true);
+    setAutopilotMessage('Проверяем быстрые Smart-DNS узлы на обход Antigravity и ИИ...');
+    try {
+      const candidates = pickSmartDnsCandidatePool(servers);
+      if (candidates.length === 0) {
+        setAutopilotMessage('Каталог серверов ещё загружается, повторите через секунду');
+        return;
+      }
+
+      const probeRes = await fetch('/api/probe/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serverIds: candidates.map((s) => s.id),
+          targetDomain: 'aistudio.google.com',
+          requiresBypass: true,
+        }),
+      });
+      const probeData = await probeRes.json();
+      const probed: DnsServer[] = Array.isArray(probeData.servers) ? probeData.servers : candidates;
+      mergeUpdatedServers(probed);
+
+      const verified = sortServers(
+        probed.filter((s) => s.verdict === 'VERIFIED_PROXY_OK'),
+        'LOWEST_PING'
+      );
+      const chosen = verified[0] || sortServers(probed, 'LOWEST_PING')[0] || candidates[0];
+
+      setAutopilotMessage(`Запускаем туннель через ${chosen.name}...`);
+      const startRes = await fetch('/api/tunnel/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serverId: chosen.id,
+          targetDomain: 'cloudcode-pa.googleapis.com',
+          splitRouting: true,
+        }),
+      });
+      const startData = await startRes.json();
+      if (startData.tunnel) {
+        setTunnel(startData.tunnel);
+      }
+      setAutopilotMessage(null);
+      void handleVerifyAllServices(chosen.id);
+    } catch {
+      setAutopilotMessage('Не удалось выполнить автоподбор — проверьте сеть');
+    } finally {
+      setAutopilotBusy(false);
+    }
+  }, [tunnel.active, servers, pickSmartDnsCandidatePool, mergeUpdatedServers, handleVerifyAllServices]);
+
+  const handleOpenTesterForDomain = useCallback((domain: string) => {
+    setTargetDomain(domain);
+    setRequiresBypass(true);
+    setPresetGroup('ai');
+    setActiveTab('tester');
+  }, []);
+
   const activeFiltersPresent = hasActiveFilter(filter);
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA] dark:bg-[#0B0D10] text-[#0F172A] dark:text-[#F1F5F9] transition-colors">
-      {/* Top Bar: 3-zone contract on desktop, clean responsive wrap on mobile */}
-      <header className="md:sticky md:top-0 z-30 bg-[#FFFFFF]/95 dark:bg-[#13161B]/95 backdrop-blur-sm border-b border-[#DCE1E8] dark:border-[#262C36]">
-        <div className="max-w-[1340px] mx-auto px-4 sm:px-6 py-2 md:py-0 md:h-14 flex flex-wrap md:flex-nowrap items-center justify-between gap-2 md:gap-8">
+    <div className="min-h-screen bg-[#F2F2F7] dark:bg-[#0B0C10] text-[#0F172A] dark:text-[#F5F7FA] transition-colors">
+      {/* Top Bar: 3-zone iOS × Windows 11 frosted translucent bar */}
+      <header className="md:sticky md:top-0 z-30 glass-bar border-b border-black/[0.08] dark:border-white/[0.08]">
+        <div className="max-w-[1340px] mx-auto px-4 sm:px-6 py-2 md:py-0 md:h-14 flex flex-wrap md:flex-nowrap items-center justify-between gap-2 md:gap-6">
           {/* Zone 1: Single-line Brand Wordmark */}
-          <div className="flex items-center gap-3 shrink-0">
-            <span className="text-base font-bold tracking-tight text-[#0F172A] dark:text-[#F1F5F9] whitespace-nowrap shrink-0">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <span
+              className={`w-2.5 h-2.5 rounded-full shrink-0 transition-colors ${
+                tunnel.active
+                  ? 'bg-[#34C759] dark:bg-[#30D158]'
+                  : 'bg-[#007AFF] dark:bg-[#0A84FF]'
+              }`}
+              aria-hidden="true"
+            />
+            <span className="text-[15px] font-semibold tracking-tight text-[#0F172A] dark:text-[#F5F7FA] whitespace-nowrap shrink-0">
               DNS Pulse
             </span>
           </div>
 
-          {/* Zone 2: Concise Navigation Tabs */}
-          <nav aria-label="Основные разделы" className="order-3 md:order-2 w-full md:w-auto flex items-center gap-5 sm:gap-7 border-t md:border-t-0 border-[#DCE1E8] dark:border-[#262C36] pt-1 md:pt-0">
-            {(
-              [
-                { id: 'tester', label: 'Тестер' },
-                { id: 'catalog', label: 'Каталог' },
-                { id: 'configs', label: 'Конфиги' },
-              ] as const
-            ).map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  if (tab.id === 'catalog') {
-                    setVisibleLimit((prev) => Math.max(prev, 100));
-                  }
-                }}
-                className={`py-2 md:py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  activeTab === tab.id
-                    ? 'border-[#22C55E] text-[#0F172A] dark:text-[#F1F5F9]'
-                    : 'border-transparent text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F1F5F9]'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+          {/* Zone 2: Apple-style Segmented Navigation */}
+          <nav
+            aria-label="Основные разделы"
+            className="order-3 md:order-2 w-full md:w-auto flex items-center justify-center md:justify-start pt-1.5 md:pt-0 border-t md:border-t-0 border-black/[0.07] dark:border-white/[0.08]"
+          >
+            <div className="inline-flex items-center p-1 rounded-[12px] bg-black/[0.05] dark:bg-white/[0.07] gap-0.5">
+              {(
+                [
+                  { id: 'overview', label: 'Обзор' },
+                  { id: 'tester', label: 'Тестер' },
+                  { id: 'catalog', label: 'Каталог' },
+                  { id: 'configs', label: 'Конфиги' },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    if (tab.id === 'catalog') {
+                      setVisibleLimit((prev) => Math.max(prev, 100));
+                    }
+                  }}
+                  aria-current={activeTab === tab.id ? 'page' : undefined}
+                  className={`min-h-[30px] px-3.5 py-1 rounded-[9px] text-[13px] font-medium transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+                    activeTab === tab.id
+                      ? 'bg-white dark:bg-[#232732] text-[#0F172A] dark:text-[#F5F7FA] shadow-[0_1px_3px_rgba(0,0,0,0.12)]'
+                      : 'text-[#5C6672] dark:text-[#9CA3AF] hover:text-[#0F172A] dark:hover:text-[#F5F7FA]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </nav>
 
           {/* Zone 3: Actions */}
@@ -461,7 +669,7 @@ export default function App() {
                 handleUpdateSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' })
               }
               aria-label={settings.theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
-              className="min-h-[36px] w-[36px] rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] inline-flex items-center justify-center text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F1F5F9] cursor-pointer shrink-0"
+              className="min-h-[34px] w-[34px] rounded-[10px] bg-black/[0.045] dark:bg-white/[0.07] border border-black/[0.07] dark:border-white/[0.09] inline-flex items-center justify-center text-[#5C6672] dark:text-[#9CA3AF] hover:text-[#0F172A] dark:hover:text-[#F5F7FA] cursor-pointer shrink-0 transition-colors"
               title="Переключить тему"
             >
               {settings.theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -470,7 +678,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setDiscoveryOpen(true)}
-              className="min-h-[36px] px-3 sm:px-3.5 py-1.5 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-semibold text-[#0F172A] dark:text-[#F1F5F9] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer hover:bg-[#E2E8F0] dark:hover:bg-[#242B35]"
+              className="min-h-[34px] px-3 py-1.5 rounded-[10px] bg-black/[0.045] dark:bg-white/[0.07] border border-black/[0.07] dark:border-white/[0.09] text-xs font-semibold text-[#0F172A] dark:text-[#F5F7FA] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer hover:bg-black/[0.08] dark:hover:bg-white/[0.11] transition-colors"
             >
               <Radar className="w-3.5 h-3.5" />
               <span>Подбор</span>
@@ -481,10 +689,10 @@ export default function App() {
               onClick={() => setIsLive((prev) => !prev)}
               aria-pressed={isLive}
               title="Автопроверка топ-8 серверов каждые 2.8 сек"
-              className={`min-h-[36px] px-3 sm:px-3.5 py-1.5 rounded-md border text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+              className={`min-h-[34px] px-3 py-1.5 rounded-[10px] border text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                 isLive
-                  ? 'bg-[#22C55E] border-[#22C55E] text-[#0B0D10]'
-                  : 'bg-[#EEF1F5] dark:bg-[#1B2028] border-[#DCE1E8] dark:border-[#262C36] text-[#0F172A] dark:text-[#F1F5F9]'
+                  ? 'bg-[#34C759] dark:bg-[#30D158] border-transparent text-white dark:text-[#0B0C10]'
+                  : 'bg-black/[0.045] dark:bg-white/[0.07] border-black/[0.07] dark:border-white/[0.09] text-[#0F172A] dark:text-[#F5F7FA]'
               }`}
             >
               <Activity className="w-3.5 h-3.5" />
@@ -495,7 +703,7 @@ export default function App() {
               type="button"
               onClick={handleBenchmarkVisible}
               disabled={isBenchmarking}
-              className="min-h-[36px] px-3 sm:px-4 py-1.5 rounded-md bg-[#0F172A] dark:bg-[#F1F5F9] text-[#FFFFFF] dark:text-[#0B0D10] text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-60"
+              className="min-h-[34px] px-3.5 py-1.5 rounded-[10px] bg-[#007AFF] dark:bg-[#0A84FF] text-white text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer hover:opacity-95 disabled:opacity-60 transition-opacity"
             >
               <Gauge className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">{isBenchmarking ? 'Проверка...' : 'Тест скорости'}</span>
@@ -505,15 +713,15 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-[1340px] mx-auto px-4 sm:px-6 py-5 space-y-4">
-        {/* Active Tunnel / Tray Notification Bar */}
-        {tunnel.active && (
+      <main className="max-w-[1340px] mx-auto px-4 sm:px-6 py-6 space-y-4">
+        {/* Active Tunnel Bar (shown in expert tabs; OverviewHub shows live status natively in Hero Card) */}
+        {tunnel.active && activeTab !== 'overview' && (
           <section
             aria-label="Активный DNS-туннель"
-            className="rounded-lg bg-[#FFFFFF] dark:bg-[#13161B] border border-[#22C55E]/70 px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3"
+            className="glass-surface rounded-2xl border-[#34C759]/60 dark:border-[#30D158]/55 px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3"
           >
             <div className="min-w-0 space-y-0.5">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-semibold text-[#16A34A] dark:text-[#22C55E]">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-semibold text-[#1E8E3E] dark:text-[#30D158]">
                 <span>Активен туннель: {tunnel.serverName}</span>
                 <span className="font-mono text-[#64748B] dark:text-[#94A3B8]">
                   · {tunnel.listenAddress} · Запросов: {tunnel.queriesHandled} (кэш: {tunnel.cacheHits})
@@ -529,7 +737,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleTestTunnelQuery}
-                className="min-h-[34px] px-3 py-1.5 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-medium text-[#0F172A] dark:text-[#F1F5F9] whitespace-nowrap shrink-0 cursor-pointer"
+                className="min-h-[34px] px-3 py-1.5 rounded-[10px] bg-black/[0.045] dark:bg-white/[0.07] border border-black/[0.08] dark:border-white/[0.09] text-xs font-medium text-[#0F172A] dark:text-[#F5F7FA] whitespace-nowrap shrink-0 cursor-pointer"
               >
                 Проверить запрос
               </button>
@@ -537,15 +745,15 @@ export default function App() {
                 type="button"
                 onClick={handleRotateTunnel}
                 title="Горячая клавиша Ctrl+Alt+R"
-                className="min-h-[34px] px-3.5 py-1.5 rounded-md bg-[#EEF1F5] dark:bg-[#1B2028] border border-[#DCE1E8] dark:border-[#262C36] text-xs font-semibold text-[#0F172A] dark:text-[#F1F5F9] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer hover:bg-[#E2E8F0] dark:hover:bg-[#242B35]"
+                className="min-h-[34px] px-3.5 py-1.5 rounded-[10px] bg-black/[0.045] dark:bg-white/[0.07] border border-black/[0.08] dark:border-white/[0.09] text-xs font-semibold text-[#0F172A] dark:text-[#F5F7FA] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer hover:bg-black/[0.08] dark:hover:bg-white/[0.11]"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                <span>Ротация ↻</span>
+                <span>Ротация</span>
               </button>
               <button
                 type="button"
                 onClick={handleStopTunnel}
-                className="min-h-[34px] px-3.5 py-1.5 rounded-md bg-[#EF4444] text-[#FFFFFF] text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer hover:bg-[#DC2626]"
+                className="min-h-[34px] px-3.5 py-1.5 rounded-[10px] bg-[#FF3B30] dark:bg-[#FF453A] text-white text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer hover:opacity-90"
               >
                 <Square className="w-3 h-3 fill-current" />
                 <span>Откл</span>
@@ -554,7 +762,22 @@ export default function App() {
           </section>
         )}
 
-        {activeTab === 'configs' ? (
+        {activeTab === 'overview' ? (
+          <OverviewHub
+            tunnel={tunnel}
+            activeServerLatencyMs={activeServerLatencyMs}
+            autopilotBusy={autopilotBusy}
+            autopilotMessage={autopilotMessage}
+            serviceChecks={serviceChecks}
+            checkingServices={checkingServices}
+            onToggleAutopilot={handleToggleAutopilot}
+            onRotateTunnel={handleRotateTunnel}
+            onVerifyAllServices={() => {
+              void handleVerifyAllServices();
+            }}
+            onOpenTesterForDomain={handleOpenTesterForDomain}
+          />
+        ) : activeTab === 'configs' ? (
           <ConfigsTab
             servers={servers}
             syncStatus={syncStatus}
@@ -571,7 +794,7 @@ export default function App() {
             {/* Unified Target Service + Search & Filter Card */}
             <section
               aria-label="Режим проверки, поиск и фильтры"
-              className="rounded-lg bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] p-4 space-y-3"
+              className="glass-surface rounded-2xl p-4 space-y-3"
             >
               {/* Top Row: Mode & Editable Target Domain */}
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -859,7 +1082,7 @@ export default function App() {
             ) : activeTab === 'catalog' ? (
               /* High-Density Catalog Table */
               <div className="space-y-3">
-                <div className="rounded-lg bg-[#FFFFFF] dark:bg-[#13161B] border border-[#DCE1E8] dark:border-[#262C36] overflow-x-auto">
+                <div className="glass-surface rounded-2xl overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="border-b border-[#DCE1E8] dark:border-[#262C36] bg-[#F7F8FA] dark:bg-[#1B2028] text-[11px] font-semibold text-[#64748B] dark:text-[#94A3B8]">

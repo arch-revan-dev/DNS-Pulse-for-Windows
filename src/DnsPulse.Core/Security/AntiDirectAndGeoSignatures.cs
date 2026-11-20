@@ -69,7 +69,20 @@ public static class AntiDirectAndGeoSignatures
         "opal.google.com",
         "jules.google.com",
         "deepmind.google",
-        "idx.google.com"
+        "idx.google.com",
+        "antigravity.google",
+        "antigravity-pa.googleapis.com",
+        "antigravity.googleapis.com",
+        "antigravity-unleash.goog",
+        "cloudcode-pa.googleapis.com",
+        "daily-cloudcode-pa.googleapis.com",
+        "cloudaicompanion.googleapis.com",
+        "aicode.googleapis.com",
+        "aida.googleapis.com",
+        "aiplatform.googleapis.com",
+        "developerprofiles-pa.googleapis.com",
+        "optimizationguide-pa.googleapis.com",
+        "flow.google.com"
     ];
 
     private static readonly string[] StrictGoogleAiSubstrings =
@@ -80,7 +93,12 @@ public static class AntiDirectAndGeoSignatures
         "proactivebackend-pa.googleapis.com",
         "aisandbox-pa.googleapis.com",
         "robinfrontend-pa.googleapis.com",
-        "geller-pa.googleapis.com"
+        "geller-pa.googleapis.com",
+        "antigravity-pa",
+        "cloudcode-pa",
+        "cloudaicompanion",
+        "aicode.googleapis",
+        "aida.googleapis"
     ];
 
     private static readonly string[] VendorDirectKeywords =
@@ -96,7 +114,13 @@ public static class AntiDirectAndGeoSignatures
         "geforcenow",
         "grok",
         "perplexity",
-        "copilot"
+        "copilot",
+        "antigravity",
+        "cursor",
+        "windsurf",
+        "codeium",
+        "deepseek",
+        "mistral"
     ];
 
     private static readonly string[] GeoRedirectLocationMarkers =
@@ -118,7 +142,11 @@ public static class AntiDirectAndGeoSignatures
         "not available in your country",
         "unsupported region",
         "/sorry/index",
-        "unusual traffic from your computer"
+        "unusual traffic from your computer",
+        "user is ineligible",
+        "location not supported",
+        "user location is not supported",
+        "failed_precondition"
     ];
 
     private static readonly string[] GoogleAiResponseMarkers =
@@ -143,6 +171,13 @@ public static class AntiDirectAndGeoSignatures
         "alkalimakersuite-pa.clients6.google.com",
         "generativelanguage.googleapis.com",
         "aistudio.google.com"
+    ]);
+
+    private static readonly IReadOnlyList<string> CompanionAntigravity = Array.AsReadOnly(
+    [
+        "daily-cloudcode-pa.googleapis.com",
+        "antigravity-pa.googleapis.com",
+        "generativelanguage.googleapis.com"
     ]);
 
     private static readonly IReadOnlyList<string> CompanionChatGpt = Array.AsReadOnly(["api.openai.com", "auth.openai.com"]);
@@ -377,6 +412,12 @@ public static class AntiDirectAndGeoSignatures
         if (trimmed.Contains("gemini.google.com", StringComparison.OrdinalIgnoreCase))
         {
             return CompanionGeminiAiStudio;
+        }
+
+        if (trimmed.Contains("cloudcode-pa", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Contains("antigravity", StringComparison.OrdinalIgnoreCase))
+        {
+            return CompanionAntigravity;
         }
 
         if (trimmed.Contains("chatgpt.com", StringComparison.OrdinalIgnoreCase))

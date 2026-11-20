@@ -4,8 +4,8 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <!-- Standard user by default; UAC elevation is requested ONLY when applying system DNS / NRPT -->
-        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+        <!-- Request Administrator privileges on launch so Adapter DNS, NRPT, SMHNR, and browser DoH policies apply reliably -->
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>

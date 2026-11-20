@@ -465,6 +465,77 @@ public sealed class PulseCoreDnsEngineTests
         fallbackInvoked.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task ResolveAsync_Zone3DirectGoogleIpOnPrimaryBypassUpstream_FailsOverPerDomainToSecondaryProxy()
+    {
+        using OptimisticDnsCache cache = new();
+        SplitNamespaceRouter router = new(new SplitNamespaceRouterConfig
+        {
+            GeoUnlockRules = [new GeoUnlockRule("cloudcode-pa.googleapis.com", "smart-primary")]
+        });
+
+        DnsServerEntry primarySmart = new()
+        {
+            Id = "smart-primary",
+            Name = "Primary Smart DNS (Direct Leak)",
+            Protocol = DnsProtocol.DoH,
+            TrustTier = TrustTier.Tier2VerifiedGeoUnlock,
+            PrimaryIp = "9.9.9.9",
+            DohUrl = "https://primary-smart.example/dns-query",
+            SupportsBypass = true,
+            LastLatencyMs = 8
+        };
+
+        DnsServerEntry secondarySmart = new()
+        {
+            Id = "smart-secondary",
+            Name = "Secondary Smart DNS (Verified Proxy)",
+            Protocol = DnsProtocol.DoH,
+            TrustTier = TrustTier.Tier2VerifiedGeoUnlock,
+            PrimaryIp = "8.8.4.4",
+            DohUrl = "https://secondary-smart.example/dns-query",
+            SupportsBypass = true,
+            LastLatencyMs = 22
+        };
+
+        DnsServerEntry tier1 = CreateTier1Doh("cf", "1.1.1.1", 5);
+
+        IDnsUpstreamClient dohClient = Substitute.For<IDnsUpstreamClient>();
+        dohClient.Protocol.Returns(DnsProtocol.DoH);
+        dohClient.QueryAsync(Arg.Any<DnsMessage>(), Arg.Any<DnsServerEntry>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                DnsMessage q = callInfo.ArgAt<DnsMessage>(0);
+                DnsServerEntry srv = callInfo.ArgAt<DnsServerEntry>(1);
+                string ip = srv.Id == "smart-primary" ? "172.217.16.142" : "185.236.10.37";
+                return Task.FromResult(new UpstreamQueryResult(
+                    CreateAResponse(q, ip),
+                    TimeSpan.FromMilliseconds(10),
+                    srv.DohUrl!,
+                    DnsProtocol.DoH));
+            });
+
+        UpstreamPoolManager pool = new([tier1]);
+        PulseCoreDnsEngine engine = new(
+            router,
+            cache,
+            pool,
+            new Dictionary<DnsProtocol, IDnsUpstreamClient> { [DnsProtocol.DoH] = dohClient },
+            new PulseCoreEngineOptions
+            {
+                GeoUnlockUpstreams = [primarySmart, secondarySmart],
+                GeoUnlockIpv4Only = true
+            });
+
+        DnsMessage response = await engine.ResolveAsync(
+            DnsMessage.CreateQuery(91, "cloudcode-pa.googleapis.com", DnsRecordType.A));
+
+        response.EffectiveResponseCode.Should().Be(DnsResponseCode.NoError);
+        response.Answers.Should().ContainSingle(a => Equals(a.Address, IPAddress.Parse("185.236.10.37")));
+        await dohClient.Received(1).QueryAsync(Arg.Any<DnsMessage>(), primarySmart, Arg.Any<CancellationToken>());
+        await dohClient.Received(1).QueryAsync(Arg.Any<DnsMessage>(), secondarySmart, Arg.Any<CancellationToken>());
+    }
+
     private static DnsServerEntry CreateTier1Doh(string id, string ip, double latencyMs)
     {
         return new DnsServerEntry

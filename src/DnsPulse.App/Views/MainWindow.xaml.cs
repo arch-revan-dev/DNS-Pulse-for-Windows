@@ -156,6 +156,8 @@ public sealed partial class MainWindow : FluentWindow
             _viewModel.NavigationItems,
             _viewModel.Overview.P50SparklineSamples,
             _viewModel.Overview.StrategyProfiles,
+            _viewModel.Overview.DetectedAiApps,
+            _viewModel.Overview.AiServiceChecks,
             _viewModel.Routing.ServicePresets,
             _viewModel.Routing.TelemetryEvents,
             _viewModel.Routing.FilteredTelemetryEvents,

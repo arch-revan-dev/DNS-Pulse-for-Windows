@@ -63,6 +63,17 @@
       <SolidColorBrush x:Key="PulseDangerBorderBrush" Color="#DC2626" />
       <SolidColorBrush x:Key="PulseDangerBadgeBgBrush" Color="#B91C1C" />
 
+      <!-- iOS x Windows 11 Frosted Glass & Grouped Inset Surface Brushes -->
+      <SolidColorBrush x:Key="PulseGlassCardBrush" Color="#D81C1E24" />
+      <SolidColorBrush x:Key="PulseGlassCardBorderBrush" Color="#22FFFFFF" />
+      <SolidColorBrush x:Key="PulseHairlineDividerBrush" Color="#18FFFFFF" />
+      <SolidColorBrush x:Key="PulseSegmentTrackBrush" Color="#24FFFFFF" />
+      <SolidColorBrush x:Key="PulseSegmentActiveBrush" Color="#363A45" />
+      <SolidColorBrush x:Key="PulseIosGreenBrush" Color="#30D158" />
+      <SolidColorBrush x:Key="PulseIosBlueBrush" Color="#0A84FF" />
+      <SolidColorBrush x:Key="PulseIosRedBrush" Color="#FF453A" />
+      <SolidColorBrush x:Key="PulseOrbHaloBrush" Color="#26047857" />
+
       <!-- Converters -->
       <conv:LocConverter x:Key="LocConverter" />
       <conv:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
@@ -279,6 +290,84 @@
                   <Setter TargetName="CardBorder" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                   <Setter TargetName="CardBorder" Property="BorderThickness" Value="2" />
                   <Setter TargetName="CardBorder" Property="Background" Value="{DynamicResource PulseAccentSubtleBrush}" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- iOS x Windows 11 Segmented Control Tab Style -->
+      <Style x:Key="PulseIosSegmentRadioStyle" TargetType="RadioButton">
+        <Setter Property="Padding" Value="14,5" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="Medium" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="RadioButton">
+              <Border x:Name="SegmentBg"
+                      Padding="{TemplateBinding Padding}"
+                      Background="{TemplateBinding Background}"
+                      CornerRadius="7"
+                      SnapsToDevicePixels="True">
+                <ContentPresenter HorizontalAlignment="Center"
+                                  VerticalAlignment="Center" />
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                </Trigger>
+                <Trigger Property="IsChecked" Value="True">
+                  <Setter TargetName="SegmentBg" Property="Background" Value="{DynamicResource PulseSegmentActiveBrush}" />
+                  <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                  <Setter Property="FontWeight" Value="SemiBold" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- Tactile iOS-Inspired Circular Power Orb Button Style -->
+      <Style x:Key="PulsePowerOrbButtonStyle" TargetType="Button">
+        <Setter Property="Width" Value="116" />
+        <Setter Property="Height" Value="116" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="#38FFFFFF" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="Button">
+              <Border x:Name="OrbSurface"
+                      Width="{TemplateBinding Width}"
+                      Height="{TemplateBinding Height}"
+                      CornerRadius="58"
+                      Background="{TemplateBinding Background}"
+                      BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}"
+                      RenderTransformOrigin="0.5,0.5"
+                      SnapsToDevicePixels="True">
+                <Border.RenderTransform>
+                  <ScaleTransform x:Name="OrbScale" ScaleX="1" ScaleY="1" />
+                </Border.RenderTransform>
+                <ContentPresenter HorizontalAlignment="Center"
+                                  VerticalAlignment="Center" />
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="OrbSurface" Property="Opacity" Value="0.94" />
+                  <Setter TargetName="OrbScale" Property="ScaleX" Value="1.03" />
+                  <Setter TargetName="OrbScale" Property="ScaleY" Value="1.03" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                  <Setter TargetName="OrbScale" Property="ScaleX" Value="0.96" />
+                  <Setter TargetName="OrbScale" Property="ScaleY" Value="0.96" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter TargetName="OrbSurface" Property="Opacity" Value="0.6" />
                 </Trigger>
               </ControlTemplate.Triggers>
             </ControlTemplate>

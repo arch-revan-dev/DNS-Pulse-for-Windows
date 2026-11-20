@@ -101,12 +101,12 @@ export const ServerCard: React.FC<ServerCardProps> = ({
     <article
       data-testid={`server-card-${server.id}`}
       onClick={() => onSelect(server)}
-      className={`rounded-lg border transition-colors px-4 py-3 cursor-pointer ${
+      className={`rounded-2xl border transition-colors px-4 py-3 cursor-pointer ${
         isActive
-          ? 'bg-[#FFFFFF] dark:bg-[#13161B] border-[#22C55E]'
+          ? 'bg-white/95 dark:bg-[#171B22]/90 border-[#34C759] dark:border-[#30D158]'
           : isSelected
-            ? 'bg-[#FFFFFF] dark:bg-[#17201B] border-[#22C55E]/60'
-            : 'bg-[#FFFFFF] dark:bg-[#13161B] border-[#DCE1E8] dark:border-[#262C36] hover:border-[#94A3B8]/60 dark:hover:border-[#3A4352]'
+            ? 'bg-white/95 dark:bg-[#17211C]/90 border-[#34C759]/60 dark:border-[#30D158]/60'
+            : 'bg-white/85 dark:bg-[#161920]/85 border-black/[0.08] dark:border-white/[0.09] hover:border-black/[0.16] dark:hover:border-white/[0.18]'
       }`}
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

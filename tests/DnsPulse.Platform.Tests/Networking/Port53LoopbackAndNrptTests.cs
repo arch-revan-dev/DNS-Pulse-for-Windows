@@ -107,4 +107,40 @@ public sealed class Port53LoopbackAndNrptTests
             }
         }
     }
+
+    [Fact]
+    public void Win32NetworkInterop_BuildNetshArguments_FormatsStaticAndDhcpCommandsCorrectly()
+    {
+        IReadOnlyList<string> ipv4Set = Win32NetworkInterop.BuildNetshSetDnsArguments(
+            "Wi-Fi",
+            AddressFamily.InterNetwork,
+            [IPAddress.Loopback]);
+        ipv4Set.Should().ContainSingle();
+        ipv4Set[0].Should().Contain("interface ipv4 set dnsservers name=\"Wi-Fi\"");
+        ipv4Set[0].Should().Contain("source=static address=127.0.0.1 register=primary validate=no");
+
+        IReadOnlyList<string> ipv6Set = Win32NetworkInterop.BuildNetshSetDnsArguments(
+            "Ethernet",
+            AddressFamily.InterNetworkV6,
+            [IPAddress.IPv6Loopback]);
+        ipv6Set.Should().ContainSingle();
+        ipv6Set[0].Should().Contain("interface ipv6 set dnsservers name=\"Ethernet\"");
+        ipv6Set[0].Should().Contain("source=static address=::1 register=primary validate=no");
+
+        IReadOnlyList<string> dhcpRestore = Win32NetworkInterop.BuildNetshRestoreDnsArguments(
+            "Wi-Fi",
+            AddressFamily.InterNetwork,
+            wasDhcp: true,
+            []);
+        dhcpRestore.Should().ContainSingle().Which.Should().Contain("source=dhcp");
+
+        IReadOnlyList<string> staticRestore = Win32NetworkInterop.BuildNetshRestoreDnsArguments(
+            "Ethernet",
+            AddressFamily.InterNetwork,
+            wasDhcp: false,
+            ["1.1.1.1", "8.8.8.8"]);
+        staticRestore.Should().HaveCount(2);
+        staticRestore[0].Should().Contain("set dnsservers name=\"Ethernet\" source=static address=1.1.1.1");
+        staticRestore[1].Should().Contain("add dnsservers name=\"Ethernet\" address=8.8.8.8 index=2 validate=no");
+    }
 }

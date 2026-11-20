@@ -45,6 +45,10 @@ public sealed class AiAppCatalogTests
     {
         AiAppCatalog.AllAiAndAppDomains.Should().Contain(BuiltInCatalogPresets.BuiltinAiDomains);
         AiAppCatalog.AllAiAndAppDomains.Should().Contain(AiAppCatalog.ExtraDesktopAiDomains);
+        AiAppCatalog.AllAiAndAppDomains.Should().Contain("daily-cloudcode-pa.googleapis.com");
+        AiAppCatalog.AllAiAndAppDomains.Should().Contain("antigravity-pa.googleapis.com");
+        AiAppCatalog.AllAiAndAppDomains.Should().Contain("aicode.googleapis.com");
+        AiAppCatalog.AllAiAndAppDomains.Should().Contain("flow.google.com");
         HashSet<string> unique = new(AiAppCatalog.AllAiAndAppDomains, StringComparer.OrdinalIgnoreCase);
         unique.Should().HaveCount(AiAppCatalog.AllAiAndAppDomains.Count);
     }

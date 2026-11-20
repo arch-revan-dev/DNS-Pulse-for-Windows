@@ -652,7 +652,7 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
             .ThenBy(candidate => aiBypassActive && ServerCategoryClassifier.HasExplicitAiTag(candidate) ? 0 : 1)
             .ThenBy(static candidate => candidate.IsFavorite ? 0 : 1)
             .ThenBy(static candidate => candidate.LatencyP50Ms ?? candidate.LastLatencyMs ?? double.MaxValue)
-            .Take(4);
+            .Take(6);
 
         geoList.AddRange(geoFallbacks);
         _geoUnlockUpstreams = [.. geoList];
@@ -817,6 +817,21 @@ public sealed class HybridPulseRuntimeService : IPulseRuntimeService, IDisposabl
                         dnsServer.BoundPort,
                         _activeSplitDomains,
                         cancellationToken).ConfigureAwait(false);
+
+                    if (interceptor is AdapterDnsInterceptor adapterInterceptor)
+                    {
+                        IReadOnlyList<string> activeNames = adapterInterceptor.VerifiedAdapterNames.Count > 0
+                            ? adapterInterceptor.VerifiedAdapterNames
+                            : [.. adapterInterceptor.CapturedAdapters.Select(static a => a.InterfaceName)];
+
+                        _activeInterceptionStatusDetail = activeNames.Count > 0
+                            ? string.Create(
+                                CultureInfo.InvariantCulture,
+                                $"Adapter DNS + NRPT ({loopbackIp}): {string.Join(", ", activeNames)}")
+                            : string.Create(
+                                CultureInfo.InvariantCulture,
+                                $"Adapter DNS active ({loopbackIp})");
+                    }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && effectiveMode != InterceptionMode.LocalProxyPacOnly)
                 {

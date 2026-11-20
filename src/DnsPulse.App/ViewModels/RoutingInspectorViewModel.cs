@@ -562,9 +562,12 @@ public sealed partial class RoutingInspectorViewModel : ObservableObject
                 continue;
             }
 
-            IEnumerable<string> sourceDomains = preset.Id == "custom"
-                ? _customGeoUnlockDomains
-                : preset.Domains;
+            IEnumerable<string> sourceDomains = preset.Id switch
+            {
+                "custom" => _customGeoUnlockDomains,
+                "google_ai_studio" => preset.Domains.Concat(AiAppCatalog.ExtraDesktopAiDomains),
+                _ => preset.Domains
+            };
 
             foreach (string domain in sourceDomains)
             {

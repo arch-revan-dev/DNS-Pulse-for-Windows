@@ -384,7 +384,7 @@ public sealed class PulseCoreDnsEngine : IPulseDnsResolver
             eligible,
             options.Zone3Strategy,
             (server, ct) => ExecuteUpstreamClientAsync(query, server, ct),
-            (upstreamResult, _) => ValidateRebinding(RouteZone.Zone3GeoUnlock, upstreamResult.Response, options).IsSafe,
+            (upstreamResult, server) => IsValidZone3Response(question, upstreamResult.Response, server, options),
             enforceZone4TrustTier: false,
             cancellationToken).ConfigureAwait(false);
 
@@ -631,6 +631,45 @@ public sealed class PulseCoreDnsEngine : IPulseDnsResolver
 
         IDnsUpstreamClient client = _clientFactory(server.Protocol);
         return client.QueryAsync(query, server, cancellationToken);
+    }
+
+    private static bool IsValidZone3Response(
+        DnsQuestion question,
+        DnsMessage response,
+        DnsServerEntry server,
+        PulseCoreEngineOptions options)
+    {
+        if (!ValidateRebinding(RouteZone.Zone3GeoUnlock, response, options).IsSafe)
+        {
+            return false;
+        }
+
+        // If a Smart-DNS/bypass upstream returns a direct unproxied Google/OpenAI/Anthropic CDN IP
+        // (e.g. GeoHide returning 172.217.* for cloudcode-pa.googleapis.com), reject it so the pool
+        // automatically fails over per-domain to the next Geo-Unlock upstream that proxies this host.
+        if (question.RecordType == DnsRecordType.A &&
+            server.SupportsBypass &&
+            HasDirectServiceIpForBypass(question.Name, response))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool HasDirectServiceIpForBypass(string domain, DnsMessage response)
+    {
+        foreach (DnsResourceRecord record in response.Answers)
+        {
+            if (record.RecordType == DnsRecordType.A &&
+                record.Address is not null &&
+                AntiDirectAndGeoSignatures.IsDirectServiceIp(record.Address, domain))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static DnsRebindingValidationResult ValidateRebinding(

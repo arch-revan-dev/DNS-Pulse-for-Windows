@@ -345,4 +345,14 @@
   <data name="Simple_App_Running" xml:space="preserve"><value>Running</value></data>
   <data name="Overview_QuickService_Antigravity" xml:space="preserve"><value>Antigravity IDE</value></data>
   <data name="Overview_QuickService_ClaudeCode" xml:space="preserve"><value>Claude Code CLI</value></data>
+  <data name="Simple_Services_Title" xml:space="preserve"><value>Service Readiness</value></data>
+  <data name="Simple_Services_Check" xml:space="preserve"><value>Verify</value></data>
+  <data name="Simple_Service_Pending" xml:space="preserve"><value>Idle</value></data>
+  <data name="Simple_Service_Checking" xml:space="preserve"><value>Checking…</value></data>
+  <data name="Simple_Service_Ok" xml:space="preserve"><value>Reachable</value></data>
+  <data name="Simple_Service_Blocked" xml:space="preserve"><value>Blocked</value></data>
+  <data name="Simple_Adapter_Ready" xml:space="preserve"><value>Adapter DNS + NRPT ready</value></data>
+  <data name="Simple_Adapter_Active" xml:space="preserve"><value>Adapter DNS + NRPT active ({0})</value></data>
+  <data name="Simple_Adapter_AdminNeeded" xml:space="preserve"><value>Administrator rights required for Adapter DNS</value></data>
+  <data name="Simple_Adapter_Elevate" xml:space="preserve"><value>Run as Admin</value></data>
 </root>

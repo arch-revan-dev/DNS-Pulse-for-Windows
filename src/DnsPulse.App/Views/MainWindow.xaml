@@ -27,20 +27,29 @@
       </ui:TitleBar.Icon>
       <ui:TitleBar.TrailingContent>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-          <ui:Button Margin="0,0,8,0"
-                     Padding="10,4"
-                     Appearance="Secondary"
-                     WindowChrome.IsHitTestVisibleInChrome="True"
-                     Command="{Binding ToggleSimpleModeCommand}"
-                     AutomationProperties.Name="{Binding ModeToggleButtonText}">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-              <ui:SymbolIcon Symbol="Sparkle24" FontSize="14" Margin="0,0,6,0" />
-              <TextBlock Text="{Binding ModeToggleButtonText}"
-                         FontSize="12"
-                         FontWeight="SemiBold"
-                         VerticalAlignment="Center" />
+          <!-- iOS x Windows 11 Segmented Mode Switcher -->
+          <Border Margin="0,0,10,0"
+                  Padding="3"
+                  CornerRadius="10"
+                  Background="{DynamicResource PulseSegmentTrackBrush}"
+                  BorderBrush="{DynamicResource PulseGlassCardBorderBrush}"
+                  BorderThickness="1"
+                  WindowChrome.IsHitTestVisibleInChrome="True">
+            <StackPanel Orientation="Horizontal">
+              <RadioButton GroupName="ShellModeSegment"
+                           Style="{StaticResource PulseIosSegmentRadioStyle}"
+                           Content="{conv:Localization Mode_Simple}"
+                           IsChecked="{Binding IsSimpleMode, Mode=OneWay}"
+                           Command="{Binding SelectSimpleModeCommand}"
+                           AutomationProperties.Name="{conv:Localization Mode_Simple}" />
+              <RadioButton GroupName="ShellModeSegment"
+                           Style="{StaticResource PulseIosSegmentRadioStyle}"
+                           Content="{conv:Localization Mode_Expert}"
+                           IsChecked="{Binding IsSimpleMode, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"
+                           Command="{Binding SelectExpertModeCommand}"
+                           AutomationProperties.Name="{conv:Localization Mode_Expert}" />
             </StackPanel>
-          </ui:Button>
+          </Border>
 
           <ui:Button Margin="0,0,8,0"
                      Padding="10,4"

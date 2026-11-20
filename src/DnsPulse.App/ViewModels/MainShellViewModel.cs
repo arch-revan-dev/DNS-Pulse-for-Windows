@@ -447,10 +447,32 @@ public sealed partial class MainShellViewModel : ObservableObject
     }
 
     [RelayCommand]
-    public async Task ToggleSimpleModeAsync(CancellationToken cancellationToken = default)
+    public Task ToggleSimpleModeAsync(CancellationToken cancellationToken = default)
     {
-        IsSimpleMode = !IsSimpleMode;
-        Overview.IsSimpleMode = IsSimpleMode;
+        return SetSimpleModeAsync(!IsSimpleMode, cancellationToken);
+    }
+
+    [RelayCommand]
+    public Task SelectSimpleModeAsync(CancellationToken cancellationToken = default)
+    {
+        return SetSimpleModeAsync(true, cancellationToken);
+    }
+
+    [RelayCommand]
+    public Task SelectExpertModeAsync(CancellationToken cancellationToken = default)
+    {
+        return SetSimpleModeAsync(false, cancellationToken);
+    }
+
+    private async Task SetSimpleModeAsync(bool simpleMode, CancellationToken cancellationToken)
+    {
+        if (IsSimpleMode == simpleMode && Overview.IsSimpleMode == simpleMode)
+        {
+            return;
+        }
+
+        IsSimpleMode = simpleMode;
+        Overview.IsSimpleMode = simpleMode;
         OnPropertyChanged(nameof(ModeToggleButtonText));
         if (IsSimpleMode)
         {

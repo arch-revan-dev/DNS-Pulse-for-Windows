@@ -345,4 +345,14 @@
   <data name="Simple_App_Running" xml:space="preserve"><value>Запущено</value></data>
   <data name="Overview_QuickService_Antigravity" xml:space="preserve"><value>Antigravity IDE</value></data>
   <data name="Overview_QuickService_ClaudeCode" xml:space="preserve"><value>Claude Code CLI</value></data>
+  <data name="Simple_Services_Title" xml:space="preserve"><value>Проверка сервисов</value></data>
+  <data name="Simple_Services_Check" xml:space="preserve"><value>Проверить</value></data>
+  <data name="Simple_Service_Pending" xml:space="preserve"><value>Ожидание</value></data>
+  <data name="Simple_Service_Checking" xml:space="preserve"><value>Проверка…</value></data>
+  <data name="Simple_Service_Ok" xml:space="preserve"><value>Доступен</value></data>
+  <data name="Simple_Service_Blocked" xml:space="preserve"><value>Нет доступа</value></data>
+  <data name="Simple_Adapter_Ready" xml:space="preserve"><value>DNS адаптера + NRPT готовы к переключению</value></data>
+  <data name="Simple_Adapter_Active" xml:space="preserve"><value>DNS адаптера + NRPT активны ({0})</value></data>
+  <data name="Simple_Adapter_AdminNeeded" xml:space="preserve"><value>Нужны права администратора для смены DNS адаптера</value></data>
+  <data name="Simple_Adapter_Elevate" xml:space="preserve"><value>Запустить от Админа</value></data>
 </root>

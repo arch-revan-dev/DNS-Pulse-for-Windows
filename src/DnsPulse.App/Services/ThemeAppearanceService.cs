@@ -331,6 +331,37 @@ public sealed class ThemeAppearanceService : ObservableObject
         SetBrush(resources, "PulseDangerBadgeBgBrush", isDark
             ? MediaColor.FromRgb(0xB9, 0x1C, 0x1C)
             : MediaColor.FromRgb(0xDC, 0x26, 0x26));
+
+        // iOS x Windows 11 Frosted Glass & Grouped Inset Surface Tokens
+        SetBrush(resources, "PulseGlassCardBrush", isDark
+            ? MediaColor.FromArgb(0xD8, 0x1C, 0x1E, 0x24)
+            : MediaColor.FromArgb(0xEC, 0xFF, 0xFF, 0xFF));
+        SetBrush(resources, "PulseGlassCardBorderBrush", isDark
+            ? MediaColor.FromArgb(0x22, 0xFF, 0xFF, 0xFF)
+            : MediaColor.FromArgb(0x18, 0x0F, 0x17, 0x2A));
+        SetBrush(resources, "PulseHairlineDividerBrush", isDark
+            ? MediaColor.FromArgb(0x18, 0xFF, 0xFF, 0xFF)
+            : MediaColor.FromArgb(0x14, 0x0F, 0x17, 0x2A));
+        SetBrush(resources, "PulseSegmentTrackBrush", isDark
+            ? MediaColor.FromArgb(0x24, 0xFF, 0xFF, 0xFF)
+            : MediaColor.FromArgb(0x12, 0x0F, 0x17, 0x2A));
+        SetBrush(resources, "PulseSegmentActiveBrush", isDark
+            ? MediaColor.FromRgb(0x36, 0x3A, 0x45)
+            : MediaColor.FromRgb(0xFF, 0xFF, 0xFF));
+        SetBrush(resources, "PulseIosGreenBrush", isDark
+            ? MediaColor.FromRgb(0x30, 0xD1, 0x58)
+            : MediaColor.FromRgb(0x34, 0xC7, 0x59));
+        SetBrush(resources, "PulseIosBlueBrush", isDark
+            ? MediaColor.FromRgb(0x0A, 0x84, 0xFF)
+            : MediaColor.FromRgb(0x00, 0x7A, 0xFF));
+        SetBrush(resources, "PulseIosRedBrush", isDark
+            ? MediaColor.FromRgb(0xFF, 0x45, 0x3A)
+            : MediaColor.FromRgb(0xFF, 0x3B, 0x30));
+        SetBrush(resources, "PulseOrbHaloBrush", MediaColor.FromArgb(
+            (byte)(isDark ? 0x26 : 0x1E),
+            palette.Primary.R,
+            palette.Primary.G,
+            palette.Primary.B));
     }
 
     private static void ApplyHighContrastSemanticOverrides(ResourceDictionary resources)
@@ -364,6 +395,15 @@ public sealed class ThemeAppearanceService : ObservableObject
         SetBrush(resources, "PulseDangerSubtleBrush", window);
         SetBrush(resources, "PulseDangerBorderBrush", windowText);
         SetBrush(resources, "PulseDangerBadgeBgBrush", highlight);
+        SetBrush(resources, "PulseGlassCardBrush", window);
+        SetBrush(resources, "PulseGlassCardBorderBrush", windowText);
+        SetBrush(resources, "PulseHairlineDividerBrush", windowText);
+        SetBrush(resources, "PulseSegmentTrackBrush", control);
+        SetBrush(resources, "PulseSegmentActiveBrush", highlight);
+        SetBrush(resources, "PulseIosGreenBrush", highlight);
+        SetBrush(resources, "PulseIosBlueBrush", highlight);
+        SetBrush(resources, "PulseIosRedBrush", windowText);
+        SetBrush(resources, "PulseOrbHaloBrush", control);
     }
 
     private static void ApplyAccessibleAccentOverrides(

@@ -338,6 +338,46 @@ public sealed class SixLayerDiagnosticEngineTests
         fakeReport.Verdict.Should().NotBe(DiagnosticVerdict.Healthy);
     }
 
+    [Fact]
+    public async Task DiagnoseAsync_BypassUpstreamReturningDirectGoogleIpForAntigravity_NeverReturnsHealthy()
+    {
+        using TestPkiBundle pki = CreateTestPki("cloudcode-pa.googleapis.com");
+        await using MockTlsHttpServer server = new(
+            pki.LeafServerCert,
+            _ => new MockHttpResponse(404, "gRPC endpoint"));
+
+        IPAddress directGoogleIp = IPAddress.Parse("172.217.16.142");
+        DnsServerEntry bypassUpstream = new()
+        {
+            Id = "smart_direct_leak_test",
+            Name = "Leaky Smart DNS",
+            Provider = "Test",
+            Protocol = DnsProtocol.DoH,
+            TrustTier = TrustTier.Tier2VerifiedGeoUnlock,
+            PrimaryIp = "9.9.9.9",
+            DohUrl = "https://leaky-smart.example/dns-query",
+            SupportsBypass = true
+        };
+
+        IBootstrapResolver bootstrap = CreateMockBootstrap("cloudcode-pa.googleapis.com", directGoogleIp);
+        IDnsUpstreamClient client = CreateMockUpstreamClient(directGoogleIp, DnsResponseCode.NoError);
+
+        SixLayerDiagnosticEngine engine = new(bootstrap, client);
+        DiagnosticProbeOptions options = new()
+        {
+            TransportProbeSamples = 1,
+            OverrideTlsEndpoint = server.Endpoint,
+            AdditionalTrustedRoots = [pki.RootPublicCert],
+            ProbeCompanionDomains = false,
+            CheckEchViaBaseline = false
+        };
+
+        DiagnosticReport report = await engine.DiagnoseAsync("cloudcode-pa.googleapis.com", bypassUpstream, options);
+
+        report.Verdict.Should().Be(DiagnosticVerdict.GeoBlockedByService);
+        report.Remediation.Action.Should().Be(RemediationActionKind.RouteViaVerifiedGeoUnlock);
+    }
+
     private static DnsServerEntry CreateTestUpstream()
     {
         return new DnsServerEntry

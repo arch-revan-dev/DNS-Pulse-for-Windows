@@ -232,3 +232,49 @@ test('Hosts parser, plain-text/CSV/JSON import-export, and rotation queue work r
   assert.equal(malformed.length, 1);
   assert.equal(malformed[0].name, 'ValidNode');
 });
+
+test('Antigravity preset, anti-direct IP rules, and dedicated port 18753 PowerShell launch commands', async () => {
+  const { getCompanionDomainsForHost } = await import('./presets');
+  const {
+    AI_READINESS_SERVICES,
+    buildPowerShellLaunchCommand,
+    DEFAULT_LOCAL_PROXY_PORT,
+    DESKTOP_AI_APPS,
+  } = await import('./aiApps');
+
+  const aiPresets = getPresetsForGroup('ai');
+  assert.equal(aiPresets[0].id, 'gemini');
+  assert.equal(aiPresets[1].id, 'antigravity');
+  assert.equal(aiPresets[1].domain, 'cloudcode-pa.googleapis.com');
+
+  const companions = getCompanionDomainsForHost('cloudcode-pa.googleapis.com');
+  assert.ok(companions.includes('daily-cloudcode-pa.googleapis.com'));
+  assert.ok(companions.includes('antigravity-pa.googleapis.com'));
+
+  // Direct Google IP on Antigravity must be rejected as DIRECT_NO_PROXY
+  assert.equal(isDirectServiceIp('172.217.16.142', 'cloudcode-pa.googleapis.com'), true);
+  assert.equal(isDirectServiceIp('185.236.10.37', 'cloudcode-pa.googleapis.com'), false);
+  const agDirect = classifyFourStageVerdict({
+    requiresBypass: true,
+    resolvedIps: ['172.217.16.142'],
+    companionPassed: true,
+    port443Ok: true,
+    httpStatus: 200,
+    redirectLocation: null,
+    targetDomain: 'cloudcode-pa.googleapis.com',
+    timedOut: false,
+  });
+  assert.equal(agDirect.verdict, 'DIRECT_NO_PROXY');
+
+  assert.equal(DEFAULT_LOCAL_PROXY_PORT, 18753);
+  assert.equal(AI_READINESS_SERVICES.length, 4);
+  assert.equal(AI_READINESS_SERVICES[0].id, 'antigravity');
+
+  const agApp = DESKTOP_AI_APPS.find((a) => a.id === 'antigravity');
+  assert.ok(agApp);
+  const psCmd = buildPowerShellLaunchCommand(agApp);
+  assert.ok(psCmd.includes('127.0.0.1:18753'));
+  assert.ok(psCmd.includes('<-loopback>'));
+  assert.ok(psCmd.includes('GRPC_PROXY_EXP'));
+  assert.equal(psCmd.includes('10808'), false);
+});

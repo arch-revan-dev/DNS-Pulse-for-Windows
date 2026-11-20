@@ -22,6 +22,18 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
     ],
   },
   {
+    id: 'antigravity',
+    label: 'Antigravity',
+    domain: 'cloudcode-pa.googleapis.com',
+    group: 'ai',
+    requiresBypass: true,
+    companionDomains: [
+      'daily-cloudcode-pa.googleapis.com',
+      'antigravity-pa.googleapis.com',
+      'generativelanguage.googleapis.com',
+    ],
+  },
+  {
     id: 'aistudio',
     label: 'AI Studio',
     domain: 'aistudio.google.com',
@@ -125,6 +137,17 @@ export function getCompanionDomainsForHost(domain: string): string[] {
   const normalized = domain.trim().toLowerCase();
   const matched = DOMAIN_PRESETS.find((p) => p.domain.toLowerCase() === normalized);
   if (matched) return matched.companionDomains;
+  if (
+    normalized.includes('antigravity') ||
+    normalized.includes('cloudcode-pa') ||
+    normalized.includes('cloudaicompanion')
+  ) {
+    return [
+      'daily-cloudcode-pa.googleapis.com',
+      'antigravity-pa.googleapis.com',
+      'generativelanguage.googleapis.com',
+    ];
+  }
   if (normalized.includes('gemini.google.com') || normalized.includes('aistudio.google.com')) {
     return ['alkalimakersuite-pa.clients6.google.com', 'generativelanguage.googleapis.com'];
   }

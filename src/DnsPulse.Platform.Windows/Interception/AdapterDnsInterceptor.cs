@@ -1,13 +1,16 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using System.Security;
 using DnsPulse.Platform.Windows.Contracts;
 using DnsPulse.Platform.Windows.Networking;
 
 namespace DnsPulse.Platform.Windows.Interception;
 
 /// <summary>
-/// Intercepts host DNS traffic by pointing active physical adapters' DNS settings to the local PulseCore endpoint.
+/// Intercepts host DNS traffic by pointing active physical adapters' DNS settings to the local PulseCore endpoint,
+/// reinforced by hybrid Windows NRPT split-DNS rules and live OS adapter verification.
 /// </summary>
 public sealed class AdapterDnsInterceptor : IDnsInterceptor
 {
@@ -18,7 +21,9 @@ public sealed class AdapterDnsInterceptor : IDnsInterceptor
     private readonly Func<int, bool> _isIpv6LoopbackPortFree;
 
     private IReadOnlyList<AdapterDnsConfiguration> _capturedAdapters = [];
+    private IReadOnlyList<string> _verifiedAdapterNames = [];
     private bool _priorSmhnrDisabled;
+    private bool _appliedHybridNrpt;
     private bool _isActive;
 
     /// <summary>
@@ -48,11 +53,17 @@ public sealed class AdapterDnsInterceptor : IDnsInterceptor
     public IReadOnlyList<AdapterDnsConfiguration> CapturedAdapters => _capturedAdapters;
 
     /// <summary>
+    /// Gets the active adapter names verified by live OS TCP/IP stack readback.
+    /// </summary>
+    public IReadOnlyList<string> VerifiedAdapterNames => _verifiedAdapterNames;
+
+    /// <summary>
     /// Gets whether SMHNR was already disabled before activation.
     /// </summary>
     public bool PriorSmhnrDisabled => _priorSmhnrDisabled;
 
     /// <inheritdoc />
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Defense-in-depth NRPT registration must not block adapter DNS activation if GPO restricts NRPT.")]
     public Task ActivateAsync(
         IPAddress localDnsIp,
         int dnsPort,
@@ -97,14 +108,62 @@ public sealed class AdapterDnsInterceptor : IDnsInterceptor
             foreach (AdapterDnsConfiguration adapter in adapters)
             {
                 ct.ThrowIfCancellationRequested();
-                Win32NetworkInterop.ApplyAdapterDnsServers(adapter.InterfaceGuid, ipv4Servers, ipv6Servers);
+                Win32NetworkInterop.ApplyAdapterDnsServers(
+                    adapter.InterfaceGuid,
+                    adapter.InterfaceName,
+                    ipv4Servers,
+                    ipv6Servers);
                 modifiedAdapters.Add(adapter);
+            }
+
+            if (splitDomains.Count > 0)
+            {
+                try
+                {
+                    NrptPolicyManager.ApplySplitRules(localDnsIp, dnsPort, splitDomains);
+                    _appliedHybridNrpt = true;
+                }
+                catch (SecurityException)
+                {
+                }
+                catch (UnauthorizedAccessException)
+                {
+                }
+                catch (IOException)
+                {
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            if (localDnsIp.AddressFamily == AddressFamily.InterNetwork)
+            {
+                AdapterDnsVerificationResult verification = Win32NetworkInterop.VerifyAdapterDnsApplied(localDnsIp);
+                _verifiedAdapterNames = verification.VerifiedAdapterNames;
+            }
+            else
+            {
+                _verifiedAdapterNames = [];
             }
 
             _isActive = true;
         }
         catch
         {
+            if (_appliedHybridNrpt)
+            {
+                try
+                {
+                    NrptPolicyManager.RemoveAllPulseNrptRules();
+                }
+                catch (Exception)
+                {
+                }
+
+                _appliedHybridNrpt = false;
+            }
+
             for (int i = modifiedAdapters.Count - 1; i >= 0; i--)
             {
                 Win32NetworkInterop.RestoreAdapterDnsServers(modifiedAdapters[i]);
@@ -116,6 +175,7 @@ public sealed class AdapterDnsInterceptor : IDnsInterceptor
             }
 
             _capturedAdapters = [];
+            _verifiedAdapterNames = [];
             _isActive = false;
             throw;
         }
@@ -124,13 +184,27 @@ public sealed class AdapterDnsInterceptor : IDnsInterceptor
     }
 
     /// <inheritdoc />
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "NRPT cleanup during deactivate must stay exception-safe so adapter restore always runs.")]
     public Task DeactivateAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
-        if (!_isActive && _capturedAdapters.Count == 0)
+        if (!_isActive && _capturedAdapters.Count == 0 && !_appliedHybridNrpt)
         {
             return Task.CompletedTask;
+        }
+
+        if (_appliedHybridNrpt)
+        {
+            try
+            {
+                NrptPolicyManager.RemoveAllPulseNrptRules();
+            }
+            catch (Exception)
+            {
+            }
+
+            _appliedHybridNrpt = false;
         }
 
         foreach (AdapterDnsConfiguration adapter in _capturedAdapters)
@@ -144,6 +218,7 @@ public sealed class AdapterDnsInterceptor : IDnsInterceptor
         }
 
         _capturedAdapters = [];
+        _verifiedAdapterNames = [];
         _isActive = false;
         return Task.CompletedTask;
     }

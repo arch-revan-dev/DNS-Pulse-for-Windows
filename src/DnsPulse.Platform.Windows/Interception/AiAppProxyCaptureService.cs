@@ -280,6 +280,57 @@ public static class AiAppProxyCaptureService
     }
 
     /// <summary>
+    /// Stops any already-running unproxied instance of an AI desktop app (such as Electron-based Google Antigravity,
+    /// Cursor, Windsurf, or Claude Desktop) and relaunches it cleanly through the local loopback proxy.
+    /// </summary>
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Graceful process shutdown during relaunch must tolerate restricted or already-exited processes.")]
+    public static AiAppLaunchResult RelaunchAppThroughLocalProxy(
+        AiAppProfile app,
+        string? executablePath,
+        int localProxyPort)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+
+        if (app.SupportsChromiumProxyFlag)
+        {
+            foreach (string processName in app.ProcessNames)
+            {
+                try
+                {
+                    Process[] running = Process.GetProcessesByName(processName);
+                    foreach (Process proc in running)
+                    {
+                        try
+                        {
+                            if (!proc.HasExited)
+                            {
+                                _ = proc.CloseMainWindow();
+                                if (!proc.WaitForExit(1500) && !proc.HasExited)
+                                {
+                                    proc.Kill(entireProcessTree: true);
+                                    _ = proc.WaitForExit(1500);
+                                }
+                            }
+                        }
+                        catch (Exception)
+                        {
+                        }
+                        finally
+                        {
+                            proc.Dispose();
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
+        return LaunchAppThroughLocalProxy(app, executablePath, localProxyPort);
+    }
+
+    /// <summary>
     /// Builds a copy-pasteable PowerShell command that launches the given AI app or CLI through DNS Pulse's local tunnel.
     /// </summary>
     public static string BuildPowerShellLaunchSnippet(AiAppProfile app, int localProxyPort)
