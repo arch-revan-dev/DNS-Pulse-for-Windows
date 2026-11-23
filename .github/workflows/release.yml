@@ -31,7 +31,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup .NET 9 SDK
         uses: actions/setup-dotnet@v6
@@ -131,7 +131,7 @@ jobs:
         rid: ${{ fromJSON(inputs.skip_arm64 == true && '["win-x64"]' || '["win-x64", "win-arm64"]') }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup .NET 9 SDK
         uses: actions/setup-dotnet@v6
@@ -273,7 +273,7 @@ jobs:
       attestations: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Download staged artifacts
         uses: actions/download-artifact@v8
